@@ -1,0 +1,357 @@
+﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+
+#include "VoxelMinimal.isph"
+
+// ReSharper disable CppCStyleCast
+// ReSharper disable CppVariableCanBeMadeConstexpr
+// ReSharper disable CppUE4CodingStandardNamingViolationWarning
+
+struct PREPROCESSOR_JOIN(FArgs_, Type)
+{
+	uniform float* InOutHeights;
+	int32 InOutHeightsNum;
+	int32 Padding;
+	int2 SpanStart;
+	int2 SpanEnd;
+	int32 StrideX;
+	FTransform2d IndexToHeightmap;
+	float ScaleZ;
+	float OffsetZ;
+	uint8 BlendMode;
+	float Smoothness;
+	float MinHeight;
+	float MaxHeight;
+	float LocalScaleZ;
+	float LocalOffsetZ;
+	float BicubicSmoothness;
+	uint8 Interpolation;
+	int32 SizeX;
+	int32 SizeY;
+	const uniform Type* Heightmap;
+	int64 HeightmapNum;
+};
+
+FORCEINLINE void PREPROCESSOR_JOIN(ApplyHeight_, Type)(
+	const uniform PREPROCESSOR_JOIN(FArgs_, Type)& Args,
+	const varying int32 IndexX,
+	const uniform int32 IndexY,
+	varying float RawHeight)
+{
+	uniform float* uniform Heights = Args.InOutHeights;
+	const uniform float ScaleZ = Args.ScaleZ;
+	const uniform float OffsetZ = Args.OffsetZ;
+	const uniform float Smoothness = Args.Smoothness;
+	const uniform float MinHeight = Args.MinHeight;
+	const uniform float MaxHeight = Args.MaxHeight;
+
+	RawHeight = RawHeight * Args.LocalScaleZ + Args.LocalOffsetZ;
+
+	if (RawHeight < MinHeight ||
+		RawHeight > MaxHeight)
+	{
+		return;
+	}
+
+	const varying int32 Index = IndexY * Args.StrideX + IndexX;
+
+	enum
+	{
+		BlendMode_Max,
+		BlendMode_Min,
+		BlendMode_Add,
+		BlendMode_Subtract,
+		BlendMode_Override,
+	};
+
+	switch (Args.BlendMode)
+	{
+	default: VOXEL_ASSUME(false);
+	case BlendMode_Max:
+	{
+		const varying float OldHeight = Heights[Index];
+		const varying float NewHeight = RawHeight * ScaleZ + OffsetZ;
+
+		if (intbits(OldHeight) == 0xFFFFFFFF)
+		{
+			Heights[Index] = NewHeight;
+			return;
+		}
+
+		Heights[Index] = SmoothMax(OldHeight, NewHeight, Smoothness);
+	}
+	break;
+	case BlendMode_Min:
+	{
+		const varying float OldHeight = Heights[Index];
+		const varying float NewHeight = RawHeight * ScaleZ + OffsetZ;
+
+		if (intbits(OldHeight) == 0xFFFFFFFF)
+		{
+			Heights[Index] = NewHeight;
+			return;
+		}
+
+		Heights[Index] = SmoothMin(OldHeight, NewHeight, Smoothness);
+	}
+	break;
+	case BlendMode_Add:
+	{
+		const varying float OldHeight = Heights[Index];
+
+		if (intbits(OldHeight) == 0xFFFFFFFF)
+		{
+			return;
+		}
+
+		const varying float NewRelativeHeight = (RawHeight - MinHeight) * ScaleZ + OffsetZ;
+
+		Heights[Index] = SmoothMax(OldHeight, OldHeight + NewRelativeHeight, Smoothness);
+	}
+	break;
+	case BlendMode_Subtract:
+	{
+		const varying float OldHeight = Heights[Index];
+
+		if (intbits(OldHeight) == 0xFFFFFFFF)
+		{
+			return;
+		}
+
+		const varying float NewRelativeHeight = (RawHeight - MinHeight) * ScaleZ + OffsetZ;
+
+		Heights[Index] = SmoothMin(OldHeight, OldHeight - NewRelativeHeight, Smoothness);
+	}
+	break;
+	case BlendMode_Override:
+	{
+		Heights[Index] = RawHeight * ScaleZ + OffsetZ;
+	}
+	break;
+	}
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+export void PREPROCESSOR_JOIN(VoxelLandscapeHeightUtilities_ApplyHeightmap_NearestNeighbor_, Type)(
+	const uniform PREPROCESSOR_JOIN(FArgs_, Type)& Args)
+{
+	const uniform double SizeXMinus2 = Args.SizeX - 2.d;
+	const uniform double SizeYMinus2 = Args.SizeY - 2.d;
+
+	const uniform Type* uniform Heightmap = Args.Heightmap;
+	const uniform int32 SizeX = Args.SizeX;
+
+	for (uniform int32 IndexY = Args.SpanStart.y; IndexY < Args.SpanEnd.y; IndexY++)
+	{
+		FOREACH(IndexX, Args.SpanStart.x, Args.SpanEnd.x)
+		{
+			const varying double2 Position = TransformPosition(Args.IndexToHeightmap, MakeDouble2(IndexX, IndexY));
+
+			if (Position.x < 1.d ||
+				Position.y < 1.d ||
+				Position.x > SizeXMinus2 ||
+				Position.y > SizeYMinus2)
+			{
+				continue;
+			}
+
+			const varying int32 MinX = (int32)floor(Position.x);
+			const varying int32 MinY = (int32)floor(Position.y);
+
+			IGNORE_PERF_WARNING
+			const varying float Height = Heightmap[MinX + SizeX * MinY];
+
+			PREPROCESSOR_JOIN(ApplyHeight_, Type)(
+				Args,
+				IndexX,
+				IndexY,
+				Height);
+		}
+	}
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+export void PREPROCESSOR_JOIN(VoxelLandscapeHeightUtilities_ApplyHeightmap_Bilinear_, Type)(
+	const uniform PREPROCESSOR_JOIN(FArgs_, Type)& Args)
+{
+	const uniform double SizeXMinus2 = Args.SizeX - 2.d;
+	const uniform double SizeYMinus2 = Args.SizeY - 2.d;
+
+	const uniform Type* uniform Heightmap = Args.Heightmap;
+	const uniform int32 SizeX = Args.SizeX;
+
+	for (uniform int32 IndexY = Args.SpanStart.y; IndexY < Args.SpanEnd.y; IndexY++)
+	{
+		FOREACH(IndexX, Args.SpanStart.x, Args.SpanEnd.x)
+		{
+			const varying double2 Position = TransformPosition(Args.IndexToHeightmap, MakeDouble2(IndexX, IndexY));
+
+			if (Position.x < 1.d ||
+				Position.y < 1.d ||
+				Position.x > SizeXMinus2 ||
+				Position.y > SizeYMinus2)
+			{
+				continue;
+			}
+
+			const varying double MinXf = floor(Position.x);
+			const varying double MinYf = floor(Position.y);
+
+			const varying float AlphaX = (float)clamp(Position.x - MinXf, 0.d, 1.d);
+			const varying float AlphaY = (float)clamp(Position.y - MinYf, 0.d, 1.d);
+
+			const varying int32 MinX = (int32)MinXf;
+			const varying int32 MinY = (int32)MinYf;
+
+			const varying float Height = BilinearInterpolation(
+				IGNORE_PERF_WARNING
+				Heightmap[(MinX + 0) + SizeX * (MinY + 0)],
+				IGNORE_PERF_WARNING
+				Heightmap[(MinX + 1) + SizeX * (MinY + 0)],
+				IGNORE_PERF_WARNING
+				Heightmap[(MinX + 0) + SizeX * (MinY + 1)],
+				IGNORE_PERF_WARNING
+				Heightmap[(MinX + 1) + SizeX * (MinY + 1)],
+				AlphaX,
+				AlphaY);
+
+			PREPROCESSOR_JOIN(ApplyHeight_, Type)(
+				Args,
+				IndexX,
+				IndexY,
+				Height);
+		}
+	}
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+export void PREPROCESSOR_JOIN(VoxelLandscapeHeightUtilities_ApplyHeightmap_Bicubic_, Type)(
+	const uniform PREPROCESSOR_JOIN(FArgs_, Type)& Args)
+{
+	const uniform double SizeXMinus2 = Args.SizeX - 2.d;
+	const uniform double SizeYMinus2 = Args.SizeY - 2.d;
+
+	const uniform Type* uniform Heightmap = Args.Heightmap;
+	const uniform int32 SizeX = Args.SizeX;
+
+	uniform float p0A, p0B, p0C, p0D;
+	uniform float p1A, p1B, p1C, p1D;
+	uniform float p2A, p2B, p2C, p2D;
+	uniform float p3A, p3B, p3C, p3D;
+	{
+		const uniform float B = clamp(Args.BicubicSmoothness, 0.f, 1.f);
+		const uniform float C = (1.f - B) / 2.f;
+
+		// See https://en.wikipedia.org/wiki/Mitchell%E2%80%93Netravali_filters
+		p0A = B / 6.f;       p0B = -B / 2.f - C; p0C = B / 2.f + 2.f * C;              p0D = -B / 6.f - C;
+		p1A = 1.f - B / 3.f; p1B = 0.f;          p1C = 2.f * B + C - 3.f;              p1D = -3.f / 2.f * B - C + 2.f;
+		p2A = B / 6.f;       p2B = +B / 2.f + C; p2C = -5.f / 2.f * B - 2.f * C + 3.f; p2D = +3.f / 2.f * B + C - 2.f;
+		p3A = 0.f;           p3B = 0.f;          p3C = -C;                             p3D = +B / 6.f + C;
+	}
+
+	for (uniform int32 IndexY = Args.SpanStart.y; IndexY < Args.SpanEnd.y; IndexY++)
+	{
+		FOREACH(IndexX, Args.SpanStart.x, Args.SpanEnd.x)
+		{
+			const varying double2 Position = TransformPosition(Args.IndexToHeightmap, MakeDouble2(IndexX, IndexY));
+
+			coherent_if(
+				Position.x < 1.d ||
+				Position.y < 1.d ||
+				Position.x > SizeXMinus2 ||
+				Position.y > SizeYMinus2)
+			{
+				continue;
+			}
+
+			const varying double MinXf = floor(Position.x);
+			const varying double MinYf = floor(Position.y);
+
+			const varying float AlphaX = (float)clamp(Position.x - MinXf, 0.d, 1.d);
+			const varying float AlphaY = (float)clamp(Position.y - MinYf, 0.d, 1.d);
+
+			const varying int32 MinX = (int32)MinXf;
+			const varying int32 MinY = (int32)MinYf;
+
+			IGNORE_PERF_WARNING
+			const varying float p00 = Heightmap[(MinX - 1) + SizeX * (MinY - 1)];
+			IGNORE_PERF_WARNING
+			const varying float p01 = Heightmap[(MinX + 0) + SizeX * (MinY - 1)];
+			IGNORE_PERF_WARNING
+			const varying float p02 = Heightmap[(MinX + 1) + SizeX * (MinY - 1)];
+			IGNORE_PERF_WARNING
+			const varying float p03 = Heightmap[(MinX + 2) + SizeX * (MinY - 1)];
+
+			IGNORE_PERF_WARNING
+			const varying float p10 = Heightmap[(MinX - 1) + SizeX * (MinY + 0)];
+			IGNORE_PERF_WARNING
+			const varying float p11 = Heightmap[(MinX + 0) + SizeX * (MinY + 0)];
+			IGNORE_PERF_WARNING
+			const varying float p12 = Heightmap[(MinX + 1) + SizeX * (MinY + 0)];
+			IGNORE_PERF_WARNING
+			const varying float p13 = Heightmap[(MinX + 2) + SizeX * (MinY + 0)];
+
+			IGNORE_PERF_WARNING
+			const varying float p20 = Heightmap[(MinX - 1) + SizeX * (MinY + 1)];
+			IGNORE_PERF_WARNING
+			const varying float p21 = Heightmap[(MinX + 0) + SizeX * (MinY + 1)];
+			IGNORE_PERF_WARNING
+			const varying float p22 = Heightmap[(MinX + 1) + SizeX * (MinY + 1)];
+			IGNORE_PERF_WARNING
+			const varying float p23 = Heightmap[(MinX + 2) + SizeX * (MinY + 1)];
+
+			IGNORE_PERF_WARNING
+			const varying float p30 = Heightmap[(MinX - 1) + SizeX * (MinY + 2)];
+			IGNORE_PERF_WARNING
+			const varying float p31 = Heightmap[(MinX + 0) + SizeX * (MinY + 2)];
+			IGNORE_PERF_WARNING
+			const varying float p32 = Heightmap[(MinX + 1) + SizeX * (MinY + 2)];
+			IGNORE_PERF_WARNING
+			const varying float p33 = Heightmap[(MinX + 2) + SizeX * (MinY + 2)];
+
+			const varying float p0 =
+				p00 * (p0A + AlphaX * (p0B + AlphaX * (p0C + AlphaX * p0D))) +
+				p01 * (p1A + AlphaX * (p1B + AlphaX * (p1C + AlphaX * p1D))) +
+				p02 * (p2A + AlphaX * (p2B + AlphaX * (p2C + AlphaX * p2D))) +
+				p03 * (p3A + AlphaX * (p3B + AlphaX * (p3C + AlphaX * p3D)));
+
+			const varying float p1 =
+				p10 * (p0A + AlphaX * (p0B + AlphaX * (p0C + AlphaX * p0D))) +
+				p11 * (p1A + AlphaX * (p1B + AlphaX * (p1C + AlphaX * p1D))) +
+				p12 * (p2A + AlphaX * (p2B + AlphaX * (p2C + AlphaX * p2D))) +
+				p13 * (p3A + AlphaX * (p3B + AlphaX * (p3C + AlphaX * p3D)));
+
+			const varying float p2 =
+				p20 * (p0A + AlphaX * (p0B + AlphaX * (p0C + AlphaX * p0D))) +
+				p21 * (p1A + AlphaX * (p1B + AlphaX * (p1C + AlphaX * p1D))) +
+				p22 * (p2A + AlphaX * (p2B + AlphaX * (p2C + AlphaX * p2D))) +
+				p23 * (p3A + AlphaX * (p3B + AlphaX * (p3C + AlphaX * p3D)));
+
+			const varying float p3 =
+				p30 * (p0A + AlphaX * (p0B + AlphaX * (p0C + AlphaX * p0D))) +
+				p31 * (p1A + AlphaX * (p1B + AlphaX * (p1C + AlphaX * p1D))) +
+				p32 * (p2A + AlphaX * (p2B + AlphaX * (p2C + AlphaX * p2D))) +
+				p33 * (p3A + AlphaX * (p3B + AlphaX * (p3C + AlphaX * p3D)));
+
+			const varying float Height =
+				p0 * (p0A + AlphaY * (p0B + AlphaY * (p0C + AlphaY * p0D))) +
+				p1 * (p1A + AlphaY * (p1B + AlphaY * (p1C + AlphaY * p1D))) +
+				p2 * (p2A + AlphaY * (p2B + AlphaY * (p2C + AlphaY * p2D))) +
+				p3 * (p3A + AlphaY * (p3B + AlphaY * (p3C + AlphaY * p3D)));
+
+			PREPROCESSOR_JOIN(ApplyHeight_, Type)(
+				Args,
+				IndexX,
+				IndexY,
+				Height);
+		}
+	}
+}

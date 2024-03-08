@@ -1,0 +1,10 @@
+﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+
+#pragma once
+
+#include "VoxelMinimal.isph"
+
+#define NumPerChunk 4096
+
+#define DeclareBuffer(Type, Name) uniform Type* const* uniform Name
+#define GetBuffer_NotConstant(Buffer, Index) (Buffer)[(Index) / NumPerChunk][(Index) % NumPerChunk]

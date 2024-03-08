@@ -1,0 +1,42 @@
+﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+
+#pragma once
+
+#include "VoxelMinimal.isph"
+
+// ReSharper disable CppCStyleCast
+
+FORCEINLINE uint64 VoxelMaterialBlending_Make(
+	const varying int32 MaterialA,
+	const varying int32 MaterialB,
+	const varying int32 MaterialC,
+	const varying float AlphaA,
+	const varying float AlphaB,
+	const varying float AlphaC)
+{
+	return
+		(((uint64)MaterialA) << 20) |
+		(((uint64)MaterialB) << 8) |
+		(((uint64)MaterialC) << 32) |
+		(((uint64)FloatToUINT8(AlphaA)) << 0) |
+		(((uint64)FloatToUINT8(AlphaB)) << 56) |
+		(((uint64)FloatToUINT8(AlphaC)) << 48);
+}
+
+FORCEINLINE void VoxelMaterialBlending_Break(
+	const varying uint64 Blending,
+	varying int32& OutMaterialA,
+	varying int32& OutMaterialB,
+	varying int32& OutMaterialC,
+	varying float& OutAlphaA,
+	varying float& OutAlphaB,
+	varying float& OutAlphaC)
+{
+	OutMaterialA = (Blending >> 20) & 0xFFF;
+	OutMaterialB = (Blending >> 8) & 0xFFF;
+	OutMaterialC = (Blending >> 32) & 0xFFFF;
+
+	OutAlphaA = UINT8ToFloat((Blending >> 0) & 0xFF);
+	OutAlphaB = UINT8ToFloat((Blending >> 56) & 0xFF);
+	OutAlphaC = UINT8ToFloat((Blending >> 48) & 0xFF);
+}
