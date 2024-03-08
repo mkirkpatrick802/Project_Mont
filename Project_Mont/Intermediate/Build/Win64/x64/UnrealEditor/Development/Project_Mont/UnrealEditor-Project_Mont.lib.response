@@ -1,0 +1,15 @@
+/NOLOGO
+/errorReport:prompt
+/MACHINE:x64
+/SUBSYSTEM:WINDOWS
+/DEF
+/NAME:"UnrealEditor-Project_Mont.dll"
+/IGNORE:4221
+/NODEFAULTLIB
+"C:\Users\mKirkpatrick\Documents\Project_Mont\Project_Mont\Intermediate\Build\Win64\x64\Project_MontEditor\Development\Engine\SharedPCH.Engine.ShadowErrors.InclOrderUnreal5_1.h.obj"
+"C:\Users\mKirkpatrick\Documents\Project_Mont\Project_Mont\Intermediate\Build\Win64\x64\UnrealEditor\Development\Project_Mont\Project_Mont.init.gen.cpp.obj"
+"C:\Users\mKirkpatrick\Documents\Project_Mont\Project_Mont\Intermediate\Build\Win64\x64\UnrealEditor\Development\Project_Mont\Project_MontGameModeBase.gen.cpp.obj"
+"C:\Users\mKirkpatrick\Documents\Project_Mont\Project_Mont\Intermediate\Build\Win64\x64\UnrealEditor\Development\Project_Mont\Project_Mont.cpp.obj"
+"C:\Users\mKirkpatrick\Documents\Project_Mont\Project_Mont\Intermediate\Build\Win64\x64\UnrealEditor\Development\Project_Mont\Project_MontGameModeBase.cpp.obj"
+"C:\Users\mKirkpatrick\Documents\Project_Mont\Project_Mont\Intermediate\Build\Win64\x64\UnrealEditor\Development\Project_Mont\Default.rc2.res"
+/OUT:"C:\Users\mKirkpatrick\Documents\Project_Mont\Project_Mont\Intermediate\Build\Win64\x64\UnrealEditor\Development\Project_Mont\UnrealEditor-Project_Mont.lib"
