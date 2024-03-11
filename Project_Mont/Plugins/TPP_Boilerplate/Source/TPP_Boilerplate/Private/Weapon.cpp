@@ -10,14 +10,16 @@ AWeapon::AWeapon()
 	PrimaryActorTick.bCanEverTick = false;
 	bReplicates = true;
 
-	StaticMesh->UnregisterComponent();
+	ModelComponent->UnregisterComponent();
+	ModelComponent->DestroyComponent(false);
 
-	WeaponMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Weapon Mesh"));
-	WeaponMesh->SetupAttachment(RootComponent);
-	SetRootComponent(WeaponMesh);
+	ModelComponent = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Weapon Mesh"));
+	ModelComponent->SetupAttachment(RootComponent);
+	SetRootComponent(ModelComponent);
 
 	InteractWidget->SetupAttachment(RootComponent);
 
+	WeaponMesh = Cast<USkeletalMeshComponent>(ModelComponent);
 	WeaponMesh->SetCollisionResponseToAllChannels(ECR_Block);
 	WeaponMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
 	WeaponMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -39,6 +41,10 @@ void AWeapon::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 }
+
+/*
+ *		Fire
+ */
 
 void AWeapon::Fire(const FVector& HitTarget)
 {
@@ -62,7 +68,6 @@ void AWeapon::Fire(const FVector& HitTarget)
 	}
 }
 
-// Server
 void AWeapon::SetWeaponState(EWeaponState State)
 {
 	WeaponState = State;
@@ -79,7 +84,6 @@ void AWeapon::SetWeaponState(EWeaponState State)
 	}
 }
 
-// Clients
 void AWeapon::OnRep_WeaponState()
 {
 	switch(WeaponState)

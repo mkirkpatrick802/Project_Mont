@@ -5,6 +5,7 @@
 #include "InteractInterface.h"
 #include "PickupObject.h"
 #include "TPPCharacter.h"
+#include "Weapon.h"
 #include "Components/SphereComponent.h"
 #include "Engine/SkeletalMeshSocket.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -124,7 +125,13 @@ void UInteractComponent::OnInteractionSphereBeginOverlap(UPrimitiveComponent* Ov
 	if(Cast<APickupObject>(OtherActor) && Cast<APickupObject>(OtherActor)->CurrentObjectState == EObjectState::EWS_PickedUp) return;
 
 	if(Character->IsLocallyControlled())
-		Cast<AInteractableObject>(OtherActor)->ToggleInteractWidget(true);
+	{
+		if(Cast<AInteractableObject>(OtherActor))
+			Cast<AInteractableObject>(OtherActor)->ToggleInteractWidget(true);
+
+		if (Cast<AWeapon>(OtherActor))
+			Cast<AWeapon>(OtherActor)->ToggleInteractWidget(true);
+	}
 
 	IInteractInterface::Execute_EnteredInteractionZone(OtherActor, Character);
 }
@@ -138,6 +145,7 @@ void UInteractComponent::InteractRequest()
 		if (!OverlappingActor->Implements<UInteractInterface>()) continue;
 
 		IInteractInterface::Execute_InteractRequest(OverlappingActor, Character);
+		break;
 	}
 }
 
@@ -146,7 +154,15 @@ void UInteractComponent::OnInteractionSphereEndOverlap(UPrimitiveComponent* Over
 {
 	if (!OtherActor->Implements<UInteractInterface>()) return;
 
-	Cast<AInteractableObject>(OtherActor)->ToggleInteractWidget(false);
+	if (Character->IsLocallyControlled())
+	{
+		if (Cast<AInteractableObject>(OtherActor))
+			Cast<AInteractableObject>(OtherActor)->ToggleInteractWidget(false);
+
+		if (Cast<AWeapon>(OtherActor))
+			Cast<AWeapon>(OtherActor)->ToggleInteractWidget(false);
+	}
+
 	IInteractInterface::Execute_LeftInteractionZone(OtherActor, Character);
 }
 
