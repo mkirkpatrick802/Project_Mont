@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "PickupObject.h"
 #include "Components/ActorComponent.h"
 #include "InteractComponent.generated.h"
 
@@ -25,7 +26,7 @@ public:
 	void InteractWithObject(AActor* ObjectToInteract);
 
 	UFUNCTION(BlueprintCallable)
-	void PickUpObjectRequest(class APickupObject* ObjectToPickUp);
+	void PickUpObjectRequest(APickupObject* ObjectToPickUp);
 
 	void DropObjectRequest();
 

@@ -1,9 +1,10 @@
 #include "Weapon.h"
 
 #include "Casing.h"
+#include "CombatComponent.h"
+#include "TPPCharacter.h"
 #include "Components/WidgetComponent.h"
 #include "Engine/SkeletalMeshSocket.h"
-#include "Net/UnrealNetwork.h"
 
 AWeapon::AWeapon()
 {
@@ -17,19 +18,12 @@ AWeapon::AWeapon()
 	ModelComponent->SetupAttachment(RootComponent);
 	SetRootComponent(ModelComponent);
 
-	InteractWidget->SetupAttachment(RootComponent);
+	InteractWidget->AttachToComponent(RootComponent, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
 
 	WeaponMesh = Cast<USkeletalMeshComponent>(ModelComponent);
 	WeaponMesh->SetCollisionResponseToAllChannels(ECR_Block);
 	WeaponMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
 	WeaponMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-}
-
-void AWeapon::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
-{
-	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-
-	DOREPLIFETIME(AWeapon, WeaponState);
 }
 
 void AWeapon::BeginPlay()
@@ -68,32 +62,13 @@ void AWeapon::Fire(const FVector& HitTarget)
 	}
 }
 
-void AWeapon::SetWeaponState(EWeaponState State)
+bool AWeapon::EquipRequest(const ATPPCharacter* Player)
 {
-	WeaponState = State;
-
-	switch (WeaponState)
+	if(UCombatComponent* Combat = Player->GetCombatComponent())
 	{
-	case EWeaponState::EWS_Equipped:
-		ToggleInteractWidget(false);
-
-		break;
-	case EWeaponState::EWS_Dropped:
-
-		break;
+		Combat->EquipWeapon(this);
+		return true;
 	}
-}
 
-void AWeapon::OnRep_WeaponState()
-{
-	switch(WeaponState)
-	{
-	case EWeaponState::EWS_Equipped:
-		ToggleInteractWidget(false);
-
-		break;
-	case EWeaponState::EWS_Dropped:
-
-		break;
-	}
+	return false;
 }

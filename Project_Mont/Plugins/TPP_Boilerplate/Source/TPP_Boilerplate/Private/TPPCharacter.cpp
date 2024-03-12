@@ -252,18 +252,6 @@ void ATPPCharacter::Jump()
 void ATPPCharacter::Interact(const FInputActionValue& Value)
 {
 	InteractComponent->InteractRequest();
-
-	/*if (Combat)
-	{
-		if (HasAuthority())
-		{
-			Combat->EquipWeapon(OverlappingWeapon);
-		}
-		else
-		{
-			ServerInteractButtonPressed();
-		}
-	}*/
 }
 
 /*

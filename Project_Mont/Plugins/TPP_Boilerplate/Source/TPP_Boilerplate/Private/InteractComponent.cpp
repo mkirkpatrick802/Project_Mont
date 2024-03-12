@@ -3,9 +3,7 @@
 #include "InteractableObject.h"
 #include "InteractablePawn.h"
 #include "InteractInterface.h"
-#include "PickupObject.h"
 #include "TPPCharacter.h"
-#include "Weapon.h"
 #include "Components/SphereComponent.h"
 #include "Engine/SkeletalMeshSocket.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -122,15 +120,12 @@ void UInteractComponent::OnInteractionSphereBeginOverlap(UPrimitiveComponent* Ov
 {
 	if (!OtherActor->Implements<UInteractInterface>()) return;
 
-	if(Cast<APickupObject>(OtherActor) && Cast<APickupObject>(OtherActor)->CurrentObjectState == EObjectState::EWS_PickedUp) return;
-
-	if(Character->IsLocallyControlled())
+	if (const AInteractableObject* InteractableObject = Cast<AInteractableObject>(OtherActor))
 	{
-		if(Cast<AInteractableObject>(OtherActor))
-			Cast<AInteractableObject>(OtherActor)->ToggleInteractWidget(true);
+		if(InteractableObject->CurrentObjectState == EObjectState::EWS_PickedUp) return;
 
-		if (Cast<AWeapon>(OtherActor))
-			Cast<AWeapon>(OtherActor)->ToggleInteractWidget(true);
+		if(Character->IsLocallyControlled())
+			InteractableObject->ToggleInteractWidget(true);
 	}
 
 	IInteractInterface::Execute_EnteredInteractionZone(OtherActor, Character);
@@ -144,6 +139,9 @@ void UInteractComponent::InteractRequest()
 	{
 		if (!OverlappingActor->Implements<UInteractInterface>()) continue;
 
+		if (const AInteractableObject* InteractableObject = Cast<AInteractableObject>(OverlappingActor))
+			if (InteractableObject->CurrentObjectState == EObjectState::EWS_PickedUp) continue;
+
 		IInteractInterface::Execute_InteractRequest(OverlappingActor, Character);
 		break;
 	}
@@ -154,13 +152,11 @@ void UInteractComponent::OnInteractionSphereEndOverlap(UPrimitiveComponent* Over
 {
 	if (!OtherActor->Implements<UInteractInterface>()) return;
 
-	if (Character->IsLocallyControlled())
+	if (const AInteractableObject* InteractableObject = Cast<AInteractableObject>(OtherActor))
 	{
-		if (Cast<AInteractableObject>(OtherActor))
-			Cast<AInteractableObject>(OtherActor)->ToggleInteractWidget(false);
 
-		if (Cast<AWeapon>(OtherActor))
-			Cast<AWeapon>(OtherActor)->ToggleInteractWidget(false);
+		if (Character->IsLocallyControlled())
+			InteractableObject->ToggleInteractWidget(false);
 	}
 
 	IInteractInterface::Execute_LeftInteractionZone(OtherActor, Character);

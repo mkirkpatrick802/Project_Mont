@@ -9,16 +9,6 @@ class UAnimationAsset;
 class UWidgetComponent;
 class USphereComponent;
 
-UENUM(BlueprintType)
-enum class EWeaponState : uint8
-{
-	EWS_Initial UMETA(DisplayName = "Initial State"),
-	EWS_Equipped UMETA(DisplayName = "Equipped"),
-	EWS_Dropped UMETA(DisplayName = "Dropped"),
-
-	EWS_Max UMETA(DisplayName = "Default Max")
-};
-
 UCLASS()
 class TPP_BOILERPLATE_API AWeapon : public AInteractableObject
 {
@@ -30,16 +20,17 @@ class TPP_BOILERPLATE_API AWeapon : public AInteractableObject
 public:	
 
 	AWeapon();
-	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
 
 	virtual void Fire(const FVector& HitTarget);
 
-private:
+protected:
 
-	UFUNCTION()
-	void OnRep_WeaponState();
+	UFUNCTION(BlueprintCallable)
+	bool EquipRequest(const ATPPCharacter* Player);
+
+private:
 
 	UPROPERTY(EditAnywhere, Category = "Weapon Properties")
 	UAnimationAsset* FireAnimation;
@@ -87,15 +78,11 @@ public:
 
 private:
 
-	UPROPERTY(VisibleAnywhere, ReplicatedUsing = OnRep_WeaponState, Category = "Weapon Properties")
-	EWeaponState WeaponState;
-
 	UPROPERTY(EditAnywhere, Category = Combat)
 	TSubclassOf<class ACasing> CasingClass;
 
 public:
 
-	void SetWeaponState(EWeaponState State);
 	FORCEINLINE USkeletalMeshComponent* GetWeaponMesh() const { return WeaponMesh; }
 	FORCEINLINE float GetZoomedFOV() const { return ZoomedFov; }
 	FORCEINLINE float GetZoomInterpSpeed() const { return ZoomInterpSpeed; }

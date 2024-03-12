@@ -51,7 +51,7 @@ void UCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActo
 		FHitResult HitResult;
 		CrosshairUtility::TraceUnderCrosshairs(Character, HitResult, HUDPackage);
 		HitTarget = HitResult.ImpactPoint;
-		//DrawDebugSphere(GetWorld(), HitTarget, 12, 12, FColor::Red);
+		DrawDebugSphere(GetWorld(), HitTarget, 12, 12, FColor::Red);
 
 		SetCombatCrosshairs(DeltaTime);
 		InterpFOV(DeltaTime);
@@ -67,7 +67,7 @@ void UCombatComponent::EquipWeapon(AWeapon* WeaponToEquip)
 	if(!Character || !WeaponToEquip) return;
 
 	EquippedWeapon = WeaponToEquip;
-	EquippedWeapon->SetWeaponState(EWeaponState::EWS_Equipped);
+	EquippedWeapon->SetObjectState(EObjectState::EWS_PickedUp);
 
 	const USkeletalMeshSocket* HandSocket = Character->GetMesh()->GetSocketByName(FName("RightHandSocket"));
 	if(HandSocket)
