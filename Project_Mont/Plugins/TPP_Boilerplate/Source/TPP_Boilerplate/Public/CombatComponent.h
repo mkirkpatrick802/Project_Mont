@@ -22,6 +22,7 @@ public:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 	void EquipWeapon(class AWeapon* WeaponToEquip);
+	void DropWeapon();
 
 protected:
 
@@ -84,9 +85,6 @@ private:
 	float CrosshairAimFactor;
 	float CrosshairShootingFactor;
 
-	FVector HitTarget;
-	bool CanFire = true;
-
 	/*
 	 *	Aiming and FOV
 	*/
@@ -102,8 +100,11 @@ private:
 	float CurrentFOV;
 
 	/*
-	 *	Automatic Fire
+	 *	Firing
 	*/
+
+	FVector HitTarget;
+	bool CanFire = true;
 
 	FTimerHandle FireTimer;
 };

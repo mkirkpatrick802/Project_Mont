@@ -1,5 +1,6 @@
 #include "InteractComponent.h"
 
+#include "CombatComponent.h"
 #include "InteractableObject.h"
 #include "InteractablePawn.h"
 #include "InteractInterface.h"
@@ -84,7 +85,7 @@ void UInteractComponent::PickUpObject(APickupObject* ObjectToPickUp)
 
 void UInteractComponent::DropObjectRequest()
 {
-	if (!PickedUpObject) return;
+	//if (!PickedUpObject) return;
 
 	ServerDropObjectRequest(PickedUpObject);
 }
@@ -101,14 +102,24 @@ void UInteractComponent::MulticastDropObjectRequest_Implementation()
 
 void UInteractComponent::DropObject()
 {
-	PickedUpObject->CurrentObjectState = EObjectState::EWS_Dropped;
-	PickedUpObject->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+	if(PickedUpObject)
+	{
+		PickedUpObject->CurrentObjectState = EObjectState::EWS_Dropped;
+		PickedUpObject->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 
-	PickedUpObject->TogglePhysics(true);
-	PickedUpObject->SetOwner(nullptr);
-	PickedUpObject = nullptr;
+		PickedUpObject->TogglePhysics(true);
+		PickedUpObject->SetOwner(nullptr);
+		PickedUpObject = nullptr;
 
-	Character->GetCharacterMovement()->MaxWalkSpeed = 600;
+		Character->GetCharacterMovement()->MaxWalkSpeed = 600;
+	}
+	else
+	{
+		if(UCombatComponent* Combat = Character->GetCombatComponent())
+		{
+			Combat->DropWeapon();
+		}
+	}
 }
 
 /*
@@ -154,7 +165,6 @@ void UInteractComponent::OnInteractionSphereEndOverlap(UPrimitiveComponent* Over
 
 	if (const AInteractableObject* InteractableObject = Cast<AInteractableObject>(OtherActor))
 	{
-
 		if (Character->IsLocallyControlled())
 			InteractableObject->ToggleInteractWidget(false);
 	}
