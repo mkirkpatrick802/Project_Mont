@@ -107,4 +107,10 @@ private:
 	bool CanFire = true;
 
 	FTimerHandle FireTimer;
+
+protected:
+
+	UPROPERTY(EditAnywhere, Category = Combat)
+	float AimSnapOffset = 200;
+
 };

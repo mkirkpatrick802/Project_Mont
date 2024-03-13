@@ -49,9 +49,21 @@ void UCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActo
 	if(Character && Character->IsLocallyControlled())
 	{
 		FHitResult HitResult;
-		CrosshairUtility::TraceUnderCrosshairs(Character, HitResult, HUDPackage);
+		CrosshairUtility::TraceUnderCrosshairs(Character, HitResult, HUDPackage, true, AimSnapOffset);
 		HitTarget = HitResult.ImpactPoint;
-		DrawDebugSphere(GetWorld(), HitTarget, 12, 12, FColor::Red);
+
+		// Hit Target Debugging
+		{
+			DrawDebugSphere(GetWorld(), HitTarget, 12, 12, FColor::Red);
+
+			if (GEngine)
+			{
+				if (HitResult.GetActor())
+					GEngine->AddOnScreenDebugMessage(1, 15.0f, FColor::Blue, FString::Printf(TEXT("Hit: %s"), *HitResult.GetActor()->GetActorNameOrLabel()));
+				else
+					GEngine->AddOnScreenDebugMessage(1, 15.f, FColor::Red, FString::Printf(TEXT("Target Not Found")));
+			}
+		}
 
 		SetCombatCrosshairs(DeltaTime);
 		InterpFOV(DeltaTime);
@@ -68,11 +80,10 @@ void UCombatComponent::EquipWeapon(AWeapon* WeaponToEquip)
 
 	EquippedWeapon = WeaponToEquip;
 	EquippedWeapon->SetObjectState(EObjectState::EWS_PickedUp);
+	EquippedWeapon->TogglePhysics(false);
 
 	if(const USkeletalMeshSocket* HandSocket = Character->GetMesh()->GetSocketByName(FName("RightHandSocket")))
-	{
 		HandSocket->AttachActor(EquippedWeapon, Character->GetMesh());
-	}
 
 	EquippedWeapon->SetOwner(Character);
 
@@ -99,6 +110,7 @@ void UCombatComponent::DropWeapon()
 	EquippedWeapon->SetObjectState(EObjectState::EWS_Dropped);
 	EquippedWeapon->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 	EquippedWeapon->SetOwner(nullptr);
+	EquippedWeapon->TogglePhysics(true);
 	EquippedWeapon = nullptr;
 
 	Character->GetCharacterMovement()->bOrientRotationToMovement = true;
@@ -208,6 +220,9 @@ void UCombatComponent::SetCombatCrosshairs(float DeltaTime)
 			CrosshairShootingFactor = FMath::FInterpTo(CrosshairShootingFactor, 0, DeltaTime, 20.f);
 
 			HUDPackage.CrosshairSpread = .5f + CrosshairVelocityFactor + CrosshairInAirFactor + CrosshairAimFactor + CrosshairShootingFactor;
+
+			HUDPackage.CrosshairColor = EquippedWeapon->BaseCrosshairColor;
+			HUDPackage.CrosshairSize = EquippedWeapon->CrosshairSize;
 
 			HUD->SetHudPackage(HUDPackage);
 		}

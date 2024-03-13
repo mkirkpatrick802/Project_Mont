@@ -8,6 +8,19 @@ APickupObject::APickupObject()
 void APickupObject::TogglePhysics(bool Enabled) const
 {
 	ToggleInteractWidget(Enabled);
-	StaticMesh->SetSimulatePhysics(Enabled);
-	RootComponent->SetWorldRotation(FRotator::ZeroRotator);
+
+	UStaticMeshComponent* StaticMeshComponent = Cast<UStaticMeshComponent>(ModelComponent);
+	USkeletalMeshComponent* SkeletalMeshComponent = Cast<USkeletalMeshComponent>(ModelComponent);
+
+	if (StaticMeshComponent)
+	{
+		StaticMeshComponent->SetSimulatePhysics(Enabled);
+		StaticMeshComponent->SetAllPhysicsLinearVelocity(FVector::Zero());
+	}
+
+	if (SkeletalMeshComponent)
+	{
+		SkeletalMeshComponent->SetSimulatePhysics(Enabled);
+		SkeletalMeshComponent->SetAllPhysicsLinearVelocity(FVector::Zero());
+	}
 }

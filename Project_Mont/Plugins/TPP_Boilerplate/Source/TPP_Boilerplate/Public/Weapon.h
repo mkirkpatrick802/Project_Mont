@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "InteractableObject.h"
+#include "PickupObject.h"
 #include "GameFramework/Actor.h"
 #include "Weapon.generated.h"
 
@@ -10,7 +11,7 @@ class UWidgetComponent;
 class USphereComponent;
 
 UCLASS()
-class TPP_BOILERPLATE_API AWeapon : public AInteractableObject
+class TPP_BOILERPLATE_API AWeapon : public APickupObject
 {
 	GENERATED_BODY()
 
@@ -55,6 +56,16 @@ public:
 
 	UPROPERTY(EditAnywhere, Category = Crosshairs)
 	UTexture2D* CrosshairsBottom;
+
+	/*
+	*	Weapon Crosshair Settings
+	*/
+
+	UPROPERTY(EditAnywhere, Category = Crosshairs)
+	FLinearColor BaseCrosshairColor = FLinearColor::White;
+
+	UPROPERTY(EditAnywhere, Category = Crosshairs)
+	float CrosshairSize = .8;
 
 	/*
 	*	Zoomed FOV while aiming

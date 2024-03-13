@@ -85,8 +85,6 @@ void UInteractComponent::PickUpObject(APickupObject* ObjectToPickUp)
 
 void UInteractComponent::DropObjectRequest()
 {
-	//if (!PickedUpObject) return;
-
 	ServerDropObjectRequest(PickedUpObject);
 }
 

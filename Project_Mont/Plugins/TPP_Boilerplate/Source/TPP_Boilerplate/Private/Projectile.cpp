@@ -44,8 +44,7 @@ void AProjectile::BeginPlay()
 
 void AProjectile::OnHit(UPrimitiveComponent* HitComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit)
 {
-	ATPPCharacter* Character = Cast<ATPPCharacter>(OtherActor);
-	if(Character)
+	if(ATPPCharacter* Character = Cast<ATPPCharacter>(OtherActor))
 	{
 		Character->MulticastHit();
 	}
