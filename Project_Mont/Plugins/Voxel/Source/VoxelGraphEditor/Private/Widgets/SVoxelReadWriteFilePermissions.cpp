@@ -1,6 +1,7 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "SVoxelReadWriteFilePermissions.h"
+
 #include "ISourceControlModule.h"
 #include "SSettingsEditorCheckoutNotice.h"
 

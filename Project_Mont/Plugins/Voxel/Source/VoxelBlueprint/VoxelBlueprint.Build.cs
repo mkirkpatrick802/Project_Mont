@@ -1,4 +1,4 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -10,7 +10,6 @@ public class VoxelBlueprint : ModuleRules_Voxel
             new string[]
             {
                 "VoxelCoreEditor",
-                "VoxelGraphCore",
                 "VoxelGraphEditor",
                 "Slate",
                 "SlateCore",

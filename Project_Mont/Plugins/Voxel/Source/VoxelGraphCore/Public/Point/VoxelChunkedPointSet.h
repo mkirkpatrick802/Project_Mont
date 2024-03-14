@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -20,14 +20,18 @@ struct VOXELGRAPHCORE_API FVoxelChunkedPointSet
 public:
 	FVoxelChunkedPointSet() = default;
 	FVoxelChunkedPointSet(
-		int32 ChunkSize,
+		const int32 ChunkSize,
 		const FVoxelPointChunkProviderRef& ChunkProviderRef,
-		const TSharedRef<FVoxelTerminalGraphInstance>& TerminalGraphInstance,
+		const TSharedRef<FVoxelQueryContext>& Context,
 		const TSharedRef<const TVoxelComputeValue<FVoxelPointSet>>& ComputePoints);
 
 	FORCEINLINE bool IsValid() const
 	{
-		return TerminalGraphInstance.IsValid();
+		return Context.IsValid();
+	}
+	FORCEINLINE const FVoxelRuntimeInfo& GetRuntimeInfoRef() const
+	{
+		return *Context->RuntimeInfo;
 	}
 	FORCEINLINE int32 GetChunkSize() const
 	{
@@ -37,8 +41,6 @@ public:
 	{
 		return ChunkProviderRef;
 	}
-
-	const FVoxelRuntimeInfo& GetRuntimeInfoRef() const;
 
 	TVoxelFutureValue<FVoxelPointSet> GetPoints(
 		FVoxelDependencyTracker& DependencyTracker,
@@ -56,7 +58,7 @@ public:
 private:
 	int32 ChunkSize = 0;
 	FVoxelPointChunkProviderRef ChunkProviderRef;
-	TSharedPtr<FVoxelTerminalGraphInstance> TerminalGraphInstance;
+	TSharedPtr<FVoxelQueryContext> Context;
 	TSharedPtr<const TVoxelComputeValue<FVoxelPointSet>> ComputePoints;
 };
 

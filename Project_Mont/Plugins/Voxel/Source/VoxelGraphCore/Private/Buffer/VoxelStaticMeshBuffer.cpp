@@ -1,9 +1,9 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "Buffer/VoxelStaticMeshBuffer.h"
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
 
-FVoxelCriticalSection GVoxelStaticMesh_CriticalSection;
+FVoxelFastCriticalSection GVoxelStaticMesh_CriticalSection;
 TMap<FObjectKey, FVoxelStaticMesh::FMeshInfo> GVoxelStaticMesh_MeshToMeshInfo;
 
 FVoxelStaticMesh::FMeshInfo FVoxelStaticMesh::GetMeshInfo() const

@@ -1,14 +1,15 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelCoreMinimal.h"
-#include "Containers/Queue.h"
 #include "VoxelMinimal/VoxelVirtualStruct.h"
 #include "VoxelMinimal/Containers/VoxelMap.h"
 #include "VoxelMaterialRef.generated.h"
 
-struct FVoxelMaterialInstanceRef;
+struct FVoxelInstanceRef;
+class UMaterialInterface;
+class UMaterialInstanceDynamic;
 
 USTRUCT()
 struct VOXELCORE_API FVoxelDynamicMaterialParameter : public FVoxelVirtualStruct
@@ -41,18 +42,18 @@ public:
 	// Will be null if the asset is force deleted
 	FORCEINLINE UMaterialInterface* GetMaterial() const
 	{
-		checkVoxelSlow(Material == WeakMaterial.Get() || !WeakMaterial.IsValid());
+		checkVoxelSlow(Material == WeakMaterial || !WeakMaterial.IsValid());
 		return Material;
 	}
 	FORCEINLINE TWeakObjectPtr<UMaterialInterface> GetWeakMaterial() const
 	{
-		checkVoxelSlow(Material == WeakMaterial.Get() || !WeakMaterial.IsValid());
+		checkVoxelSlow(Material == WeakMaterial || !WeakMaterial.IsValid());
 		return WeakMaterial;
 	}
 	// If true, this a material instance the plugin created & we can set parameters on it
 	FORCEINLINE bool IsInstance() const
 	{
-		return MaterialInstanceRef.IsValid();
+		return InstanceRef.IsValid();
 	}
 
 	void AddResource(const TSharedPtr<FVirtualDestructor>& Resource);
@@ -62,17 +63,17 @@ public:
 	void SetTextureParameter_GameThread(FName Name, UTexture* Value);
 	void SetDynamicParameter_GameThread(FName Name, const TSharedRef<FVoxelDynamicMaterialParameter>& Value);
 
-	const float* FindScalarParameter(FName Name) const;
-	const FVector4* FindVectorParameter(FName Name) const;
-	UTexture* FindTextureParameter(FName Name) const;
-	TSharedPtr<FVoxelDynamicMaterialParameter> FindDynamicParameter(FName Name) const;
+	const float* FindScalarParameter(const FName Name) const;
+	const FVector4* FindVectorParameter(const FName Name) const;
+	UTexture* FindTextureParameter(const FName Name) const;
+	TSharedPtr<FVoxelDynamicMaterialParameter> FindDynamicParameter(const FName Name) const;
 
 private:
 	FVoxelMaterialRef() = default;
 
-	TObjectPtr<UMaterialInterface> Material;
+	UMaterialInterface* Material = nullptr;
 	TWeakObjectPtr<UMaterialInterface> WeakMaterial;
-	TSharedPtr<FVoxelMaterialInstanceRef> MaterialInstanceRef;
+	TSharedPtr<FVoxelInstanceRef> InstanceRef;
 
 	TVoxelMap<FName, float> ScalarParameters;
 	TVoxelMap<FName, FVector4> VectorParameters;

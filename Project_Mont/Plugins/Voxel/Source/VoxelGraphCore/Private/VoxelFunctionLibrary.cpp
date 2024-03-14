@@ -1,17 +1,18 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelFunctionLibrary.h"
+#include "VoxelFunctionNode.h"
 #include "VoxelBuffer.h"
-#include "Nodes/VoxelNode_UFunction.h"
+#include "VoxelSurface.h"
 
-void UVoxelFunctionLibrary::RaiseQueryErrorStatic(const FVoxelGraphNodeRef& Node, const UScriptStruct* QueryType)
+void UVoxelFunctionLibrary::RaiseQueryError(const FVoxelGraphNodeRef& Node, const UScriptStruct* QueryType)
 {
-	IVoxelNodeInterface::RaiseQueryErrorStatic(Node, QueryType);
+	FVoxelNodeHelpers::RaiseQueryError(Node, QueryType);
 }
 
-void UVoxelFunctionLibrary::RaiseBufferErrorStatic(const FVoxelGraphNodeRef& Node)
+void UVoxelFunctionLibrary::RaiseBufferError(const FVoxelGraphNodeRef& Node)
 {
-	IVoxelNodeInterface::RaiseBufferErrorStatic(Node);
+	FVoxelNodeHelpers::RaiseBufferError(Node);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -24,7 +25,7 @@ FVoxelPinType UVoxelFunctionLibrary::MakeType(const FProperty& Property)
 	{
 		if (StructProperty->Struct == StaticStructFast<FVoxelRuntimePinValue>())
 		{
-			return FVoxelPinType::MakeWildcard();
+			return FVoxelPinType::MakeWildcard();;
 		}
 		if (StructProperty->Struct->IsChildOf(StaticStructFast<FVoxelBuffer>()))
 		{
@@ -77,7 +78,7 @@ UVoxelFunctionLibrary::FCachedFunction::FCachedFunction(const UFunction& Functio
 }
 
 void UVoxelFunctionLibrary::Call(
-	const FVoxelNode_UFunction& Node,
+	const FVoxelFunctionNode& Node,
 	const FCachedFunction& CachedFunction,
 	const FVoxelQuery& Query,
 	const TConstVoxelArrayView<FVoxelRuntimePinValue*> Values)
@@ -134,9 +135,9 @@ void UVoxelFunctionLibrary::Call(
 				continue;
 			}
 
-			if (Value->CanBeCastedTo<FVoxelBuffer>())
+			if (Value->CanBeCastedTo<FVoxelBufferInterface>())
 			{
-				Num = FMath::Max(Num, Value->Get<FVoxelBuffer>().Num());
+				Num = FMath::Max(Num, Value->Get<FVoxelBufferInterface>().Num_Slow());
 			}
 		}
 
@@ -150,19 +151,6 @@ void UVoxelFunctionLibrary::Call(
 		FContext Context;
 		Context.NodeRef = &Node.GetNodeRef();
 		Context.Query = &Query;
-
-#if VOXEL_DEBUG
-		TVoxelArray<FName> AllOutputPins_Debug;
-		for (const FProperty& Property : GetFunctionProperties(CachedFunction.Function))
-		{
-			if (!IsFunctionInput(Property))
-			{
-				AllOutputPins_Debug.Add(Property.GetFName());
-			}
-		}
-		Context.AllOutputPins_Debug = AllOutputPins_Debug;
-#endif
-
 		FFrame Frame;
 		Frame.Values = Values;
 		CachedFunction.NativeFunc(reinterpret_cast<UObject*>(&Context), Frame, ReturnMemory);
@@ -206,8 +194,8 @@ void UVoxelFunctionLibrary::Call(
 	}
 
 	if (StatScope.IsEnabled() &&
-		ReturnValue.CanBeCastedTo<FVoxelBuffer>())
+		ReturnValue.CanBeCastedTo<FVoxelBufferInterface>())
 	{
-		StatScope.SetCount(FMath::Max(Num, ReturnValue.Get<FVoxelBuffer>().Num()));
+		StatScope.SetCount(FMath::Max(Num, ReturnValue.Get<FVoxelBufferInterface>().Num_Slow()));
 	}
 }

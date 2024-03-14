@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -20,7 +20,7 @@ public:
 	/** Disallow blueprint base classes. */
 	bool bDisallowBlueprintBase = false;
 
-	virtual bool IsClassAllowed(const FClassViewerInitializationOptions& InInitOptions, const UClass* InClass, const TSharedRef< FClassViewerFilterFuncs > InFilterFuncs) override
+	virtual bool IsClassAllowed(const FClassViewerInitializationOptions& InInitOptions, const UClass* InClass, TSharedRef< FClassViewerFilterFuncs > InFilterFuncs) override
 	{
 		const bool bAllowed =
 			!InClass->HasAnyClassFlags(DisallowedClassFlags) &&
@@ -37,7 +37,7 @@ public:
 		return bAllowed;
 	}
 
-	virtual bool IsUnloadedClassAllowed(const FClassViewerInitializationOptions& InInitOptions, const TSharedRef<const IUnloadedBlueprintData> InUnloadedClassData, const TSharedRef<FClassViewerFilterFuncs> InFilterFuncs) override
+	virtual bool IsUnloadedClassAllowed(const FClassViewerInitializationOptions& InInitOptions, const TSharedRef<const IUnloadedBlueprintData> InUnloadedClassData, TSharedRef<FClassViewerFilterFuncs> InFilterFuncs) override
 	{
 		if (bDisallowBlueprintBase)
 		{

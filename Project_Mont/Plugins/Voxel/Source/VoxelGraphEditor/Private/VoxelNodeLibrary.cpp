@@ -1,12 +1,12 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelNodeLibrary.h"
+#include "VoxelFunctionNode.h"
 #include "VoxelFunctionLibrary.h"
-#include "Nodes/VoxelNode_UFunction.h"
 
 FVoxelNodeLibrary* GVoxelNodeLibrary = nullptr;
 
-VOXEL_RUN_ON_STARTUP_EDITOR_COMMANDLET(RegisterVoxelNodeLibrary)
+VOXEL_RUN_ON_STARTUP_EDITOR_COOK(RegisterVoxelNodeLibrary)
 {
 	GVoxelNodeLibrary = new FVoxelNodeLibrary();
 	GOnVoxelModuleUnloaded_DoCleanup.AddLambda([]
@@ -34,14 +34,8 @@ FVoxelNodeLibrary::FVoxelNodeLibrary()
 			continue;
 		}
 
-		Nodes.Add(MakeSharedStruct<FVoxelNode>(Struct));
+		Nodes.Add(TVoxelInstancedStruct<FVoxelNode>(Struct).Release());
 	}
-
-	for (const TSharedRef<const FVoxelNode>& Node : Nodes)
-	{
-		StructToNode.Add_EnsureNew(Node->GetStruct(), Node);
-	}
-
 	for (const TSubclassOf<UVoxelFunctionLibrary>& Class : GetDerivedClasses<UVoxelFunctionLibrary>())
 	{
 		for (UFunction* Function : GetClassFunctions(Class))
@@ -51,7 +45,7 @@ FVoxelNodeLibrary::FVoxelNodeLibrary()
 				continue;
 			}
 
-			const TSharedRef<FVoxelNode_UFunction> Node = MakeVoxelShared<FVoxelNode_UFunction>();
+			FVoxelFunctionNode* Node = new (GVoxelMemory) FVoxelFunctionNode();
 			Node->SetFunction_EditorOnly(Function);
 			Nodes.Add(Node);
 		}
@@ -59,7 +53,7 @@ FVoxelNodeLibrary::FVoxelNodeLibrary()
 	Nodes.Shrink();
 
 #if VOXEL_DEBUG
-	for (const TSharedRef<const FVoxelNode>& Node : Nodes)
+	for (const FVoxelNode* Node : Nodes)
 	{
 		(void)Node->GetCategory();
 		(void)Node->GetDisplayName();
@@ -67,7 +61,7 @@ FVoxelNodeLibrary::FVoxelNodeLibrary()
 	}
 #endif
 
-	for (const TSharedRef<const FVoxelNode>& Node : Nodes)
+	for (const FVoxelNode* Node : Nodes)
 	{
 		if (!Node->GetMetadataContainer().HasMetaDataHierarchical(STATIC_FNAME("NativeMakeFunc")))
 		{
@@ -88,12 +82,13 @@ FVoxelNodeLibrary::FVoxelNodeLibrary()
 
 		for (const FVoxelPinType& Type : Types.GetTypes())
 		{
-			ensure(!TypeToMakeNode.Contains(Type));
-			TypeToMakeNode.Add_EnsureNew(Type, Node);
+			ensure(!MakeNodes.Contains(Type));
+			MakeNodes.Add(Type, Node);
 		}
 	}
+	MakeNodes.Compact();
 
-	for (const TSharedRef<const FVoxelNode>& Node : Nodes)
+	for (const FVoxelNode* Node : Nodes)
 	{
 		if (!Node->GetMetadataContainer().HasMetaDataHierarchical(STATIC_FNAME("NativeBreakFunc")))
 		{
@@ -114,12 +109,13 @@ FVoxelNodeLibrary::FVoxelNodeLibrary()
 
 		for (const FVoxelPinType& Type : Types.GetTypes())
 		{
-			ensure(!TypeToBreakNode.Contains(Type));
-			TypeToBreakNode.Add_EnsureNew(Type, Node);
+			ensure(!BreakNodes.Contains(Type));
+			BreakNodes.Add(Type, Node);
 		}
 	}
+	BreakNodes.Compact();
 
-	for (const TSharedRef<const FVoxelNode>& Node : Nodes)
+	for (const FVoxelNode* Node : Nodes)
 	{
 		if (!Node->GetMetadataContainer().HasMetaDataHierarchical(STATIC_FNAME("Autocast")))
 		{
@@ -185,9 +181,23 @@ FVoxelNodeLibrary::FVoxelNodeLibrary()
 
 		for (const TPair<FVoxelPinType, FVoxelPinType>& Pair : Pairs)
 		{
-			ensure(!FromTypeAndToTypeToCastNode.Contains(Pair));
-			FromTypeAndToTypeToCastNode.Add_EnsureNew(Pair, Node);
+			ensure(!CastNodes.Contains(Pair));
+			CastNodes.Add(Pair, Node);
 		}
+	}
+	CastNodes.Compact();
+
+	for (const FVoxelNode* Node : Nodes)
+	{
+		StructToNodes.Add(Node->GetStruct(), Node);
+	}
+}
+
+FVoxelNodeLibrary::~FVoxelNodeLibrary()
+{
+	for (const FVoxelNode* Node : Nodes)
+	{
+		FVoxelMemory::Delete(Node);
 	}
 }
 

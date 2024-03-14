@@ -1,24 +1,18 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "Customizations/VoxelPinValueCustomizationHelper.h"
 #include "VoxelPinType.h"
 #include "VoxelPinValue.h"
 #include "VoxelParameter.h"
-#include "Channel/VoxelChannelName.h"
-#include "Buffer/VoxelDoubleBuffers.h"
-#include "Widgets/SVoxelGraphPinTypeComboBox.h"
 
-TSharedPtr<FVoxelInstancedStructDetailsWrapper> FVoxelPinValueCustomizationHelper::CreatePinValueCustomization(
+TSharedPtr<FVoxelStructCustomizationWrapper> FVoxelPinValueCustomizationHelper::CreatePinValueCustomization(
 	const TSharedRef<IPropertyHandle>& PropertyHandle,
 	const FVoxelDetailInterface& DetailInterface,
-	const FSimpleDelegate& RefreshDelegate,
 	const TMap<FName, FString>& MetaData,
 	const TFunctionRef<void(FDetailWidgetRow&, const TSharedRef<SWidget>&)> SetupRow,
 	const FAddPropertyParams& Params,
 	const TAttribute<bool>& IsEnabled)
 {
-	ensure(RefreshDelegate.IsBound());
-
 	const auto ApplyMetaData = [&](const TSharedRef<IPropertyHandle>& ChildHandle)
 	{
 		if (const FProperty* MetaDataProperty = PropertyHandle->GetMetaDataProperty())
@@ -57,8 +51,6 @@ TSharedPtr<FVoxelInstancedStructDetailsWrapper> FVoxelPinValueCustomizationHelpe
 	{
 		const TSharedRef<IPropertyHandle> ArrayHandle = PropertyHandle->GetChildHandleStatic(FVoxelPinValue, Array);
 
-		ApplyMetaData(ArrayHandle);
-
 		IDetailPropertyRow& Row = DetailInterface.AddProperty(ArrayHandle);
 
 		// Disable child rows
@@ -78,8 +70,7 @@ TSharedPtr<FVoxelInstancedStructDetailsWrapper> FVoxelPinValueCustomizationHelpe
 	if (Type.IsStruct())
 	{
 		const TSharedRef<IPropertyHandle> StructHandle = PropertyHandle->GetChildHandleStatic(FVoxelPinValue, Struct);
-		ApplyMetaData(StructHandle);
-		const TSharedPtr<FVoxelInstancedStructDetailsWrapper> Wrapper = FVoxelInstancedStructDetailsWrapper::Make(StructHandle);
+		const TSharedPtr<FVoxelStructCustomizationWrapper> Wrapper = FVoxelStructCustomizationWrapper::Make(StructHandle);
 		if (!ensure(Wrapper))
 		{
 			return nullptr;
@@ -179,7 +170,7 @@ TSharedPtr<FVoxelInstancedStructDetailsWrapper> FVoxelPinValueCustomizationHelpe
 				.MinDesiredWidth(125.f)
 				[
 					SNew(SVoxelDetailComboBox<uint8>)
-					.RefreshDelegate(RefreshDelegate)
+					.RefreshDelegate(FVoxelEditorUtilities::MakeRefreshDelegate(PropertyHandle, DetailInterface))
 					.Options_Lambda([=]
 					{
 						TArray<uint8> Enumerators;
@@ -196,7 +187,7 @@ TSharedPtr<FVoxelInstancedStructDetailsWrapper> FVoxelPinValueCustomizationHelpe
 
 						return Enumerators;
 					})
-					.CurrentOption(Byte)
+					.CurrentOption(Enum->GetIndexByValue(Byte))
 					.OptionText(MakeLambdaDelegate([=](const uint8 Value)
 					{
 						FString EnumDisplayName = Enum->GetDisplayNameTextByValue(Value).ToString();
@@ -257,16 +248,15 @@ TSharedPtr<FVoxelInstancedStructDetailsWrapper> FVoxelPinValueCustomizationHelpe
 }
 
 void FVoxelPinValueCustomizationHelper::CreatePinValueRangeSetter(FDetailWidgetRow& Row,
-	const TSharedRef<IPropertyHandle>& PropertyHandle,
-	const FText& Name,
-	const FText& ToolTip,
-	FName Min,
-	FName Max,
-	const TFunction<bool(const FVoxelPinType&)>& IsVisible,
-	const TFunction<TMap<FName, FString>(const TSharedPtr<IPropertyHandle>&)>& GetMetaData,
-	const TFunction<void(const TSharedPtr<IPropertyHandle>&, const TMap<FName, FString>&)>& SetMetaData)
+		const TSharedRef<IPropertyHandle>& PropertyHandle,
+		const FText& Name,
+		const FText& ToolTip,
+		FName Min,
+		FName Max,
+		const TFunction<TMap<FName, FString>(const TSharedPtr<IPropertyHandle>&)>& GetMetaData,
+		const TFunction<void(const TSharedPtr<IPropertyHandle>&, const TMap<FName, FString>&)>& SetMetaData)
 {
-	const auto RangeVisibility = [IsVisible, WeakHandle = MakeWeakPtr(PropertyHandle)]() -> EVisibility
+	const auto RangeVisibility = [WeakHandle = MakeWeakPtr(PropertyHandle)]() -> EVisibility
 	{
 		const TSharedPtr<IPropertyHandle> Handle = WeakHandle.Pin();
 		if (!Handle)
@@ -275,8 +265,10 @@ void FVoxelPinValueCustomizationHelper::CreatePinValueRangeSetter(FDetailWidgetR
 		}
 
 		const TSharedRef<IPropertyHandle> TypeHandle = Handle->GetChildHandleStatic(FVoxelParameter, Type);
-		const FVoxelPinType& PinType = FVoxelEditorUtilities::GetStructPropertyValue<FVoxelPinType>(TypeHandle).GetInnerType();
-		if (IsVisible(PinType))
+		const FVoxelPinType& PinType = FVoxelEditorUtilities::GetStructPropertyValue<FVoxelPinType>(TypeHandle);
+		if (PinType.Is<int32>() ||
+			PinType.Is<float>() ||
+			PinType.Is<double>())
 		{
 			return EVisibility::Visible;
 		}
@@ -314,7 +306,7 @@ void FVoxelPinValueCustomizationHelper::CreatePinValueRangeSetter(FDetailWidgetR
 		[
 			SNew(SEditableTextBox)
 			.Text(MinValue)
-			.OnTextCommitted_Lambda([Min, GetMetaData, SetMetaData, WeakHandle = MakeWeakPtr(PropertyHandle)](const FText& NewValue, const ETextCommit::Type ActionType)
+			.OnTextCommitted_Lambda([Min, GetMetaData, SetMetaData, WeakHandle = MakeWeakPtr(PropertyHandle)](const FText& NewValue, ETextCommit::Type ActionType)
 			{
 				const TSharedPtr<IPropertyHandle> Handle = WeakHandle.Pin();
 				if (!ensure(Handle))
@@ -329,14 +321,7 @@ void FVoxelPinValueCustomizationHelper::CreatePinValueRangeSetter(FDetailWidgetR
 				}
 
 				TMap<FName, FString> MetaData = GetMetaData(Handle);
-				if (!NewValue.IsEmpty())
-				{
-					MetaData.Add(Min, NewValue.ToString());
-				}
-				else
-				{
-					MetaData.Remove(Min);
-				}
+				MetaData.Add(Min, NewValue.ToString());
 				SetMetaData(Handle, MetaData);
 			})
 		]
@@ -351,7 +336,7 @@ void FVoxelPinValueCustomizationHelper::CreatePinValueRangeSetter(FDetailWidgetR
 		[
 			SNew(SEditableTextBox)
 			.Text(MaxValue)
-			.OnTextCommitted_Lambda([Max, GetMetaData, SetMetaData, WeakHandle = MakeWeakPtr(PropertyHandle)](const FText& NewValue, const ETextCommit::Type ActionType)
+			.OnTextCommitted_Lambda([Max, GetMetaData, SetMetaData, WeakHandle = MakeWeakPtr(PropertyHandle)](const FText& NewValue, ETextCommit::Type ActionType)
 			{
 				const TSharedPtr<IPropertyHandle> Handle = WeakHandle.Pin();
 				if (!ensure(Handle))
@@ -366,189 +351,10 @@ void FVoxelPinValueCustomizationHelper::CreatePinValueRangeSetter(FDetailWidgetR
 				}
 
 				TMap<FName, FString> MetaData = GetMetaData(Handle);
-				if (!NewValue.IsEmpty())
-				{
-					MetaData.Add(Max, NewValue.ToString());
-				}
-				else
-				{
-					MetaData.Remove(Max);
-				}
+				MetaData.Add(Max, NewValue.ToString());
 				SetMetaData(Handle, MetaData);
 			})
 		]
-	];
-}
-
-void FVoxelPinValueCustomizationHelper::CreatePinValueUnitSetter(
-	FDetailWidgetRow& Row,
-	const TSharedRef<IPropertyHandle>& PropertyHandle,
-	const TFunction<TMap<FName, FString>(const TSharedPtr<IPropertyHandle>&)>& GetMetaData,
-	const TFunction<void(const TSharedPtr<IPropertyHandle>&, const TMap<FName, FString>&)>& SetMetaData)
-{
-	const auto UnitsVisibility = [WeakHandle = MakeWeakPtr(PropertyHandle)]() -> EVisibility
-	{
-		const TSharedPtr<IPropertyHandle> Handle = WeakHandle.Pin();
-		if (!Handle)
-		{
-			return EVisibility::Collapsed;
-		}
-
-		const TSharedRef<IPropertyHandle> TypeHandle = Handle->GetChildHandleStatic(FVoxelParameter, Type);
-		const FVoxelPinType& PinType = FVoxelEditorUtilities::GetStructPropertyValue<FVoxelPinType>(TypeHandle).GetInnerType();
-		return IsNumericType(PinType) ? EVisibility::Visible : EVisibility::Collapsed;
-	};
-
-	TOptional<EUnit> Unit;
-	{
-		TMap<FName, FString> MetaData = GetMetaData(PropertyHandle);
-		if (const FString* Value = MetaData.Find(STATIC_FNAME("Units")))
-		{
-			Unit = FUnitConversion::UnitFromString(**Value);
-		}
-	}
-
-	Row
-	.Visibility(MakeAttributeLambda(UnitsVisibility))
-	.NameContent()
-	[
-		SNew(SVoxelDetailText)
-		.Text(INVTEXT("Units"))
-		.ToolTipText(INVTEXT("Units type to appear near the value"))
-	]
-	.ValueContent()
-	[
-		SNew(SVoxelDetailComboBox<EUnit>)
-		.NoRefreshDelegate()
-		.CurrentOption(Unit.Get(EUnit::Unspecified))
-		.Options_Lambda([]
-		{
-			static TArray<EUnit> Result;
-			if (Result.Num() == 0)
-			{
-				const UEnum* Enum = StaticEnumFast<EUnit>();
-				Result.SetNum(Enum->NumEnums() - 1);
-				Result[0] = EUnit::Unspecified;
-				// -2 for MAX and Unspecified, since Unspecified is last entry
-				for (uint8 Index = 0; Index < Enum->NumEnums() - 2; Index++)
-				{
-					Result[Index + 1] = EUnit(Enum->GetValueByIndex(Index));
-				}
-			}
-			return Result;
-		})
-		.OnSelection_Lambda([GetMetaData, SetMetaData, WeakHandle = MakeWeakPtr(PropertyHandle)](const EUnit NewUnitType)
-		{
-			const TSharedPtr<IPropertyHandle> Handle = WeakHandle.Pin();
-			if (!ensure(Handle))
-			{
-				return;
-			}
-
-			TMap<FName, FString> MetaData = GetMetaData(Handle);
-			if (NewUnitType == EUnit::Unspecified)
-			{
-				MetaData.Remove(STATIC_FNAME("Units"));
-			}
-			else
-			{
-				const UEnum* Enum = StaticEnumFast<EUnit>();
-				FString NewValue = Enum->GetValueAsName(NewUnitType).ToString();
-				NewValue.RemoveFromStart("EUnit::");
-
-				// These types have different parse candidates
-				switch (NewUnitType)
-				{
-				case EUnit::Multiplier: NewValue = "times"; break;
-				UE_503_ONLY(case EUnit::KilogramCentimetersPerSecondSquared: NewValue = "KilogramsCentimetersPerSecondSquared"; break;)
-				UE_503_ONLY(case EUnit::KilogramCentimetersSquaredPerSecondSquared: NewValue = "KilogramsCentimetersSquaredPerSecondSquared"; break;)
-				case EUnit::CandelaPerMeter2: NewValue = "CandelaPerMeterSquared"; break;
-				UE_503_ONLY(case EUnit::ExposureValue: NewValue = "EV"; break;)
-				case EUnit::PixelsPerInch: NewValue = "ppi"; break;
-				case EUnit::Percentage: NewValue = "Percent"; break;
-				default: break;
-				}
-
-				MetaData.Add(STATIC_FNAME("Units"), FUnitConversion::GetUnitDisplayString(NewUnitType));
-			}
-			SetMetaData(Handle, MetaData);
-		})
-		.OptionText_Lambda([](const EUnit UnitType)
-		{
-			const UEnum* Enum = StaticEnumFast<EUnit>();
-			return Enum->GetDisplayNameTextByValue(int64(UnitType)).ToString();
-		})
-	];
-}
-
-void FVoxelPinValueCustomizationHelper::CreatePinValueChannelTypeSetter(
-	FDetailWidgetRow& Row,
-	const TSharedRef<IPropertyHandle>& PropertyHandle,
-	const TFunction<TMap<FName, FString>(const TSharedPtr<IPropertyHandle>&)>& GetMetaData,
-	const TFunction<void(const TSharedPtr<IPropertyHandle>&, const TMap<FName, FString>&)>& SetMetaData)
-{
-	const auto TypeVisibility = [WeakHandle = MakeWeakPtr(PropertyHandle)]() -> EVisibility
-	{
-		const TSharedPtr<IPropertyHandle> Handle = WeakHandle.Pin();
-		if (!Handle)
-		{
-			return EVisibility::Collapsed;
-		}
-
-		const TSharedRef<IPropertyHandle> TypeHandle = Handle->GetChildHandleStatic(FVoxelParameter, Type);
-		const FVoxelPinType& PinType = FVoxelEditorUtilities::GetStructPropertyValue<FVoxelPinType>(TypeHandle).GetInnerType();
-		return PinType.Is<FVoxelChannelName>() ? EVisibility::Visible : EVisibility::Collapsed;
-	};
-
-	FVoxelPinType CurrentType = FVoxelPinType::Make<FVoxelWildcard>();
-	{
-		const TMap<FName, FString> MetaData = GetMetaData(PropertyHandle);
-		if (const FString* Value = MetaData.Find("Type"))
-		{
-			ensure(FVoxelUtilities::TryImportText(*Value, CurrentType));
-		}
-	}
-
-	Row
-	.Visibility(MakeAttributeLambda(TypeVisibility))
-	.NameContent()
-	[
-		SNew(SVoxelDetailText)
-		.Text(INVTEXT("Channel Type"))
-		.ToolTipText(INVTEXT("Allowed channel types"))
-	]
-	.ValueContent()
-	[
-		SNew(SVoxelPinTypeComboBox)
-		.CurrentType(CurrentType)
-		.AllowedTypes(FVoxelPinTypeSet::All())
-		.AllowWildcard(true)
-		.OnTypeChanged_Lambda([GetMetaData, SetMetaData, WeakHandle = MakeWeakPtr(PropertyHandle)](FVoxelPinType NewType)
-		{
-			const TSharedPtr<IPropertyHandle> Handle = WeakHandle.Pin();
-			if (!Handle)
-			{
-				return;
-			}
-
-			TMap<FName, FString> MetaData = GetMetaData(Handle);
-
-			if (!NewType.IsWildcard())
-			{
-				const FString NewValueString = FVoxelUtilities::PropertyToText_Direct(
-					FVoxelUtilities::MakeStructProperty<FVoxelPinType>(),
-					reinterpret_cast<void*>(&NewType),
-					nullptr);
-
-				MetaData.Add("Type", NewValueString);
-			}
-			else
-			{
-				MetaData.Remove("Type");
-			}
-
-			SetMetaData(Handle, MetaData);
-		})
 	];
 }
 
@@ -564,7 +370,6 @@ float FVoxelPinValueCustomizationHelper::GetValueWidgetWidthByType(const TShared
 	}
 
 	if (ExposedType.Is<FVector2D>() ||
-		ExposedType.Is<FVoxelDoubleVector2D>() ||
 		ExposedType.Is<FIntPoint>() ||
 		ExposedType.Is<FVoxelFloatRange>() ||
 		ExposedType.Is<FVoxelInt32Range>())
@@ -573,7 +378,6 @@ float FVoxelPinValueCustomizationHelper::GetValueWidgetWidthByType(const TShared
 	}
 
 	if (ExposedType.Is<FVector>() ||
-		ExposedType.Is<FVoxelDoubleVector>() ||
 		ExposedType.Is<FIntVector>() ||
 		ExposedType.Is<FQuat>())
 	{
@@ -592,23 +396,6 @@ float FVoxelPinValueCustomizationHelper::GetValueWidgetWidthByType(const TShared
 	}
 
 	return FDetailWidgetRow::DefaultValueMaxWidth + ExtendByArray;
-}
-
-bool FVoxelPinValueCustomizationHelper::IsNumericType(const FVoxelPinType& Type)
-{
-	return
-		Type.Is<int32>() ||
-		Type.Is<float>() ||
-		Type.Is<double>() ||
-		Type.Is<FIntPoint>() ||
-		Type.Is<FIntVector>() ||
-		Type.Is<FIntVector4>() ||
-		Type.Is<FVector2D>() ||
-		Type.Is<FVector>() ||
-		Type.Is<FVoxelDoubleVector2D>() ||
-		Type.Is<FVoxelDoubleVector>() ||
-		Type.Is<FVoxelInt32Range>() ||
-		Type.Is<FVoxelFloatRange>();
 }
 
 ///////////////////////////////////////////////////////////////////////////////

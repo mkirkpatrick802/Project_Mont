@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "Toolkits/VoxelEditorToolkitImpl.h"
 #include "Toolkits/ToolkitManager.h"
@@ -15,7 +15,7 @@ VOXEL_RUN_ON_STARTUP_EDITOR(RegisterToolkits)
 			continue;
 		}
 
-		const TSharedRef<FVoxelToolkit> Toolkit = MakeSharedStruct<FVoxelToolkit>(Struct);
+		TVoxelInstancedStruct<FVoxelToolkit> Toolkit(Struct);
 
 		const FObjectProperty* Property = Toolkit->GetObjectProperty();
 		if (!Property)
@@ -69,7 +69,7 @@ void FVoxelToolkitApplicationMode::PreDeactivateMode()
 	}
 }
 
-void FVoxelToolkitApplicationMode::RegisterTabFactories(const TSharedPtr<FTabManager> InTabManager)
+void FVoxelToolkitApplicationMode::RegisterTabFactories(TSharedPtr<FTabManager> InTabManager)
 {
 	ensure(!Toolkit);
 	Toolkit = MakeSharedStruct<FVoxelToolkit>(Mode.Struct);
@@ -139,8 +139,6 @@ void FVoxelEditorToolkitImpl::InitVoxelEditor(const TSharedPtr<IToolkitHost>& Ed
 	Toolkit->InitializeInternal(ToolkitCommands, ObjectToEdit);
 
 	const TArray<FVoxelToolkit::FMode> Modes = Toolkit->GetModes();
-	const UScriptStruct* DefaultMode = Toolkit->GetDefaultMode();
-
 	for (const FVoxelToolkit::FMode& Mode : Modes)
 	{
 		if (ensure(Mode.Object.Get()))
@@ -227,18 +225,6 @@ void FVoxelEditorToolkitImpl::InitVoxelEditor(const TSharedPtr<IToolkitHost>& Ed
 				Mode.CanBeSelected.Get())
 			{
 				SetCurrentMode(LastModeFName);
-			}
-		}
-
-		if (!GetCurrentModePtr())
-		{
-			for (const FVoxelToolkit::FMode& Mode : Modes)
-			{
-				if (Mode.Struct == DefaultMode &&
-					ensure(Mode.CanBeSelected.Get()))
-				{
-					SetCurrentMode(Mode.Struct->GetFName());
-				}
 			}
 		}
 
@@ -365,7 +351,22 @@ void FVoxelEditorToolkitImpl::UnregisterTabSpawners(const TSharedRef<class FTabM
 
 void FVoxelEditorToolkitImpl::PostRegenerateMenusAndToolbars()
 {
-	const TSharedPtr<FVoxelToolkit> ActiveToolkit = GetActiveToolkit();
+	TSharedPtr<FVoxelToolkit> ActiveToolkit;
+	if (Toolkit)
+	{
+		ActiveToolkit = Toolkit;
+	}
+	else
+	{
+		const TSharedPtr<FApplicationMode> Mode = GetCurrentModePtr();
+		if (!ensure(Mode))
+		{
+			return;
+		}
+
+		ActiveToolkit = StaticCastSharedPtr<FVoxelToolkitApplicationMode>(Mode)->GetToolkit();
+	}
+
 	if (!ensure(ActiveToolkit))
 	{
 		return;
@@ -395,18 +396,6 @@ bool FVoxelEditorToolkitImpl::ProcessCommandBindings(const FKeyEvent& InKeyEvent
 	}
 
 	return false;
-}
-
-void FVoxelEditorToolkitImpl::SaveAsset_Execute()
-{
-	const TSharedPtr<FVoxelToolkit> ActiveToolkit = GetActiveToolkit();
-	if (ensure(ActiveToolkit))
-	{
-		// Save graph state before saving asset, to ensure it's up-to-date
-		ActiveToolkit->SaveDocuments();
-	}
-
-	FWorkflowCentricApplication::SaveAsset_Execute();
 }
 
 void FVoxelEditorToolkitImpl::OnClose()
@@ -443,26 +432,6 @@ void FVoxelEditorToolkitImpl::AddReferencedObjects(FReferenceCollector& Collecto
 	{
 		Toolkit->AddStructReferencedObjects(Collector);
 	}
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-TSharedPtr<FVoxelToolkit> FVoxelEditorToolkitImpl::GetActiveToolkit() const
-{
-	if (Toolkit)
-	{
-		return Toolkit;
-	}
-
-	const TSharedPtr<FApplicationMode> Mode = GetCurrentModePtr();
-	if (!ensure(Mode))
-	{
-		return nullptr;
-	}
-
-	return StaticCastSharedPtr<FVoxelToolkitApplicationMode>(Mode)->GetToolkit();
 }
 
 ///////////////////////////////////////////////////////////////////////////////

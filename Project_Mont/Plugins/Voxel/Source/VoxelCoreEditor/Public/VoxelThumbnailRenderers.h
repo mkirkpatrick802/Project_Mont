@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -81,7 +81,7 @@ protected:
 	FVoxelThumbnailScene();
 
 	//~ Begin FThumbnailPreviewScene Interface
-	virtual void GetViewMatrixParameters(float InFOVDegrees, FVector& OutOrigin, float& OutOrbitPitch, float& OutOrbitYaw, float& OutOrbitZoom) const override;
+	virtual void GetViewMatrixParameters(const float InFOVDegrees, FVector& OutOrigin, float& OutOrbitPitch, float& OutOrbitYaw, float& OutOrbitZoom) const override;
 	//~ End FThumbnailPreviewScene Interface
 
 	virtual FBoxSphereBounds GetBounds() const VOXEL_PURE_VIRTUAL({});

@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -13,11 +13,6 @@ struct VOXELGRAPHCORE_API FVoxelBoolBuffer final : public FVoxelSimpleTerminalBu
 {
 	GENERATED_BODY()
 	GENERATED_VOXEL_TERMINAL_BUFFER_BODY(FVoxelBoolBuffer, bool);
-
-	int32 CountBits() const
-	{
-		return GetStorage().CountBits();
-	}
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -27,7 +22,7 @@ struct VOXELGRAPHCORE_API FVoxelBoolBuffer final : public FVoxelSimpleTerminalBu
 DECLARE_VOXEL_TERMINAL_BUFFER(FVoxelByteBuffer, uint8);
 
 template<typename T>
-struct TVoxelBufferType<T, std::enable_if_t<TIsEnum<T>::Value>>
+struct TVoxelBufferType<T, typename TEnableIf<TIsEnum<T>::Value>::Type>
 {
 	using Type = FVoxelByteBuffer;
 };
@@ -50,11 +45,6 @@ struct VOXELGRAPHCORE_API FVoxelFloatBuffer final : public FVoxelSimpleTerminalB
 {
 	GENERATED_BODY()
 	GENERATED_VOXEL_TERMINAL_BUFFER_BODY(FVoxelFloatBuffer, float);
-
-	FFloatInterval GetMinMaxSafe() const
-	{
-		return GetStorage().GetMinMaxSafe();
-	}
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -68,11 +58,6 @@ struct VOXELGRAPHCORE_API FVoxelDoubleBuffer final : public FVoxelSimpleTerminal
 {
 	GENERATED_BODY()
 	GENERATED_VOXEL_TERMINAL_BUFFER_BODY(FVoxelDoubleBuffer, double);
-
-	FDoubleInterval GetMinMaxSafe() const
-	{
-		return GetStorage().GetMinMaxSafe();
-	}
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -86,11 +71,6 @@ struct VOXELGRAPHCORE_API FVoxelInt32Buffer final : public FVoxelSimpleTerminalB
 {
 	GENERATED_BODY()
 	GENERATED_VOXEL_TERMINAL_BUFFER_BODY(FVoxelInt32Buffer, int32);
-
-	FInt32Interval GetMinMax() const
-	{
-		return GetStorage().GetMinMax();
-	}
 };
 
 ///////////////////////////////////////////////////////////////////////////////

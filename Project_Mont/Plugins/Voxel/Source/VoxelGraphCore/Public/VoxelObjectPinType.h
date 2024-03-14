@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -24,7 +24,7 @@ struct VOXELGRAPHCORE_API FVoxelObjectPinType
 
 	UObject* GetObject(FConstVoxelStructView Struct) const;
 
-	static const TVoxelMap<const UScriptStruct*, TSharedPtr<const FVoxelObjectPinType>>& StructToPinType();
+	static const TVoxelMap<const UScriptStruct*, const FVoxelObjectPinType*>& StructToPinType();
 };
 
 #define DECLARE_VOXEL_OBJECT_PIN_TYPE(Type) \

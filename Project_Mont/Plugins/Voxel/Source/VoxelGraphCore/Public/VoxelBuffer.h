@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -12,7 +12,7 @@ struct FVoxelSimpleTerminalBuffer;
 struct FVoxelComplexTerminalBuffer;
 
 USTRUCT()
-struct VOXELGRAPHCORE_API FVoxelBuffer : public FVoxelVirtualStruct
+struct VOXELGRAPHCORE_API FVoxelBuffer : public FVoxelBufferInterface
 {
 	GENERATED_BODY()
 	GENERATED_VIRTUAL_STRUCT_BODY()
@@ -24,7 +24,6 @@ struct VOXELGRAPHCORE_API FVoxelBuffer : public FVoxelVirtualStruct
 
 public:
 	static TSharedRef<FVoxelBuffer> Make(const FVoxelPinType& InnerType);
-	static TSharedRef<FVoxelBuffer> MakeEmpty(const FVoxelPinType& InnerType);
 	static FVoxelPinType FindInnerType_NotComplex(UScriptStruct* Struct);
 
 	FORCEINLINE FVoxelPinType GetBufferType() const
@@ -66,9 +65,9 @@ public:
 	virtual void Shrink();
 	virtual void CheckSlowImpl() const;
 	virtual int64 GetAllocatedSize() const;
-	virtual int32 Num_Slow() const;
+	virtual int32 Num_Slow() const override;
+	virtual bool IsValid_Slow() const final override;
 
-	bool IsValid_Slow() const;
 	FVoxelRuntimePinValue GetGenericConstant() const;
 
 	virtual void InitializeFromConstant(const FVoxelRuntimePinValue& Constant) VOXEL_PURE_VIRTUAL();
@@ -128,19 +127,6 @@ public:
 	FORCEINLINE TVoxelTerminalBufferIterator<const FVoxelTerminalBuffer> GetTerminalBuffers() const
 	{
 		return { ConstCast(this) };
-	}
-
-public:
-	FORCEINLINE static TVoxelInlineArray<const FVoxelTerminalBuffer*, 16> GetTerminalBuffers(
-		const TConstVoxelArrayView<const FVoxelBuffer*> Buffers,
-		const int32 Index)
-	{
-		TVoxelInlineArray<const FVoxelTerminalBuffer*, 16> Result;
-		for (const FVoxelBuffer* Buffer : Buffers)
-		{
-			Result.Add(&Buffer->GetTerminalBuffer(Index));
-		}
-		return Result;
 	}
 
 public:
@@ -250,12 +236,6 @@ public:
 	FORCEINLINE const TSharedRef<const FVoxelBufferStorage>& GetSharedStorage() const
 	{
 		return PrivateStorage;
-	}
-	template<typename Type>
-	FORCEINLINE const TSharedRef<const TVoxelBufferStorage<Type>>& GetSharedStorage() const
-	{
-		checkVoxelSlow(GetStorage().GetTypeSize() == sizeof(Type));
-		return ReinterpretCastSharedRef<const TVoxelBufferStorage<Type>>(PrivateStorage);
 	}
 
 	FORCEINLINE const FVoxelBufferStorage& GetStorage() const
@@ -431,26 +411,31 @@ struct VOXELGRAPHCORE_API FVoxelBufferAccessor
 	FVoxelBufferAccessor() = default;
 
 	template<typename... TArgs>
-	FORCEINLINE explicit FVoxelBufferAccessor(const TArgs&... Args)
+	explicit FVoxelBufferAccessor(const TArgs&... Args)
 	{
 		checkStatic(sizeof...(Args) > 1);
 
+		TArray<int32, TVoxelInlineAllocator<16>> Nums;
+		VOXEL_FOLD_EXPRESSION(Nums.Add(Args.Num()));
+
 		PrivateNum = 1;
-		VOXEL_FOLD_EXPRESSION(Add(Args.Num()));
+		for (const int32 Num : Nums)
+		{
+			if (PrivateNum == 1)
+			{
+				PrivateNum = Num;
+			}
+			else if (PrivateNum != Num && Num != 1)
+			{
+				PrivateNum = -1;
+			}
+		}
 	}
 
 	template<typename T>
 	FORCEINLINE static bool MergeNum(int32& Num, const T& Buffer)
 	{
-		int32 BufferNum;
-		if constexpr (std::is_same_v<T, int32>)
-		{
-			BufferNum = Buffer;
-		}
-		else
-		{
-			BufferNum = Buffer.Num();
-		}
+		const int32 BufferNum = Buffer.Num();
 
 		if (Num == 1)
 		{
@@ -478,23 +463,6 @@ struct VOXELGRAPHCORE_API FVoxelBufferAccessor
 
 private:
 	int32 PrivateNum = -1;
-
-	FORCEINLINE void Add(const int32 Num)
-	{
-		if (PrivateNum == 1)
-		{
-			PrivateNum = Num;
-			return;
-		}
-
-		if (Num == 1 ||
-			Num == PrivateNum)
-		{
-			return;
-		}
-
-		PrivateNum = -1;
-	}
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -542,7 +510,7 @@ struct FVoxelSwitchTerminalTypeSize
 	{ \
 		using Type = InBufferType; \
 	}; \
-	template<> \
+	template <> \
 	struct TVoxelBufferInnerType<InBufferType> \
 	{ \
 		using Type = InUniformType; \
@@ -673,10 +641,6 @@ struct FVoxelSwitchTerminalTypeSize
 	FORCEINLINE const InThisType ## Storage& GetStorage() const \
 	{ \
 		return Super::GetStorage<InType>(); \
-	} \
-	FORCEINLINE const TSharedRef<const InThisType ## Storage>& GetSharedStorage() const \
-	{ \
-		return Super::GetSharedStorage<InType>(); \
 	} \
 	FORCEINLINE InThisType ## Storage& GetMutableStorage() const \
 	{ \

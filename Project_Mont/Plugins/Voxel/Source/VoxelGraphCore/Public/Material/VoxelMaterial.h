@@ -1,11 +1,10 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelMinimal.h"
 #include "VoxelNode.h"
 #include "VoxelObjectPinType.h"
-#include "Materials/MaterialInterface.h"
 #include "VoxelMaterial.generated.h"
 
 USTRUCT()
@@ -13,7 +12,6 @@ struct VOXELGRAPHCORE_API FVoxelComputedMaterialParameter
 {
 	GENERATED_BODY()
 
-	TSharedPtr<FVoxelMaterialRef> MaterialOverride;
 	TVoxelMap<FName, float> ScalarParameters;
 	TVoxelMap<FName, FVector> VectorParameters;
 	TVoxelMap<FName, TWeakObjectPtr<UTexture>> TextureParameters;
@@ -50,25 +48,26 @@ struct VOXELGRAPHCORE_API FVoxelComputedMaterialParameter
 USTRUCT()
 struct VOXELGRAPHCORE_API FVoxelMaterialParameter
 	: public FVoxelVirtualStruct
+	, public FVoxelNodeHelpers
 	, public IVoxelNodeInterface
 {
 	GENERATED_BODY()
 	GENERATED_VIRTUAL_STRUCT_BODY()
 
 public:
-	FVoxelGraphNodeRef NodeRef;
+	FVoxelGraphNodeRef Node;
 
 	//~ Begin IVoxelNodeInterface Interface
 	virtual const FVoxelGraphNodeRef& GetNodeRef() const override
 	{
-		return NodeRef;
+		return Node;
 	}
 	//~ End IVoxelNodeInterface Interface
 
 public:
 	VOXEL_SETUP_ON_COMPLETE_MANUAL(FVoxelComputedMaterialParameter, "FVoxelComputedMaterialParameter");
 
-	virtual TValue<FVoxelComputedMaterialParameter> Compute(const FVoxelQuery& Query) const VOXEL_PURE_VIRTUAL({});
+	virtual TVoxelFutureValue<FVoxelComputedMaterialParameter> Compute(const FVoxelQuery& Query) const VOXEL_PURE_VIRTUAL({});
 };
 
 ///////////////////////////////////////////////////////////////////////////////

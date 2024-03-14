@@ -1,8 +1,9 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "ActorFactoryVoxelActor.h"
 #include "VoxelActor.h"
-#include "VoxelGraph.h"
+#include "VoxelGraphInterface.h"
+#include "VoxelParameterContainer.h"
 
 DEFINE_VOXEL_PLACEABLE_ITEM_FACTORY(UActorFactoryVoxelActor);
 
@@ -26,7 +27,7 @@ bool UActorFactoryVoxelActor_FromGraph::CanCreateActorFrom(const FAssetData& Ass
 {
 	return
 		AssetData.IsValid() &&
-		AssetData.GetClass()->IsChildOf<UVoxelGraph>();
+		AssetData.GetClass()->IsChildOf<UVoxelGraphInterface>();
 }
 
 void UActorFactoryVoxelActor_FromGraph::PostSpawnActor(UObject* Asset, AActor* NewActor)
@@ -34,7 +35,7 @@ void UActorFactoryVoxelActor_FromGraph::PostSpawnActor(UObject* Asset, AActor* N
 	Super::PostSpawnActor(Asset, NewActor);
 
 	AVoxelActor* SceneActor = CastChecked<AVoxelActor>(NewActor);
-	SceneActor->SetGraph(CastChecked<UVoxelGraph>(Asset));
+	SceneActor->SetGraph(CastChecked<UVoxelGraphInterface>(Asset));
 	SceneActor->QueueRecreate();
 }
 

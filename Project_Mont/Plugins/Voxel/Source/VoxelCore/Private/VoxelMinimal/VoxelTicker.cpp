@@ -1,4 +1,4 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelMinimal.h"
 #include "Containers/Ticker.h"
@@ -26,7 +26,7 @@ public:
 			const FVoxelTickerData& TickerData = *TickerDatas[Index];
 			if (TickerData.bIsDestroyed)
 			{
-				TickerDatas.RemoveAtSwap(Index);
+				TickerDatas.RemoveAtSwap(Index, 1, false);
 				Index--;
 				continue;
 			}

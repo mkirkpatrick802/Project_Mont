@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -6,7 +6,6 @@
 #include "Toolkits/BaseToolkit.h"
 
 class AVoxelPreviewActor;
-class SVoxelGraphSelector;
 
 class FVoxelSculptToolkit : public FModeToolkit
 {
@@ -35,5 +34,4 @@ public:
 
 private:
 	TWeakObjectPtr<AVoxelPreviewActor> WeakPreviewActor;
-	TWeakPtr<SVoxelGraphSelector> WeakGraphSelector;
 };

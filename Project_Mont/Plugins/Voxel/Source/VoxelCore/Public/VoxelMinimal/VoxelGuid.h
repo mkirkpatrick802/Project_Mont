@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -39,12 +39,12 @@ public:
 
 private:
 	template<char Char>
-	static constexpr std::enable_if_t<'0' <= Char && Char <= '9', uint32> CharToInt()
+	static constexpr typename TEnableIf<'0' <= Char && Char <= '9', uint32>::Type CharToInt()
 	{
 		return Char - '0';
 	}
 	template<char Char>
-	static constexpr std::enable_if_t<'A' <= Char && Char <= 'F', uint32> CharToInt()
+	static constexpr typename TEnableIf<'A' <= Char && Char <= 'F', uint32>::Type CharToInt()
 	{
 		return 10 + Char - 'A';
 	}
@@ -65,41 +65,8 @@ private:
 	}
 };
 
-#define MAKE_VOXEL_GUID(String) [] \
-	{ \
-		checkStatic(sizeof(String) == 33); \
-		return FVoxelGuid::Make< \
-			String[0], \
-			String[1], \
-			String[2], \
-			String[3], \
-			String[4], \
-			String[5], \
-			String[6], \
-			String[7], \
-			String[8], \
-			String[9], \
-			String[10], \
-			String[11], \
-			String[12], \
-			String[13], \
-			String[14], \
-			String[15], \
-			String[16], \
-			String[17], \
-			String[18], \
-			String[19], \
-			String[20], \
-			String[21], \
-			String[22], \
-			String[23], \
-			String[24], \
-			String[25], \
-			String[26], \
-			String[27], \
-			String[28], \
-			String[29], \
-			String[30], \
-			String[31], \
-			String[32]>(); \
-	}()
+#define MAKE_VOXEL_GUID(String) FVoxelGuid::Make< \
+	String[0], String[1], String[2], String[3], String[4], String[5], String[6], String[7], \
+	String[8], String[9], String[10], String[11], String[12], String[13], String[14], String[15], \
+	String[16], String[17], String[18], String[19], String[20], String[21], String[22], String[23], \
+	String[24], String[25], String[26], String[27], String[28], String[29], String[30], String[31], String[32]>()

@@ -1,15 +1,18 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelGraphVisuals.h"
+#include "VoxelExec.h"
 #include "VoxelEdGraph.h"
+#include "VoxelChannel.h"
 #include "VoxelSurface.h"
 #include "VoxelExposedSeed.h"
 #include "VoxelGraphSchema.h"
 #include "VoxelGraphToolkit.h"
 #include "VoxelGraphEditorSettings.h"
 #include "Point/VoxelPointSet.h"
-#include "Channel/VoxelChannelName.h"
-#include "Nodes/VoxelGraphNode_Knot.h"
+#include "Nodes/VoxelGraphKnotNode.h"
+#include "Nodes/VoxelGraphStructNode.h"
+#include "Nodes/VoxelGraphParameterNodeBase.h"
 #include "Buffer/VoxelDoubleBuffers.h"
 #include "Widgets/SVoxelGraphNode.h"
 #include "Widgets/SVoxelGraphPinSeed.h"
@@ -19,7 +22,6 @@
 #include "Widgets/SVoxelGraphNodeKnot.h"
 #include "Widgets/SVoxelGraphNodeVariable.h"
 #include "Widgets/SVoxelGraphPinChannelName.h"
-#include "Widgets/SVoxelGraphPinIntContainer.h"
 #include "Widgets/SVoxelGraphPinBodyInstance.h"
 
 #include "Styling/SlateIconFinder.h"
@@ -36,22 +38,30 @@
 
 FSlateIcon FVoxelGraphVisuals::GetNodeIcon(const FString& IconName)
 {
-	if (IconName == "Execute")   { return FSlateIcon("VoxelStyle" , "VoxelGraph.Execute"            ); }
-	if (IconName == "Loop")      { return FSlateIcon("EditorStyle", "GraphEditor.Macro.Loop_16x"    ); }
-	if (IconName == "Gate")      { return FSlateIcon("EditorStyle", "GraphEditor.Macro.Gate_16x"    ); }
-	if (IconName == "Do N")      { return FSlateIcon("EditorStyle", "GraphEditor.Macro.DoN_16x"     ); }
-	if (IconName == "Do Once")   { return FSlateIcon("EditorStyle", "GraphEditor.Macro.DoOnce_16x"  ); }
-	if (IconName == "IsValid")   { return FSlateIcon("EditorStyle", "GraphEditor.Macro.IsValid_16x" ); }
-	if (IconName == "FlipFlop")  { return FSlateIcon("EditorStyle", "GraphEditor.Macro.FlipFlop_16x"); }
-	if (IconName == "ForEach")   { return FSlateIcon("EditorStyle", "GraphEditor.Macro.ForEach_16x" ); }
-	if (IconName == "Event")     { return FSlateIcon("EditorStyle", "GraphEditor.Event_16x"         ); }
-	if (IconName == "Sequence")  { return FSlateIcon("EditorStyle", "GraphEditor.Sequence_16x"      ); }
-	if (IconName == "Cast")      { return FSlateIcon("EditorStyle", "GraphEditor.Cast_16x"          ); }
-	if (IconName == "Select")    { return FSlateIcon("EditorStyle", "GraphEditor.Select_16x"        ); }
-	if (IconName == "Switch")    { return FSlateIcon("EditorStyle", "GraphEditor.Switch_16x"        ); }
-	if (IconName == "MakeArray") { return FSlateIcon("EditorStyle", "GraphEditor.MakeArray_16x"     ); }
+#define CASE(Name, Icon) \
+	if (IconName == TEXT(Name)) \
+	{ \
+		static const FSlateIcon StaticIcon("EditorStyle", Icon); \
+		return StaticIcon; \
+	}
 
-	return FSlateIcon("EditorStyle", "Kismet.AllClasses.FunctionIcon");
+	CASE("Loop", "GraphEditor.Macro.Loop_16x");
+	CASE("Gate", "GraphEditor.Macro.Gate_16x");
+	CASE("Do N", "GraphEditor.Macro.DoN_16x");
+	CASE("Do Once", "GraphEditor.Macro.DoOnce_16x");
+	CASE("IsValid", "GraphEditor.Macro.IsValid_16x");
+	CASE("FlipFlop", "GraphEditor.Macro.FlipFlop_16x");
+	CASE("ForEach", "GraphEditor.Macro.ForEach_16x");
+	CASE("Event", "GraphEditor.Event_16x");
+	CASE("Sequence", "GraphEditor.Sequence_16x");
+	CASE("Cast", "GraphEditor.Cast_16x");
+	CASE("Select", "GraphEditor.Select_16x");
+	CASE("Switch", "GraphEditor.Switch_16x");
+
+#undef CASE
+
+	static const FSlateIcon Icon("EditorStyle", "Kismet.AllClasses.FunctionIcon");
+	return Icon;
 }
 
 FLinearColor FVoxelGraphVisuals::GetNodeColor(const FString& ColorName)
@@ -161,6 +171,10 @@ FLinearColor FVoxelGraphVisuals::GetPinColor(const FVoxelPinType& InType)
 	{
 		return Settings->BytePinTypeColor;
 	}
+	else if (Type.Is<FVoxelExec>())
+	{
+		return Settings->ExecutionPinTypeColor;
+	}
 	else if (Type.Is<FVoxelPointSet>())
 	{
 		return VoxelSettings->PointSetPinColor;
@@ -221,7 +235,7 @@ FLinearColor FVoxelGraphVisuals::GetPinColor(const FVoxelPinType& InType)
 TSharedPtr<SGraphPin> FVoxelGraphVisuals::GetPinWidget(UEdGraphPin* Pin)
 {
 	const FVoxelPinType Type = FVoxelPinType(Pin->PinType);
-	if (!Type.IsValid())
+	if (!ensureVoxelSlow(Type.IsValid()))
 	{
 		if (Pin->DefaultObject)
 		{
@@ -289,10 +303,6 @@ TSharedPtr<SGraphPin> FVoxelGraphVisuals::GetPinWidget(UEdGraphPin* Pin)
 	{
 		return SNewPerf(SGraphPinVector2D<double>, Pin);
 	}
-	else if (InnerType.Is<FIntPoint>())
-	{
-		return SNewPerf(SVoxelGraphPinIntContainer<FIntPoint>, Pin);
-	}
 	else if (
 		InnerType.Is<FVector>() ||
 		InnerType.Is<FRotator>() ||
@@ -304,19 +314,11 @@ TSharedPtr<SGraphPin> FVoxelGraphVisuals::GetPinWidget(UEdGraphPin* Pin)
 	{
 		return SNewPerf(SGraphPinVector<double>, Pin);
 	}
-	else if (InnerType.Is<FIntVector>())
-	{
-		return SNewPerf(SVoxelGraphPinIntContainer<FIntVector>, Pin);
-	}
 	else if (
 		InnerType.Is<FLinearColor>() ||
 		InnerType.Is<FVoxelDoubleLinearColor>())
 	{
 		return SNewPerf(SGraphPinColor, Pin);
-	}
-	else if (InnerType.Is<FIntVector4>())
-	{
-		return SNewPerf(SVoxelGraphPinIntContainer<FIntVector4>, Pin);
 	}
 	else if (InnerType.Is<FVoxelExposedSeed>())
 	{
@@ -369,9 +371,9 @@ public:
 	const TSharedPtr<FVoxelGraphToolkit> Toolkit;
 
 	FVoxelGraphConnectionDrawingPolicy(
-		const int32 InBackLayerID,
-		const int32 InFrontLayerID,
-		const float ZoomFactor,
+		int32 InBackLayerID,
+		int32 InFrontLayerID,
+		float ZoomFactor,
 		const FSlateRect& InClippingRect,
 		FSlateWindowElementList& InDrawElements,
 		const UVoxelEdGraph& Graph)
@@ -424,7 +426,7 @@ public:
 struct FVoxelGraphConnectionDrawingPolicyFactory : public FGraphPanelPinConnectionFactory
 {
 public:
-	virtual FConnectionDrawingPolicy* CreateConnectionPolicy(const UEdGraphSchema* Schema, const int32 InBackLayerID, const int32 InFrontLayerID, const float ZoomFactor, const FSlateRect& InClippingRect, FSlateWindowElementList& InDrawElements, UEdGraph* InGraphObj) const override
+	virtual FConnectionDrawingPolicy* CreateConnectionPolicy(const UEdGraphSchema* Schema, int32 InBackLayerID, int32 InFrontLayerID, float ZoomFactor, const FSlateRect& InClippingRect, FSlateWindowElementList& InDrawElements, UEdGraph* InGraphObj) const override
 	{
 		if (!Schema->IsA<UVoxelGraphSchema>())
 		{
@@ -466,24 +468,29 @@ class FVoxelGraphNodeFactory : public FGraphPanelNodeFactory
 		UVoxelGraphNode* Node = Cast<UVoxelGraphNode>(InNode);
 		if (!Node)
 		{
+			if (UVoxelGraphNodeBase* BaseNode = Cast<UVoxelGraphNodeBase>(InNode))
+			{
+				return SNew(SVoxelGraphNodeBase, BaseNode);
+			}
+
 			return nullptr;
 		}
 
-		if (UVoxelGraphNode_Knot* Knot = Cast<UVoxelGraphNode_Knot>(Node))
+		if (UVoxelGraphKnotNode* Knot = Cast<UVoxelGraphKnotNode>(Node))
 		{
 			return SNew(SVoxelGraphNodeKnot, Knot);
 		}
 
-		if (Node->IsVariable())
+		if (UVoxelGraphParameterNodeBase* Parameter = Cast<UVoxelGraphParameterNodeBase>(Node))
 		{
-			return SNew(SVoxelGraphNodeVariable, Node);
+			return SNew(SVoxelGraphNodeVariable, Parameter);
 		}
 
 		return SNew(SVoxelGraphNode, Node);
 	}
 };
 
-VOXEL_RUN_ON_STARTUP_EDITOR_COMMANDLET(RegisterGraphConnectionDrawingPolicyFactory)
+VOXEL_RUN_ON_STARTUP_EDITOR(RegisterGraphConnectionDrawingPolicyFactory)
 {
 	FEdGraphUtilities::RegisterVisualNodeFactory(MakeShared<FVoxelGraphNodeFactory>());
 	FEdGraphUtilities::RegisterVisualPinFactory(MakeShared<FVoxelGraphPanelPinFactory>());

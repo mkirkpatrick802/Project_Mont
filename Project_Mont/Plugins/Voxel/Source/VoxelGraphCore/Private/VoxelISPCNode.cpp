@@ -1,10 +1,9 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelISPCNode.h"
 #include "VoxelISPCNodeImpl.h"
 #include "VoxelBuffer.h"
 #include "VoxelQueryCache.h"
-#include "VoxelFutureValueState.h"
 
 void FVoxelISPCNode::PreCompile()
 {
@@ -44,8 +43,10 @@ FVoxelComputeValue FVoxelISPCNode::CompileCompute(const FName ReturnPinName) con
 			}
 		}
 
-		TVoxelInlineArray<FVoxelFutureValue, 16> InputValues;
-		TVoxelInlineArray<TSharedRef<FVoxelFutureValueStateImpl>, 16> OutputStates;
+		using FAllocatorType = TVoxelInlineAllocator<16>;
+
+		TVoxelArray<FVoxelFutureValue, FAllocatorType> InputValues;
+		TVoxelArray<TSharedRef<FVoxelFutureValueStateImpl>, FAllocatorType> OutputStates;
 		for (const FCachedPin& CachedPin : CachedPins)
 		{
 			if (CachedPin.bIsInput)
@@ -57,7 +58,7 @@ FVoxelComputeValue FVoxelISPCNode::CompileCompute(const FName ReturnPinName) con
 				FVoxelQueryCache::FEntry& Entry = Query.GetQueryCache().FindOrAddEntry(CachedPin.PinId);
 				VOXEL_SCOPE_LOCK(Entry.CriticalSection);
 
-				const TSharedRef<FVoxelFutureValueStateImpl> State = MakeVoxelShared<FVoxelFutureValueStateImpl>(CachedPin.PinType, CachedPin.Name);
+				const TSharedRef<FVoxelFutureValueStateImpl> State = MakeVoxelShared<FVoxelFutureValueStateImpl>(CachedPin.PinType);
 
 				ensure(!Entry.Value.IsValid());
 				Entry.Value = FVoxelFutureValue(State);
@@ -66,7 +67,7 @@ FVoxelComputeValue FVoxelISPCNode::CompileCompute(const FName ReturnPinName) con
 			}
 		}
 
-		MakeVoxelTask()
+		MakeVoxelTask(STATIC_FNAME("FVoxelISPCNode"))
 		.Dependencies(InputValues)
 		.Execute([=]
 		{
@@ -92,7 +93,7 @@ FVoxelComputeValue FVoxelISPCNode::CompileCompute(const FName ReturnPinName) con
 					continue;
 				}
 
-				RaiseBufferError();
+				RaiseBufferError(*this);
 				for (const TSharedRef<FVoxelFutureValueStateImpl>& State : OutputStates)
 				{
 					State->SetValue(FVoxelRuntimePinValue(State->Type));
@@ -114,12 +115,12 @@ FVoxelComputeValue FVoxelISPCNode::CompileCompute(const FName ReturnPinName) con
 				return;
 			}
 
-			TVoxelInlineArray<TSharedRef<FVoxelBuffer>, 16> InputBuffers;
-			TVoxelInlineArray<TSharedRef<FVoxelBuffer>, 16> OutputBuffers;
+			TVoxelArray<TSharedRef<FVoxelBuffer>, FAllocatorType> InputBuffers;
+			TVoxelArray<TSharedRef<FVoxelBuffer>, FAllocatorType> OutputBuffers;
 			InputBuffers.Reserve(CachedPins.Num());
 			OutputBuffers.Reserve(CachedPins.Num());
 
-			TVoxelInlineArray<const FVoxelBuffer*, 16> Buffers;
+			TVoxelArray<const FVoxelBuffer*, FAllocatorType> Buffers;
 			Buffers.Reserve(CachedPins.Num());
 
 			int32 InputIndex = 0;
@@ -166,9 +167,9 @@ FVoxelComputeValue FVoxelISPCNode::CompileCompute(const FName ReturnPinName) con
 				checkVoxelSlow(CachedPtr);
 				FVoxelNodeStatScope StatScope(*this, Num);
 
-				ForeachVoxelBufferChunk_Parallel(Num, [&](const FVoxelBufferIterator& Iterator)
+				ForeachVoxelBufferChunk(Num, [&](const FVoxelBufferIterator& Iterator)
 				{
-					TVoxelInlineArray<ispc::FVoxelBuffer, 16> ISPCBuffers;
+					TVoxelArray<ispc::FVoxelBuffer, TVoxelInlineAllocator<16>> ISPCBuffers;
 					ISPCBuffers.Reserve(NumTerminalBuffers);
 					for (int32 Index = 0; Index < CachedPins.Num(); Index++)
 					{

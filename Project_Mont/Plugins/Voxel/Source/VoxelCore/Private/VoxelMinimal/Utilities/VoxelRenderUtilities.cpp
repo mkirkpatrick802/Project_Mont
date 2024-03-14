@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelMinimal.h"
 #include "Engine/Engine.h"
@@ -6,19 +6,13 @@
 #include "Materials/Material.h"
 #include "Shader.h"
 #include "ShaderCore.h"
-#include "Async/Async.h"
 #include "GlobalShader.h"
 #include "SceneManagement.h"
 #include "TextureResource.h"
 #include "RenderGraphUtils.h"
 #include "RenderTargetPool.h"
-#include "PrimitiveSceneProxy.h"
+#include "DataDrivenShaderPlatformInfo.h"
 #include "Materials/MaterialRenderProxy.h"
-
-#if VOXEL_ENGINE_VERSION < 504
-// Needed to cancel motion blur when reusing proxies
-#include "ScenePrivate.h"
-#endif
 
 FRDGBuilder* FVoxelRDGBuilderScope::StaticBuilder = nullptr;
 
@@ -131,10 +125,10 @@ TSharedRef<FVoxelRDGExternalBuffer> FVoxelRDGExternalBuffer::CreateStructured(
 
 TSharedRef<FVoxelRDGExternalBuffer> FVoxelRDGExternalBuffer::Create(
 	FRHICommandListBase& RHICmdList,
-	const TConstVoxelArrayView<uint8> Array,
-	const EPixelFormat Format,
+	const TConstArrayView<uint8> Array,
+	EPixelFormat Format,
 	const TCHAR* Name,
-	const EBufferUsageFlags AdditionalFlags)
+	EBufferUsageFlags AdditionalFlags)
 {
 	const int32 BytesPerElement = GPixelFormats[Format].BlockBytes;
 	check(Array.Num() % BytesPerElement == 0);
@@ -259,6 +253,86 @@ FVoxelRDGBuffer::FVoxelRDGBuffer(const FVoxelRDGExternalBuffer& ExternalBuffer, 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
+void Voxel_CheckShaderBindings(
+	const FShader* Shader,
+	int32 PermutationId,
+	const FShaderParameterMap& ParametersMap,
+	const FShaderParametersMetadata& StructMetaData)
+{
+	// Copied from FShaderParameterStructBindingContext::Bind
+	// Adds some additional checks around UAV vs SRV binding
+
+	if (!FDataDrivenShaderPlatformInfo::GetIsLanguageD3D(Shader->GetShaderPlatform()))
+	{
+		return;
+	}
+
+	bool bAllOptional = false;
+	TSet<FString> OptionalParameters;
+	for (const FShaderParametersMetadata::FMember& Member : StructMetaData.GetMembers())
+	{
+		FString Name = Member.GetName();
+		bAllOptional |= Name == TEXT("ALL_OPTIONAL");
+		if (Name.RemoveFromStart(TEXT("OPTIONAL_"), ESearchCase::CaseSensitive))
+		{
+			OptionalParameters.Add(Name);
+		}
+	}
+
+	for (const FShaderParametersMetadata::FMember& Member : StructMetaData.GetMembers())
+	{
+		const FString MemberName = Member.GetName();
+		if (MemberName.StartsWith(TEXT("OPTIONAL_"), ESearchCase::CaseSensitive))
+		{
+			continue;
+		}
+
+		const FString DebugName = FString::Printf(TEXT("%s::%s"), Shader->GetType(nullptr)->GetName(), *MemberName);
+
+		const EUniformBufferBaseType BaseType = Member.GetBaseType();
+
+		const bool bIsVariableNativeType =
+			BaseType == UBMT_INT32 ||
+			BaseType == UBMT_UINT32 ||
+			BaseType == UBMT_FLOAT32;
+
+		if (bIsVariableNativeType)
+		{
+			// Looks like constants are combined into the RootShaderParameters in UE5
+			continue;
+		}
+
+		if (BaseType != UBMT_RDG_TEXTURE_SRV &&
+			BaseType != UBMT_RDG_TEXTURE_UAV &&
+			BaseType != UBMT_RDG_BUFFER_SRV &&
+			BaseType != UBMT_RDG_BUFFER_UAV &&
+			!bIsVariableNativeType)
+		{
+			continue;
+		}
+
+		const FParameterAllocation* Allocation = ParametersMap.ParameterMap.Find(MemberName);
+		if (!Allocation)
+		{
+			ensureAlwaysMsgf(bAllOptional || OptionalParameters.Contains(MemberName), TEXT("Unused shader parameter: %s"), *DebugName);
+			continue;
+		}
+
+		if (BaseType == UBMT_RDG_TEXTURE_SRV || BaseType == UBMT_RDG_BUFFER_SRV)
+		{
+			ensureAlwaysMsgf(Allocation->Type == EShaderParameterType::SRV, TEXT("%s needs to be a UAV parameter instead"), *DebugName);
+		}
+		else if (BaseType == UBMT_RDG_TEXTURE_UAV || BaseType == UBMT_RDG_BUFFER_UAV)
+		{
+			ensureAlwaysMsgf(Allocation->Type == EShaderParameterType::UAV, TEXT("%s needs to be a SRV parameter instead"), *DebugName);
+		}
+	}
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
 TArray<TSharedPtr<FVoxelShaderStatsScope::FData>> GVoxelShaderStatsScopes;
 TFunction<void(uint64 TimeInMicroSeconds, FName Name)> GVoxelShaderStatsCallback;
 
@@ -269,7 +343,7 @@ void FVoxelShaderStatsScope::SetCallback(TFunction<void(uint64 TimeInMicroSecond
 	GVoxelShaderStatsCallback = MoveTemp(Lambda);
 }
 
-FVoxelShaderStatsScope::FVoxelShaderStatsScope(const FName Name)
+FVoxelShaderStatsScope::FVoxelShaderStatsScope(FName Name)
 {
 	ensure(IsInRenderingThread());
 
@@ -341,6 +415,34 @@ void ProcessVoxelShaderStatsScopes(FRDGBuilder& GraphBuilder)
 VOXEL_RUN_ON_STARTUP_GAME(RegisterProcessVoxelShaderStatsScopes)
 {
 	FVoxelRenderUtilities::OnPreRender().AddStatic(ProcessVoxelShaderStatsScopes);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+FString GetVoxelShaderFullPath(const FString& InPath, const FString& Name)
+{
+	FString Path = FPaths::ConvertRelativePathToFull(InPath);
+
+	if (!ensure(
+		Path.Contains("/Public/") ||
+		Path.Contains("/Private/")))
+	{
+		return {};
+	}
+
+	FString PathLeaf;
+	if (!Path.Split("/Public/", &Path, &PathLeaf))
+	{
+		ensure(Path.Split("/Private/", &Path, &PathLeaf));
+		PathLeaf = "/Private/" + PathLeaf;
+	}
+
+	ensure(FPaths::DirectoryExists(Path));
+	const FString ModuleName = FPaths::GetBaseFilename(Path);
+
+	return "/Engine/Module" / ModuleName / FPaths::GetPath(PathLeaf) / Name + (FPaths::GetExtension(Name).IsEmpty() ? ".usf" : "");
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -426,9 +528,13 @@ FMaterialRenderProxy* FVoxelRenderUtilities::CreateColoredRenderProxy(
 
 namespace Voxel::RenderUtilities
 {
-	BEGIN_SHADER_PARAMETER_STRUCT(FUploadParameters, )
-		RDG_BUFFER_ACCESS(UploadBuffer, ERHIAccess::CopyDest)
-	END_SHADER_PARAMETER_STRUCT()
+
+DECLARE_VOXEL_SHADER_NAMESPACE(RenderUtilities, "Utilities");
+
+BEGIN_SHADER_PARAMETER_STRUCT(FUploadParameters, )
+	RDG_BUFFER_ACCESS(UploadBuffer, ERHIAccess::CopyDest)
+END_SHADER_PARAMETER_STRUCT()
+
 }
 
 void FVoxelRenderUtilities::UpdateBuffer(
@@ -526,11 +632,19 @@ void FVoxelRenderUtilities::CopyBuffer(FRDGBuilder& GraphBuilder, TSharedPtr<FVo
 	});
 }
 
-TSharedRef<FVoxelGPUBufferReadback> FVoxelRenderUtilities::CopyBuffer(FRDGBuilder& GraphBuilder, const FRDGBufferRef Buffer)
+TSharedRef<FVoxelGPUBufferReadback> FVoxelRenderUtilities::CopyBuffer(FRDGBuilder& GraphBuilder, FRDGBufferRef Buffer)
 {
 	TSharedPtr<FVoxelGPUBufferReadback> Readback;
 	CopyBuffer(GraphBuilder, Readback, Buffer);
 	return Readback.ToSharedRef();
+}
+
+void FVoxelRenderUtilities::AllocatePooledTexture(
+	TRefCountPtr<IPooledRenderTarget>& Out,
+	const FPooledRenderTargetDesc& Desc,
+	const TCHAR* Name)
+{
+	GRenderTargetPool.FindFreeElement(GetImmediateCommandList_ForRenderCommand(), Desc, Out, Name);
 }
 
 bool FVoxelRenderUtilities::UpdateTextureRef(
@@ -581,7 +695,7 @@ bool FVoxelRenderUtilities::UpdateTextureRef(
 }
 
 void FVoxelRenderUtilities::AsyncCopyTexture(
-	const TWeakObjectPtr<UTexture2D> TargetTexture,
+	TWeakObjectPtr<UTexture2D> TargetTexture,
 	const TSharedRef<const TVoxelArray<uint8>>& Data,
 	const FSimpleDelegate& OnComplete)
 {
@@ -711,20 +825,22 @@ void FVoxelRenderUtilities::AsyncCopyTexture(
 
 namespace Voxel::RenderUtilities
 {
-	BEGIN_VOXEL_COMPUTE_SHADER("Voxel/Utilities", BuildIndirectDispatchArgs)
-		VOXEL_SHADER_PARAMETER_CST(int32, ThreadGroupSize)
-		VOXEL_SHADER_PARAMETER_CST(int32, Multiplier)
-		VOXEL_SHADER_PARAMETER_SRV(Buffer<uint>, Num)
-		VOXEL_SHADER_PARAMETER_UAV(Buffer<uint>, IndirectDispatchArgs)
-	END_VOXEL_SHADER()
+
+BEGIN_VOXEL_COMPUTE_SHADER(BuildIndirectDispatchArgs)
+	VOXEL_SHADER_PARAMETER_CST(int32, ThreadGroupSize)
+	VOXEL_SHADER_PARAMETER_CST(int32, Multiplier)
+	VOXEL_SHADER_PARAMETER_SRV(Buffer<uint>, Num)
+	VOXEL_SHADER_PARAMETER_UAV(Buffer<uint>, IndirectDispatchArgs)
+END_VOXEL_SHADER()
+
 }
 
 void FVoxelRenderUtilities::BuildIndirectDispatchArgsFromNum_1D(
 	FRDGBuilder& GraphBuilder,
-	const int32 ThreadGroupSize,
-	const FRDGBufferUAVRef IndirectDispatchArgsUAV,
-	const FRDGBufferSRVRef NumSRV,
-	const int32 Multiplier)
+	int32 ThreadGroupSize,
+	FRDGBufferUAVRef IndirectDispatchArgsUAV,
+	FRDGBufferSRVRef NumSRV,
+	int32 Multiplier)
 {
 	using namespace Voxel::RenderUtilities;
 
@@ -746,18 +862,20 @@ void FVoxelRenderUtilities::BuildIndirectDispatchArgsFromNum_1D(
 
 namespace Voxel::RenderUtilities
 {
-	BEGIN_VOXEL_COMPUTE_SHADER("Voxel/Utilities", ClampNum)
-		VOXEL_SHADER_PARAMETER_UAV(Buffer<uint>, Num)
-		VOXEL_SHADER_PARAMETER_CST(int32, Min)
-		VOXEL_SHADER_PARAMETER_CST(int32, Max)
-	END_VOXEL_SHADER()
+
+BEGIN_VOXEL_COMPUTE_SHADER(ClampNum)
+	VOXEL_SHADER_PARAMETER_UAV(Buffer<uint>, Num)
+	VOXEL_SHADER_PARAMETER_CST(int32, Min)
+	VOXEL_SHADER_PARAMETER_CST(int32, Max)
+END_VOXEL_SHADER()
+
 }
 
 void FVoxelRenderUtilities::ClampNum(
 	FRDGBuilder& GraphBuilder,
-	const FRDGBufferUAVRef NumUAV,
-	const int32 Min,
-	const int32 Max)
+	FRDGBufferUAVRef NumUAV,
+	int32 Min,
+	int32 Max)
 {
 	using namespace Voxel::RenderUtilities;
 
@@ -778,19 +896,21 @@ void FVoxelRenderUtilities::ClampNum(
 
 namespace Voxel::RenderUtilities
 {
-	BEGIN_VOXEL_COMPUTE_SHADER("Voxel/Utilities", ClearBuffer)
-		VOXEL_SHADER_PARAMETER_INDIRECT_ARGS()
-		VOXEL_SHADER_PARAMETER_CST(uint32, Value)
-		VOXEL_SHADER_PARAMETER_UAV(Buffer<uint>, BufferToClear)
-	END_VOXEL_SHADER()
+
+BEGIN_VOXEL_COMPUTE_SHADER(ClearBuffer)
+	VOXEL_SHADER_PARAMETER_INDIRECT_ARGS()
+	VOXEL_SHADER_PARAMETER_CST(uint32, Value)
+	VOXEL_SHADER_PARAMETER_UAV(Buffer<uint>, BufferToClear)
+END_VOXEL_SHADER()
+
 }
 
 void FVoxelRenderUtilities::ClearBuffer(
 	FRDGBuilder& GraphBuilder,
-	const FRDGBufferUAVRef BufferUAV,
-	const FRDGBufferSRVRef NumSRV,
-	const uint32 Value,
-	const uint32 NumMultiplier)
+	FRDGBufferUAVRef BufferUAV,
+	FRDGBufferSRVRef NumSRV,
+	uint32 Value,
+	uint32 NumMultiplier)
 {
 	RDG_EVENT_SCOPE(GraphBuilder, "ClearBuffer %s", BufferUAV->Name);
 	ensure(BufferUAV->Desc.Format == PF_R32_UINT);
@@ -813,25 +933,30 @@ void FVoxelRenderUtilities::ClearBuffer(
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
+namespace Voxel::RenderUtilities
+{
+
 BEGIN_VOXEL_SHADER_PERMUTATION_DOMAIN(CopyToTextureArray)
 {
 	class FPixelType : SHADER_PERMUTATION_SPARSE_INT("PIXEL_TYPE_INT", 1, 2);
 }
 END_VOXEL_SHADER_PERMUTATION_DOMAIN(CopyToTextureArray, FPixelType)
 
-BEGIN_VOXEL_COMPUTE_SHADER("Voxel/Utilities", CopyToTextureArray)
+BEGIN_VOXEL_COMPUTE_SHADER(CopyToTextureArray)
 	VOXEL_SHADER_PARAMETER_CST(uint32, SizeX)
 	VOXEL_SHADER_PARAMETER_CST(uint32, SliceIndex)
 	VOXEL_SHADER_PARAMETER_SRV(Buffer<uint>, SrcBuffer)
 	SHADER_PARAMETER_UAV(RWTexture2DArray<uint>, TextureArray)
 END_VOXEL_SHADER()
 
+}
+
 void FVoxelRenderUtilities::CopyToTextureArray(
 	FRDGBuilder& GraphBuilder,
 	FTexture2DArrayRHIRef TextureArray,
 	FUnorderedAccessViewRHIRef TextureArrayUAV,
 	FVoxelRDGExternalBufferRef Buffer,
-	const int32 SliceIndex)
+	int32 SliceIndex)
 {
 	if (!ensure(TextureArray) ||
 		!ensure(TextureArrayUAV) ||
@@ -840,6 +965,7 @@ void FVoxelRenderUtilities::CopyToTextureArray(
 		return;
 	}
 
+	using namespace Voxel::RenderUtilities;
 	RDG_EVENT_SCOPE(GraphBuilder, "CopyToTextureArray %s Slice %d", *TextureArray->GetName().ToString(), SliceIndex);
 
 	const int64 NumBytes =
@@ -877,8 +1003,8 @@ void FVoxelRenderUtilities::CopyToTextureArray(
 		PassFlags |= ERDGPassFlags::NeverCull;
 
 		Execute(FIntVector(
-			FVoxelUtilities::DivideCeil<int64>(TextureArray->GetSizeX(), 32),
-			FVoxelUtilities::DivideCeil<int64>(TextureArray->GetSizeY(), 32),
+			FMath::DivideAndRoundUp<int64>(TextureArray->GetSizeX(), 32),
+			FMath::DivideAndRoundUp<int64>(TextureArray->GetSizeY(), 32),
 			1));
 	}
 	END_VOXEL_SHADER_CALL()
@@ -985,7 +1111,7 @@ void FVoxelRenderUtilities::OnReadbackComplete(const TSharedRef<FVoxelGPUBufferR
 
 struct FVoxelGraphBuilderIdBlackboard
 {
-	int32 Id = 0;
+	int32 Id = 0;;
 };
 RDG_REGISTER_BLACKBOARD_STRUCT(FVoxelGraphBuilderIdBlackboard);
 
@@ -1076,25 +1202,4 @@ void FVoxelRenderUtilities::KeepAliveThisFrameAndRelease(const TSharedPtr<FRende
 		ensure(Resource.IsUnique());
 		Resource->ReleaseResource();
 	});
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-void FVoxelRenderUtilities::ResetPreviousLocalToWorld(
-	const UPrimitiveComponent& Component,
-	const FPrimitiveSceneProxy& SceneProxy)
-{
-#if VOXEL_ENGINE_VERSION < 504
-	// Hack to cancel motion blur when mesh components are reused in the same frame
-	VOXEL_ENQUEUE_RENDER_COMMAND(UpdateTransformCommand)(
-		[&SceneProxy, PreviousLocalToWorld = Component.GetRenderMatrix()](FRHICommandListImmediate& RHICmdList)
-		{
-			FScene& Scene = static_cast<FScene&>(SceneProxy.GetScene());
-			Scene.VelocityData.OverridePreviousTransform(SceneProxy.GetPrimitiveComponentId(), PreviousLocalToWorld);
-		});
-#else
-	EMIT_CUSTOM_WARNING("Fix ScenePrivate.h");
-#endif
 }

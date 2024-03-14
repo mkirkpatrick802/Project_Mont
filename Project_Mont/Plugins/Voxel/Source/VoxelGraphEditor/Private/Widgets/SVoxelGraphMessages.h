@@ -1,11 +1,9 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelEditorMinimal.h"
 #include "VoxelGraphNodeRef.h"
-
-class UVoxelGraph;
 
 class SVoxelGraphMessages : public SCompoundWidget
 {
@@ -36,7 +34,7 @@ private:
 	{
 	public:
 		const FString Text;
-		TMap<TWeakObjectPtr<UVoxelTerminalGraph>, TSharedPtr<FGraphNode>> GraphToNode;
+		TMap<TWeakObjectPtr<UVoxelGraph>, TSharedPtr<FGraphNode>> GraphToNode;
 
 		explicit FRootNode(const FString& Text)
 			: Text(Text)
@@ -51,11 +49,11 @@ private:
 	class FGraphNode : public INode
 	{
 	public:
-		const TWeakObjectPtr<UVoxelTerminalGraph> Graph;
-		TMap<FName, TSharedPtr<FPinNode>> PinNameToNode;
-		TMap<TSharedPtr<FVoxelMessage>, TSharedPtr<FMessageNode>> MessageToNode;
+		const TWeakObjectPtr<UVoxelGraph> Graph;
+		TMap<FVoxelGraphPinRef, TSharedPtr<FPinNode>> PinRefToNode;
+		TMap<TSharedPtr<FTokenizedMessage>, TSharedPtr<FMessageNode>> MessageToNode;
 
-		explicit FGraphNode(const TWeakObjectPtr<UVoxelTerminalGraph>& Graph)
+		explicit FGraphNode(const TWeakObjectPtr<UVoxelGraph>& Graph)
 			: Graph(Graph)
 		{
 		}
@@ -68,11 +66,11 @@ private:
 	class FPinNode : public INode
 	{
 	public:
-		const FName PinName;
-		TMap<TSharedPtr<FVoxelMessage>, TSharedPtr<FMessageNode>> MessageToNode;
+		const FVoxelGraphPinRef PinRef;
+		TMap<TSharedPtr<FTokenizedMessage>, TSharedPtr<FMessageNode>> MessageToNode;
 
-		explicit FPinNode(const FName PinName)
-			: PinName(PinName)
+		explicit FPinNode(const FVoxelGraphPinRef& PinRef)
+			: PinRef(PinRef)
 		{
 		}
 
@@ -84,9 +82,9 @@ private:
 	class FMessageNode : public INode
 	{
 	public:
-		const TSharedRef<FVoxelMessage> Message;
+		const TSharedRef<FTokenizedMessage> Message;
 
-		explicit FMessageNode(const TSharedRef<FVoxelMessage>& Message)
+		explicit FMessageNode(const TSharedRef<FTokenizedMessage>& Message)
 			: Message(Message)
 		{
 		}
@@ -104,11 +102,11 @@ private:
 	TSharedPtr<STree> Tree;
 	TArray<TSharedPtr<INode>> Nodes;
 
-	TVoxelMap<TWeakPtr<FVoxelMessage>, TWeakPtr<FVoxelMessage>> MessageToCanonMessage;
-	TMap<uint64, TWeakPtr<FVoxelMessage>> HashToCanonMessage;
+	TVoxelMap<TWeakPtr<FTokenizedMessage>, TWeakPtr<FTokenizedMessage>> MessageToCanonMessage;
+	TMap<FString, TWeakPtr<FTokenizedMessage>> StringToCanonMessage;
 
 	const TSharedRef<FRootNode> CompileNode = MakeVoxelShared<FRootNode>("Compile Errors");
 	const TSharedRef<FRootNode> RuntimeNode = MakeVoxelShared<FRootNode>("Runtime Errors");
 
-	TSharedRef<FVoxelMessage> GetCanonMessage(const TSharedRef<FVoxelMessage>& Message);
+	TSharedRef<FTokenizedMessage> GetCanonMessage(const TSharedRef<FTokenizedMessage>& Message);
 };

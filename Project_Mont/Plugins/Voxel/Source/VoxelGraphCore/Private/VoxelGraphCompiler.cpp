@@ -1,113 +1,91 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelGraphCompiler.h"
 #include "VoxelGraph.h"
+#include "VoxelRootNode.h"
 #include "VoxelExecNode.h"
+#include "VoxelExecNodes.h"
+#include "VoxelDebugNode.h"
 #include "VoxelTemplateNode.h"
-#include "VoxelTerminalGraph.h"
+#include "VoxelFunctionNode.h"
+#include "VoxelParameterNode.h"
+#include "VoxelFunctionCallNode.h"
 #include "VoxelGraphCompileScope.h"
-#include "Preview/VoxelNode_Preview.h"
-#include "Nodes/VoxelNode_Debug.h"
-#include "Nodes/VoxelNode_Output.h"
-#include "Nodes/VoxelNode_UFunction.h"
-#include "Nodes/VoxelNode_Parameter.h"
-#include "Nodes/VoxelNode_RangeDebug.h"
-#include "Nodes/VoxelInputNodes.h"
-#include "Nodes/VoxelLocalVariableNodes.h"
-#include "Nodes/VoxelExecNode_CallTerminalGraph.h"
+#include "VoxelLocalVariableNodes.h"
+#include "Preview/VoxelPreviewNode.h"
 #include "FunctionLibrary/VoxelBasicFunctionLibrary.h"
 
-FVoxelGraphCompiler::FVoxelGraphCompiler(const UVoxelTerminalGraph& TerminalGraph)
-	: TerminalGraph(TerminalGraph)
-	, SerializedGraph(TerminalGraph.GetRuntime().GetSerializedGraph())
-{
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-bool FVoxelGraphCompiler::LoadSerializedGraph(const FOnVoxelGraphChanged& OnTranslated)
+TSharedPtr<Voxel::Graph::FGraph> FVoxelGraphCompiler::TranslateRuntimeGraph(const UVoxelRuntimeGraph& RuntimeGraph)
 {
 	VOXEL_FUNCTION_COUNTER();
 	check(IsInGameThread());
 	check(GVoxelGraphCompileScope);
+	const FVoxelRuntimeGraphData& RuntimeGraphData = RuntimeGraph.GetData();
 
-	// Manually call FixupPins on graph calls
+	// Manually call FixupPins on function calls
 	// This needs to happen as late as possible as it requires graphs to be loaded
 	{
-		VOXEL_SCOPE_COUNTER("Fixup graph calls");
+		VOXEL_SCOPE_COUNTER("Fixup function calls");
 
-		for (const auto& It : SerializedGraph.NodeNameToNode)
+		for (const auto& It : RuntimeGraphData.NodeNameToNode)
 		{
-			if (!It.Value.VoxelNode)
+			if (It.Value.VoxelNode.IsA<FVoxelNode_FunctionCall>())
 			{
-				continue;
+				ConstCast(It.Value.VoxelNode.Get<FVoxelNode_FunctionCall>()).FixupPins();
 			}
-
-			const FVoxelExecNode_CallTerminalGraph* CallTerminalGraphNode = It.Value.VoxelNode->As<FVoxelExecNode_CallTerminalGraph>();
-			if (!CallTerminalGraphNode)
-			{
-				continue;
-			}
-
-			ConstCast(CallTerminalGraphNode)->FixupPins(TerminalGraph.GetGraph(), OnTranslated);
 		}
 	}
 
-	TVoxelMap<const FVoxelSerializedNode*, FNode*> SerializedNodeToNode;
-	TVoxelSet<const FVoxelSerializedNode*> SkippedNodes;
+	const TSharedRef<FGraph> Graph = MakeVoxelShared<FGraph>();
 
-	for (const auto& NodeIt : SerializedGraph.NodeNameToNode)
+	TVoxelMap<const FVoxelRuntimeNode*, FNode*> NodesMap;
+	TVoxelSet<const FVoxelRuntimeNode*> SkippedNodes;
+
+	for (const auto& RuntimeNodeIt : RuntimeGraphData.GetNodeNameToNode())
 	{
-		const FVoxelSerializedNode& SerializedNode = NodeIt.Value;
-		VOXEL_SCOPE_COUNTER_FNAME(SerializedNode.EdGraphNodeTitle);
+		const FVoxelRuntimeNode& RuntimeNode = RuntimeNodeIt.Value;
+		VOXEL_SCOPE_COUNTER_FNAME(RuntimeNode.EdGraphNodeTitle);
 
-		if (!SerializedNode.VoxelNode.IsValid())
+		if (!RuntimeNode.VoxelNode.IsValid())
 		{
-			for (const auto& It : SerializedNode.InputPins)
+			for (const auto& It : RuntimeNode.InputPins)
 			{
 				if (It.Value.LinkedTo.Num() > 0)
 				{
-					VOXEL_MESSAGE(Error, "Invalid struct on {0}", SerializedNode);
-					return false;
+					VOXEL_MESSAGE(Error, "Invalid struct on {0}", RuntimeNode);
+					return nullptr;
 				}
 			}
-			for (const auto& It : SerializedNode.OutputPins)
+			for (const auto& It : RuntimeNode.OutputPins)
 			{
 				if (It.Value.LinkedTo.Num() > 0)
 				{
-					VOXEL_MESSAGE(Error, "Invalid struct on {0}", SerializedNode);
-					return false;
+					VOXEL_MESSAGE(Error, "Invalid struct on {0}", RuntimeNode);
+					return nullptr;
 				}
 			}
 
 			// This node isn't connected to anything, just skip it
-			VOXEL_MESSAGE(Warning, "Invalid struct on {0}", SerializedNode);
-			SkippedNodes.Add(&SerializedNode);
+			VOXEL_MESSAGE(Warning, "Invalid struct on {0}", RuntimeNode);
+			SkippedNodes.Add(&RuntimeNode);
 			continue;
 		}
 
-		const FVoxelGraphNodeRef NodeRef
-		{
-			FVoxelTerminalGraphRef(TerminalGraph),
-			SerializedNode.GetNodeId(),
-			SerializedNode.EdGraphNodeTitle,
-			SerializedNode.EdGraphNodeName
-		};
 
-		FNode& Node = NewNode(NodeRef);
-		{
-			VOXEL_SCOPE_COUNTER_FORMAT("Copy node %s", *SerializedNode.VoxelNode->GetStruct()->GetName());
-			Node.SetVoxelNode(SerializedNode.VoxelNode->MakeSharedCopy());
-		}
-		SerializedNodeToNode.Add_EnsureNew(&SerializedNode, &Node);
+		FVoxelGraphNodeRef NodeRef;
+		NodeRef.Graph = RuntimeGraph.GetOuterUVoxelGraph();
+		NodeRef.NodeId = RuntimeNode.GetNodeId();
+		NodeRef.EdGraphNodeTitle = RuntimeNode.EdGraphNodeTitle;
+		NodeRef.EdGraphNodeName = RuntimeNode.EdGraphNodeName;
 
-		for (const FString& Warning : SerializedNode.Warnings)
+		FNode& Node = Graph->NewNode(NodeRef);
 		{
-			Node.AddError(Warning);
+			VOXEL_SCOPE_COUNTER_FORMAT("Copy node %s", *RuntimeNode.VoxelNode->GetStruct()->GetName());
+			Node.SetVoxelNode(RuntimeNode.VoxelNode->MakeSharedCopy());
 		}
-		for (const FString& Error : SerializedNode.Errors)
+		NodesMap.Add(&RuntimeNode, &Node);
+
+		for (const FString& Error : RuntimeNode.Errors)
 		{
 			Node.AddError(Error);
 		}
@@ -115,143 +93,143 @@ bool FVoxelGraphCompiler::LoadSerializedGraph(const FOnVoxelGraphChanged& OnTran
 		const FVoxelNode& VoxelNode = Node.GetVoxelNode();
 		for (const FVoxelPin& Pin : VoxelNode.GetPins())
 		{
-			if (!(Pin.bIsInput ? SerializedNode.InputPins : SerializedNode.OutputPins).Contains(Pin.Name))
+			if (!(Pin.bIsInput ? RuntimeNode.InputPins : RuntimeNode.OutputPins).Contains(Pin.Name))
 			{
-				VOXEL_MESSAGE(Error, "Outdated node {0}: missing pin {1}", SerializedNode, Pin.Name);
-				return false;
+				VOXEL_MESSAGE(Error, "Outdated node {0}: missing pin {1}", RuntimeNode, Pin.Name);
+				return nullptr;
 			}
 		}
-		for (const auto& It : SerializedNode.InputPins)
+		for (const auto& It : RuntimeNode.InputPins)
 		{
-			const FVoxelSerializedPin& SerializedPin = It.Value;
-			if (!SerializedPin.ParentPinName.IsNone())
+			const FVoxelRuntimePin& RuntimePin = It.Value;
+			if (!RuntimePin.ParentPinName.IsNone())
 			{
 				// Sub-pinS
 				continue;
 			}
 
-			const TSharedPtr<const FVoxelPin> Pin = VoxelNode.FindPin(SerializedPin.PinName);
+			const TSharedPtr<const FVoxelPin> Pin = VoxelNode.FindPin(RuntimePin.PinName);
 			if (!Pin ||
 				!Pin->bIsInput)
 			{
-				VOXEL_MESSAGE(Error, "Outdated node {0}: unknown pin {1}", SerializedNode, SerializedPin.PinName);
-				return false;
+				VOXEL_MESSAGE(Error, "Outdated node {0}: unknown pin {1}", RuntimeNode, RuntimePin.PinName);
+				return nullptr;
 			}
 
-			if (SerializedPin.Type != Pin->GetType())
+			if (RuntimePin.Type != Pin->GetType())
 			{
-				VOXEL_MESSAGE(Error, "Outdated node {0}: type mismatch for pin {1}", SerializedNode, SerializedPin.PinName);
-				return false;
+				VOXEL_MESSAGE(Error, "Outdated node {0}: type mismatch for pin {1}", RuntimeNode, RuntimePin.PinName);
+				return nullptr;
 			}
 		}
-		for (const auto& It : SerializedNode.OutputPins)
+		for (const auto& It : RuntimeNode.OutputPins)
 		{
-			const FVoxelSerializedPin& SerializedPin = It.Value;
-			if (!SerializedPin.ParentPinName.IsNone())
+			const FVoxelRuntimePin& RuntimePin = It.Value;
+			if (!RuntimePin.ParentPinName.IsNone())
 			{
 				// Sub-pinS
 				continue;
 			}
 
-			const TSharedPtr<const FVoxelPin> Pin = VoxelNode.FindPin(SerializedPin.PinName);
+			const TSharedPtr<const FVoxelPin> Pin = VoxelNode.FindPin(RuntimePin.PinName);
 			if (!Pin ||
 				Pin->bIsInput)
 			{
-				VOXEL_MESSAGE(Error, "Outdated node {0}: unknown pin {1}", SerializedNode, SerializedPin.PinName);
-				return false;
+				VOXEL_MESSAGE(Error, "Outdated node {0}: unknown pin {1}", RuntimeNode, RuntimePin.PinName);
+				return nullptr;
 			}
 
-			if (SerializedPin.Type != Pin->GetType())
+			if (RuntimePin.Type != Pin->GetType())
 			{
-				VOXEL_MESSAGE(Error, "Outdated node {0}: type mismatch for pin {1}", SerializedNode, SerializedPin.PinName);
-				return false;
+				VOXEL_MESSAGE(Error, "Outdated node {0}: type mismatch for pin {1}", RuntimeNode, RuntimePin.PinName);
+				return nullptr;
 			}
 		}
 
-		for (const auto& It : SerializedNode.InputPins)
+		for (const auto& RuntimePinIt : RuntimeNode.InputPins)
 		{
-			const FVoxelSerializedPin& SerializedPin = It.Value;
-			if (!SerializedPin.Type.IsValid())
+			const FVoxelRuntimePin& RuntimePin = RuntimePinIt.Value;
+			if (!RuntimePin.Type.IsValid())
 			{
-				VOXEL_MESSAGE(Error, "Invalid pin {0}.{1}", SerializedNode, SerializedPin.PinName);
-				return false;
+				VOXEL_MESSAGE(Error, "Invalid pin {0}.{1}", RuntimeNode, RuntimePin.PinName);
+				return nullptr;
 			}
 
 			FVoxelPinValue DefaultValue;
-			if (SerializedPin.Type.HasPinDefaultValue())
+			if (RuntimePin.Type.HasPinDefaultValue())
 			{
-				DefaultValue = SerializedPin.DefaultValue;
+				DefaultValue = RuntimePin.DefaultValue;
 
 				if (!DefaultValue.IsValid() ||
-					!ensureVoxelSlow(DefaultValue.GetType().CanBeCastedTo(SerializedPin.Type.GetPinDefaultValueType())))
+					!ensureVoxelSlow(DefaultValue.GetType().CanBeCastedTo(RuntimePin.Type.GetPinDefaultValueType())))
 				{
-					VOXEL_MESSAGE(Error, "{0}.{1}: Invalid default value", SerializedNode, SerializedPin.PinName);
-					return false;
+					VOXEL_MESSAGE(Error, "{0}.{1}: Invalid default value", RuntimeNode, RuntimePin.PinName);
+					return nullptr;
 				}
 			}
 			else
 			{
-				ensureVoxelSlow(!SerializedPin.DefaultValue.IsValid());
+				ensureVoxelSlow(!RuntimePin.DefaultValue.IsValid());
 			}
 
-			Node.NewInputPin(SerializedPin.PinName, SerializedPin.Type, DefaultValue).SetParentName(SerializedPin.ParentPinName);
+			Node.NewInputPin(RuntimePin.PinName, RuntimePin.Type, DefaultValue).SetParentName(RuntimePin.ParentPinName);
 		}
 
-		for (const auto& It : SerializedNode.OutputPins)
+		for (const auto& RuntimePinIt : RuntimeNode.OutputPins)
 		{
-			const FVoxelSerializedPin& SerializedPin = It.Value;
-			if (!SerializedPin.Type.IsValid())
+			const FVoxelRuntimePin& RuntimePin = RuntimePinIt.Value;
+			if (!RuntimePin.Type.IsValid())
 			{
-				VOXEL_MESSAGE(Error, "Invalid pin {0}.{1}", SerializedNode, SerializedPin.PinName);
-				return false;
+				VOXEL_MESSAGE(Error, "Invalid pin {0}.{1}", RuntimeNode, RuntimePin.PinName);
+				return nullptr;
 			}
 
-			Node.NewOutputPin(SerializedPin.PinName, SerializedPin.Type).SetParentName(SerializedPin.ParentPinName);
+			Node.NewOutputPin(RuntimePin.PinName, RuntimePin.Type).SetParentName(RuntimePin.ParentPinName);
 		}
 	}
 
 	VOXEL_SCOPE_COUNTER("Fixup links");
 
 	// Fixup links after all nodes are created
-	for (const auto& SerializedNodeIt : SerializedGraph.NodeNameToNode)
+	for (const auto& RuntimeNodeIt : RuntimeGraphData.GetNodeNameToNode())
 	{
-		const FVoxelSerializedNode& SerializedNode = SerializedNodeIt.Value;
-		if (SkippedNodes.Contains(&SerializedNode))
+		const FVoxelRuntimeNode& RuntimeNode = RuntimeNodeIt.Value;
+		if (SkippedNodes.Contains(&RuntimeNode))
 		{
 			continue;
 		}
 
-		FNode& Node = *SerializedNodeToNode[&SerializedNode];
+		FNode& Node = *NodesMap[&RuntimeNode];
 
-		for (const auto& It : SerializedNode.InputPins)
+		for (const auto& RuntimePinIt : RuntimeNode.InputPins)
 		{
-			const FVoxelSerializedPin& InputPin = It.Value;
+			const FVoxelRuntimePin& InputPin = RuntimePinIt.Value;
 			if (InputPin.LinkedTo.Num() > 1)
 			{
-				VOXEL_MESSAGE(Error, "Too many pins linked to {0}.{1}", SerializedNode, InputPin.PinName);
-				return false;
+				VOXEL_MESSAGE(Error, "Too many pins linked to {0}.{1}", RuntimeNode, InputPin.PinName);
+				return nullptr;
 			}
 
-			for (const FVoxelSerializedPinRef& OutputPinRef : InputPin.LinkedTo)
+			for (const FVoxelRuntimePinRef& OutputPinRef : InputPin.LinkedTo)
 			{
 				check(!OutputPinRef.bIsInput);
 
-				const FVoxelSerializedPin* OutputPin = SerializedGraph.FindPin(OutputPinRef);
+				const FVoxelRuntimePin* OutputPin = RuntimeGraphData.FindPin(OutputPinRef);
 				if (!ensure(OutputPin))
 				{
-					VOXEL_MESSAGE(Error, "Invalid pin ref on {0}", SerializedNode);
+					VOXEL_MESSAGE(Error, "Invalid pin ref on {0}", RuntimeNode);
 					continue;
 				}
 
-				const FVoxelSerializedNode& OtherSerializedNode = SerializedGraph.NodeNameToNode[OutputPinRef.NodeName];
-				FNode& OtherNode = *SerializedNodeToNode[&OtherSerializedNode];
+				const FVoxelRuntimeNode& OtherRuntimeNode = RuntimeGraphData.GetNodeNameToNode()[OutputPinRef.NodeName];
+				FNode& OtherNode = *NodesMap[&OtherRuntimeNode];
 
 				if (!OutputPin->Type.CanBeCastedTo_Schema(InputPin.Type))
 				{
 					VOXEL_MESSAGE(Error, "Invalid pin link from {0}.{1} to {2}.{3}: type mismatch: {4} vs {5}",
-						SerializedNode,
+						RuntimeNode,
 						OutputPin->PinName,
-						OtherSerializedNode,
+						OtherRuntimeNode,
 						InputPin.PinName,
 						OutputPin->Type.ToString(),
 						InputPin.Type.ToString());
@@ -265,217 +243,68 @@ bool FVoxelGraphCompiler::LoadSerializedGraph(const FOnVoxelGraphChanged& OnTran
 	}
 
 	// Input links are used to populate all links, check they're correct with output links
-	for (const auto& SerializedNodeIt : SerializedGraph.NodeNameToNode)
+	for (const auto& RuntimeNodeIt : RuntimeGraphData.GetNodeNameToNode())
 	{
-		const FVoxelSerializedNode& SerializedNode = SerializedNodeIt.Value;
-		if (SkippedNodes.Contains(&SerializedNode))
+		const FVoxelRuntimeNode& RuntimeNode = RuntimeNodeIt.Value;
+		if (SkippedNodes.Contains(&RuntimeNode))
 		{
 			continue;
 		}
 
-		FNode& Node = *SerializedNodeToNode[&SerializedNode];
+		FNode& Node = *NodesMap[&RuntimeNode];
 
-		for (const auto& It : SerializedNode.OutputPins)
+		for (const auto& RuntimePinIt : RuntimeNode.OutputPins)
 		{
-			const FVoxelSerializedPin& OutputPin = It.Value;
-			for (const FVoxelSerializedPinRef& InputPinRef : OutputPin.LinkedTo)
+			const FVoxelRuntimePin& OutputPin = RuntimePinIt.Value;
+			for (const FVoxelRuntimePinRef& InputPinRef : OutputPin.LinkedTo)
 			{
 				check(InputPinRef.bIsInput);
 
-				const FVoxelSerializedPin* InputPin = SerializedGraph.FindPin(InputPinRef);
+				const FVoxelRuntimePin* InputPin = RuntimeGraphData.FindPin(InputPinRef);
 				if (!ensure(InputPin))
 				{
-					VOXEL_MESSAGE(Error, "Invalid pin ref on {0}", SerializedNode);
+					VOXEL_MESSAGE(Error, "Invalid pin ref on {0}", RuntimeNode);
 					continue;
 				}
 
-				const FVoxelSerializedNode& OtherSerializedNode = SerializedGraph.NodeNameToNode[InputPinRef.NodeName];
-				FNode& OtherNode = *SerializedNodeToNode[&OtherSerializedNode];
+				const FVoxelRuntimeNode& OtherRuntimeNode = RuntimeGraphData.GetNodeNameToNode()[InputPinRef.NodeName];
+				FNode& OtherNode = *NodesMap[&OtherRuntimeNode];
 
 				if (!OutputPin.Type.CanBeCastedTo_Schema(InputPin->Type))
 				{
 					VOXEL_MESSAGE(Error, "Invalid pin link from {0}.{1} to {2}.{3}: type mismatch: {4} vs {5}",
-						SerializedNode,
+						RuntimeNode,
 						OutputPin.PinName,
-						OtherSerializedNode,
+						OtherRuntimeNode,
 						InputPin->PinName,
 						OutputPin.Type.ToString(),
 						InputPin->Type.ToString());
 
-					return false;
+					continue;
 				}
 
 				if (!ensure(Node.FindOutputChecked(OutputPin.PinName).IsLinkedTo(OtherNode.FindInputChecked(InputPinRef.PinName))))
 				{
 					VOXEL_MESSAGE(Error, "Translation error: {0} -> {1}", Node, OtherNode);
-					return false;
 				}
 			}
 		}
 	}
 
-	Check();
-	return true;
+	Graph->Check();
+	return Graph;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-void FVoxelGraphCompiler::AddPreviewNode()
+void FVoxelGraphCompiler::RemoveSplitPins(FGraph& Graph, const UVoxelRuntimeGraph& RuntimeGraph)
 {
 	VOXEL_FUNCTION_COUNTER();
+	const FVoxelRuntimeGraphData& RuntimeGraphData = RuntimeGraph.GetData();
 
-	// Make sure to run AddPreviewNode before any new node is spawned, otherwise the find below will fail
-	// and find compile nodes instead
-
-	const FVoxelSerializedPinRef PreviewedSerializedPin = SerializedGraph.PreviewedPin;
-	if (PreviewedSerializedPin.NodeName.IsNone())
-	{
-		ensure(PreviewedSerializedPin.PinName.IsNone());
-		ensure(!PreviewedSerializedPin.bIsInput);
-		return;
-	}
-
-	FPin* PreviewedPin = nullptr;
-	for (FNode& Node : GetNodes())
-	{
-		if (Node.NodeRef.EdGraphNodeName != PreviewedSerializedPin.NodeName)
-		{
-			continue;
-		}
-
-		ensure(!PreviewedPin);
-		PreviewedPin = Node.FindPin(PreviewedSerializedPin.PinName);
-		ensure(PreviewedPin);
-	}
-
-	if (!PreviewedPin)
-	{
-		VOXEL_MESSAGE(Warning, "Invalid preview pin");
-		return;
-	}
-
-	const FVoxelGraphNodeRef NodeRef
-	{
-		FVoxelTerminalGraphRef(TerminalGraph),
-		FVoxelGraphConstants::NodeId_Preview,
-		"Preview Node",
-		{}
-	};
-
-	FNode& PreviewNode = NewNode(NodeRef);
-
-	const TSharedRef<FVoxelNode_Preview> PreviewVoxelNode = MakeVoxelShared<FVoxelNode_Preview>();
-	PreviewVoxelNode->PromotePin_Runtime(PreviewVoxelNode->GetUniqueInputPin(), PreviewedPin->Type);
-
-	PreviewNode.SetVoxelNode(PreviewVoxelNode);
-	PreviewNode.NewInputPin(VOXEL_PIN_NAME(FVoxelNode_Preview, ValuePin), PreviewedPin->Type);
-
-	if (PreviewedPin->Direction == EPinDirection::Input)
-	{
-		// TODO Is previewing an input allowed?
-		PreviewedPin->CopyInputPinTo(PreviewNode.GetInputPin(0));
-	}
-	else
-	{
-		check(PreviewedPin->Direction == EPinDirection::Output);
-		PreviewedPin->MakeLinkTo(PreviewNode.GetInputPin(0));
-	}
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-void FVoxelGraphCompiler::AddDebugNodes()
-{
-	VOXEL_FUNCTION_COUNTER();
-
-	for (const FName NodeName : SerializedGraph.DebuggedNodes)
-	{
-		for (FNode& Node : GetNodes())
-		{
-			if (Node.NodeRef.EdGraphNodeName != NodeName)
-			{
-				continue;
-			}
-
-			for (FPin& Pin : Node.GetOutputPins())
-			{
-				FNode& DebugNode = NewNode(Node.NodeRef.WithSuffix("DebugNode").WithSuffix(Pin.Name.ToString()));
-
-				const TSharedRef<FVoxelNode_Debug> DebugVoxelNode = MakeVoxelShared<FVoxelNode_Debug>();
-				DebugVoxelNode->PromotePin_Runtime(DebugVoxelNode->GetUniqueInputPin(), Pin.Type);
-				DebugVoxelNode->PromotePin_Runtime(DebugVoxelNode->GetUniqueOutputPin(), Pin.Type);
-
-				DebugNode.SetVoxelNode(DebugVoxelNode);
-				DebugNode.NewInputPin(VOXEL_PIN_NAME(FVoxelNode_Debug, InPin), Pin.Type);
-				DebugNode.NewOutputPin(VOXEL_PIN_NAME(FVoxelNode_Debug, OutPin), Pin.Type);
-
-				Pin.CopyOutputPinTo(DebugNode.GetOutputPin(0));
-				Pin.BreakAllLinks();
-
-				Pin.MakeLinkTo(DebugNode.GetInputPin(0));
-			}
-
-			break;
-		}
-	}
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-void FVoxelGraphCompiler::AddRangeNodes()
-{
-#if WITH_EDITOR
-	if (!TerminalGraph.GetGraph().bEnableNodeRangeStats)
-	{
-		return;
-	}
-
-	VOXEL_FUNCTION_COUNTER();
-
-	for (FNode& Node : GetNodesCopy())
-	{
-		for (FPin& Pin : Node.GetOutputPins())
-		{
-			if (Pin.Type.IsWildcard())
-			{
-				continue;
-			}
-
-			FNode& DebugNode = NewNode(Node.NodeRef.WithSuffix("DebugRangeNode").WithSuffix(Pin.Name.ToString()));
-
-			const TSharedRef<FVoxelNode_RangeDebug> DebugVoxelNode = MakeVoxelShared<FVoxelNode_RangeDebug>();
-			DebugVoxelNode->PromotePin_Runtime(DebugVoxelNode->GetUniqueInputPin(), Pin.Type);
-			DebugVoxelNode->PromotePin_Runtime(DebugVoxelNode->GetUniqueOutputPin(), Pin.Type);
-			DebugVoxelNode->RefPin = Pin.Name;
-
-			DebugNode.SetVoxelNode(DebugVoxelNode);
-			DebugNode.NewInputPin(VOXEL_PIN_NAME(FVoxelNode_RangeDebug, InPin), Pin.Type);
-			DebugNode.NewOutputPin(VOXEL_PIN_NAME(FVoxelNode_RangeDebug, OutPin), Pin.Type);
-
-			Pin.CopyOutputPinTo(DebugNode.GetOutputPin(0));
-			Pin.BreakAllLinks();
-
-			Pin.MakeLinkTo(DebugNode.GetInputPin(0));
-		}
-	}
-#endif
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-void FVoxelGraphCompiler::RemoveSplitPins()
-{
-	VOXEL_FUNCTION_COUNTER();
-
-	for (FNode& Node : GetNodesCopy())
+	for (FNode& Node : Graph.GetNodesCopy())
 	{
 		TVoxelMap<FPin*, FNode*> ParentPinToMakeBreakNodes;
 		TVoxelArray<FPin*> PinsToRemove;
@@ -498,10 +327,10 @@ void FVoxelGraphCompiler::RemoveSplitPins()
 			{
 				if (ParentPin->Direction == EPinDirection::Input)
 				{
-					FNode& MakeNode = NewNode(Node.NodeRef.WithSuffix("Make_" + ParentPin->Name.ToString()));
+					FNode& MakeNode = Graph.NewNode(Node.NodeRef.WithSuffix("Make_" + ParentPin->Name.ToString()));
 					MakeBreakNode = &MakeNode;
 
-					const FVoxelNode* MakeVoxelNodeTemplate = SerializedGraph.FindMakeNode(ParentPin->Type);
+					const FVoxelNode* MakeVoxelNodeTemplate = RuntimeGraphData.FindMakeNode(ParentPin->Type);
 					if (!ensure(MakeVoxelNodeTemplate))
 					{
 						VOXEL_MESSAGE(Error, "{0}: No make node for type {1}", ParentPin, ParentPin->Type.ToString());
@@ -530,10 +359,10 @@ void FVoxelGraphCompiler::RemoveSplitPins()
 				{
 					check(ParentPin->Direction == EPinDirection::Output);
 
-					FNode& BreakNode = NewNode(Node.NodeRef.WithSuffix("Break_" + ParentPin->Name.ToString()));
+					FNode& BreakNode = Graph.NewNode(Node.NodeRef.WithSuffix("Break_" + ParentPin->Name.ToString()));
 					MakeBreakNode = &BreakNode;
 
-					const FVoxelNode* BreakVoxelNodeTemplate = SerializedGraph.FindBreakNode(ParentPin->Type);
+					const FVoxelNode* BreakVoxelNodeTemplate = RuntimeGraphData.FindBreakNode(ParentPin->Type);
 					if (!ensure(BreakVoxelNodeTemplate))
 					{
 						VOXEL_MESSAGE(Error, "{0}: No break node for type {1}", ParentPin, ParentPin->Type.ToString());
@@ -561,16 +390,7 @@ void FVoxelGraphCompiler::RemoveSplitPins()
 			}
 			check(MakeBreakNode);
 
-			TArray<FString> Parts;
-			SubPin.Name.ToString().ParseIntoArray(Parts, TEXT("|"));
-
-			FName SubPinName = SubPin.Name;
-			if (Parts.Num() > 1)
-			{
-				SubPinName = FName(Parts.Last());
-			}
-
-			FPin* NewPin = MakeBreakNode->FindPin(SubPinName);
+			FPin* NewPin = MakeBreakNode->FindPin(SubPin.Name);
 			if (!ensure(NewPin))
 			{
 				VOXEL_MESSAGE(Error, "{0}: Invalid sub-pin", SubPin);
@@ -602,11 +422,11 @@ void FVoxelGraphCompiler::RemoveSplitPins()
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-void FVoxelGraphCompiler::AddWildcardErrors()
+void FVoxelGraphCompiler::AddWildcardErrors(FGraph& Graph)
 {
 	VOXEL_FUNCTION_COUNTER();
 
-	for (FNode& Node : GetNodes())
+	for (FNode& Node : Graph.GetNodes())
 	{
 		for (const FPin& Pin : Node.GetPins())
 		{
@@ -622,11 +442,11 @@ void FVoxelGraphCompiler::AddWildcardErrors()
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-void FVoxelGraphCompiler::AddNoDefaultErrors()
+void FVoxelGraphCompiler::AddNoDefaultErrors(FGraph& Graph)
 {
 	VOXEL_FUNCTION_COUNTER();
 
-	for (FNode& Node : GetNodes())
+	for (FNode& Node : Graph.GetNodes())
 	{
 		for (const FPin& Pin : Node.GetPins())
 		{
@@ -651,11 +471,11 @@ void FVoxelGraphCompiler::AddNoDefaultErrors()
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-void FVoxelGraphCompiler::CheckParameters() const
+void FVoxelGraphCompiler::CheckParameters(const FGraph& Graph, const UVoxelGraph& VoxelGraph)
 {
 	VOXEL_FUNCTION_COUNTER();
 
-	for (const FNode& Node : GetNodes())
+	for (const FNode& Node : Graph.GetNodes())
 	{
 		const FVoxelNode_Parameter* ParameterNode = Node.GetVoxelNode().As<FVoxelNode_Parameter>();
 		if (!ParameterNode)
@@ -663,7 +483,7 @@ void FVoxelGraphCompiler::CheckParameters() const
 			continue;
 		}
 
-		if (!TerminalGraph.GetGraph().FindParameter(ParameterNode->ParameterGuid))
+		if (!VoxelGraph.FindParameterByGuid(ParameterNode->ParameterGuid))
 		{
 			VOXEL_MESSAGE(Error, "{0}: No parameter named {1}", Node, ParameterNode->ParameterName);
 		}
@@ -674,61 +494,37 @@ void FVoxelGraphCompiler::CheckParameters() const
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-void FVoxelGraphCompiler::CheckInputs() const
+void FVoxelGraphCompiler::CheckInputs(const FGraph& Graph, const UVoxelGraph& VoxelGraph)
 {
 	VOXEL_FUNCTION_COUNTER();
 
-	const auto GetTerminalGraph = [&](const bool bIsGraphInput) -> const UVoxelTerminalGraph&
+	TVoxelMap<FName, TArray<const FNode*>> InputNameToDefaultNodes;
+	for (const FNode& Node : Graph.GetNodes())
 	{
-		return bIsGraphInput ? TerminalGraph.GetGraph().GetMainTerminalGraph() : TerminalGraph;
-	};
-
-	const auto GetInputName = [&](
-		const FGuid& Guid,
-		const bool bIsGraphInput)
-	{
-		const FVoxelGraphInput* Input = GetTerminalGraph(bIsGraphInput).FindInput(Guid);
-		if (!Input)
+		if (const FVoxelNode_FunctionCallInput_WithDefaultPin* InputNode = Node.GetVoxelNode().As<FVoxelNode_FunctionCallInput_WithDefaultPin>())
 		{
-			return Guid.ToString();
-		}
-
-		return Input->Name.ToString();
-	};
-
-	TVoxelMap<TPair<FGuid, bool>, TArray<const FNode*>> InputGuidToDefaultNodes;
-	for (const FNode& Node : GetNodes())
-	{
-		if (const FVoxelNode_Input_WithDefaultPin* InputNode = Node.GetVoxelNode().As<FVoxelNode_Input_WithDefaultPin>())
-		{
-			if (!GetTerminalGraph(InputNode->bIsGraphInput).FindInput(InputNode->Guid))
+			if (!VoxelGraph.FindParameterByName(EVoxelGraphParameterType::Input, InputNode->Name))
 			{
-				VOXEL_MESSAGE(Error, "{0}: No input with GUID {1}",
-					Node,
-					GetInputName(InputNode->Guid, InputNode->bIsGraphInput));
+				VOXEL_MESSAGE(Error, "{0}: No input named {1}", Node, InputNode->Name);
 			}
 
-			InputGuidToDefaultNodes.FindOrAdd({ InputNode->Guid, InputNode->bIsGraphInput }).Add(&Node);
+			InputNameToDefaultNodes.FindOrAdd(InputNode->Name).Add(&Node);
 		}
 
-		if (const FVoxelNode_Input_WithoutDefaultPin* InputNode = Node.GetVoxelNode().As<FVoxelNode_Input_WithoutDefaultPin>())
+		if (const FVoxelNode_FunctionCallInput_WithoutDefaultPin* InputNode = Node.GetVoxelNode().As<FVoxelNode_FunctionCallInput_WithoutDefaultPin>())
 		{
-			if (!GetTerminalGraph(InputNode->bIsGraphInput).FindInput(InputNode->Guid))
+			if (!VoxelGraph.FindParameterByName(EVoxelGraphParameterType::Input, InputNode->Name))
 			{
-				VOXEL_MESSAGE(Error, "{0}: No input with GUID {1}",
-					Node,
-					GetInputName(InputNode->Guid, InputNode->bIsGraphInput));
+				VOXEL_MESSAGE(Error, "{0}: No input named {1}", Node, InputNode->Name);
 			}
 		}
 	}
 
-	for (const auto& It : InputGuidToDefaultNodes)
+	for (const auto& It : InputNameToDefaultNodes)
 	{
 		if (It.Value.Num() > 1)
 		{
-			VOXEL_MESSAGE(Error, "Multiple input nodes with a default pin for input {0}: {1}",
-				GetInputName(It.Key.Key, It.Key.Value),
-				It.Value);
+			VOXEL_MESSAGE(Error, "Multiple input nodes with a default pin for input {0}: {1}", It.Key, It.Value);
 		}
 	}
 }
@@ -737,37 +533,26 @@ void FVoxelGraphCompiler::CheckInputs() const
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-void FVoxelGraphCompiler::CheckOutputs() const
+void FVoxelGraphCompiler::CheckOutputs(const FGraph& Graph, const UVoxelGraph& VoxelGraph)
 {
 	VOXEL_FUNCTION_COUNTER();
 
-	const auto GetOutputName = [&](const FGuid& Guid)
+	TVoxelMap<FName, const FNode*> OutputNameToNode;
+	for (const FNode& Node : Graph.GetNodes())
 	{
-		const FVoxelGraphOutput* Output = TerminalGraph.FindOutput(Guid);
-		if (!Output)
-		{
-			return Guid.ToString();
-		}
-
-		return Output->Name.ToString();
-	};
-
-	TVoxelMap<FGuid, const FNode*> OutputGuidToNode;
-	for (const FNode& Node : GetNodes())
-	{
-		const FVoxelNode_Output* OutputNode = Node.GetVoxelNode().As<FVoxelNode_Output>();
+		const FVoxelNode_FunctionCallOutput* OutputNode = Node.GetVoxelNode().As<FVoxelNode_FunctionCallOutput>();
 		if (!OutputNode)
 		{
 			continue;
 		}
 
-		if (!TerminalGraph.FindOutput(OutputNode->Guid))
+		if (!VoxelGraph.FindParameterByName(EVoxelGraphParameterType::Output, OutputNode->Name))
 		{
-			VOXEL_MESSAGE(Error, "{0}: No output named {1}", Node, GetOutputName(OutputNode->Guid));
+			VOXEL_MESSAGE(Error, "{0}: No output named {1}", Node, OutputNode->Name);
 			continue;
 		}
 
-		const FNode*& RootNode = OutputGuidToNode.FindOrAdd(OutputNode->Guid);
+		const FNode*& RootNode = OutputNameToNode.FindOrAdd(OutputNode->Name);
 		if (RootNode)
 		{
 			VOXEL_MESSAGE(Error, "Duplicated output nodes: {0}, {1}", RootNode, Node);
@@ -776,17 +561,130 @@ void FVoxelGraphCompiler::CheckOutputs() const
 
 		RootNode = &Node;
 	}
+
+	for (const FVoxelGraphParameter& Parameter : VoxelGraph.Parameters)
+	{
+		if (Parameter.ParameterType != EVoxelGraphParameterType::Output ||
+			OutputNameToNode.Contains(Parameter.Name))
+		{
+			continue;
+		}
+
+		VOXEL_MESSAGE(Error, "Missing output node for output {0}", Parameter.Name);
+	}
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-void FVoxelGraphCompiler::AddToBuffer()
+void FVoxelGraphCompiler::AddPreviewNode(FGraph& Graph, const UVoxelRuntimeGraph& RuntimeGraph)
 {
 	VOXEL_FUNCTION_COUNTER();
 
-	for (FNode& Node : GetNodesCopy())
+	// Make sure to run AddPreviewNode before any new node is spawned, otherwise the find below will fail
+	// and find compile nodes instead
+
+	const FVoxelRuntimePinRef PreviewedRuntimePin = RuntimeGraph.GetData().PreviewedPin;
+	if (PreviewedRuntimePin.NodeName.IsNone())
+	{
+		ensure(PreviewedRuntimePin.PinName.IsNone());
+		ensure(!PreviewedRuntimePin.bIsInput);
+		return;
+	}
+
+	FPin* PreviewedPin = nullptr;
+	for (FNode& Node : Graph.GetNodes())
+	{
+		if (Node.NodeRef.EdGraphNodeName != PreviewedRuntimePin.NodeName)
+		{
+			continue;
+		}
+
+		ensure(!PreviewedPin);
+		PreviewedPin = Node.FindPin(PreviewedRuntimePin.PinName);
+		ensure(PreviewedPin);
+	}
+
+	if (!PreviewedPin)
+	{
+		VOXEL_MESSAGE(Warning, "Invalid preview pin");
+		return;
+	}
+
+	FNode& PreviewNode = Graph.NewNode(FVoxelGraphNodeRef
+	{
+		RuntimeGraph.GetOuterUVoxelGraph(),
+		FVoxelNodeNames::PreviewNodeId
+	});
+
+	const TSharedRef<FVoxelPreviewNode> PreviewVoxelNode = MakeVoxelShared<FVoxelPreviewNode>();
+	PreviewVoxelNode->PromotePin_Runtime(PreviewVoxelNode->GetUniqueInputPin(), PreviewedPin->Type);
+
+	PreviewNode.SetVoxelNode(PreviewVoxelNode);
+	PreviewNode.NewInputPin(VOXEL_PIN_NAME(FVoxelPreviewNode, ValuePin), PreviewedPin->Type);
+
+	if (PreviewedPin->Direction == EPinDirection::Input)
+	{
+		// TODO Is previewing an input allowed?
+		PreviewedPin->CopyInputPinTo(PreviewNode.GetInputPin(0));
+	}
+	else
+	{
+		check(PreviewedPin->Direction == EPinDirection::Output);
+		PreviewedPin->MakeLinkTo(PreviewNode.GetInputPin(0));
+	}
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+void FVoxelGraphCompiler::AddDebugNodes(FGraph& Graph, const UVoxelRuntimeGraph& RuntimeGraph)
+{
+	VOXEL_FUNCTION_COUNTER();
+
+	for (const FName NodeName : RuntimeGraph.GetData().DebuggedNodes)
+	{
+		for (FNode& Node : Graph.GetNodes())
+		{
+			if (Node.NodeRef.EdGraphNodeName != NodeName)
+			{
+				continue;
+			}
+
+			for (FPin& Pin : Node.GetOutputPins())
+			{
+				FNode& DebugNode = Graph.NewNode(Node.NodeRef.WithSuffix("DebugNode").WithSuffix(Pin.Name.ToString()));
+
+				const TSharedRef<FVoxelDebugNode> DebugVoxelNode = MakeVoxelShared<FVoxelDebugNode>();
+				DebugVoxelNode->PromotePin_Runtime(DebugVoxelNode->GetUniqueInputPin(), Pin.Type);
+				DebugVoxelNode->PromotePin_Runtime(DebugVoxelNode->GetUniqueOutputPin(), Pin.Type);
+
+				DebugNode.SetVoxelNode(DebugVoxelNode);
+				DebugNode.NewInputPin(VOXEL_PIN_NAME(FVoxelDebugNode, InPin), Pin.Type);
+				DebugNode.NewOutputPin(VOXEL_PIN_NAME(FVoxelDebugNode, OutPin), Pin.Type);
+
+				Pin.CopyOutputPinTo(DebugNode.GetOutputPin(0));
+				Pin.BreakAllLinks();
+
+				Pin.MakeLinkTo(DebugNode.GetInputPin(0));
+			}
+
+			break;
+		}
+	}
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+void FVoxelGraphCompiler::AddToBuffer(FGraph& Graph)
+{
+	VOXEL_FUNCTION_COUNTER();
+
+	for (FNode& Node : Graph.GetNodesCopy())
 	{
 		for (FPin& ToPin : Node.GetInputPins())
 		{
@@ -805,9 +703,9 @@ void FVoxelGraphCompiler::AddToBuffer()
 
 				if (!ToBufferNode)
 				{
-					ToBufferNode = &NewNode(Node.NodeRef.WithSuffix(ToPin.Name.ToString() + "_ToBuffer"));
+					ToBufferNode = &Graph.NewNode(Node.NodeRef.WithSuffix(ToPin.Name.ToString() + "_ToBuffer"));
 
-					const TSharedRef<FVoxelNode_UFunction> FunctionNode = FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelBasicFunctionLibrary, ToBuffer));
+					const TSharedRef<FVoxelFunctionNode> FunctionNode = FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelBasicFunctionLibrary, ToBuffer));
 					FunctionNode->PromotePin_Runtime(FunctionNode->GetUniqueInputPin(), FromPin.Type);
 					FunctionNode->PromotePin_Runtime(FunctionNode->GetUniqueOutputPin(), ToPin.Type);
 					ToBufferNode->SetVoxelNode(FunctionNode);
@@ -823,7 +721,7 @@ void FVoxelGraphCompiler::AddToBuffer()
 		}
 	}
 
-	for (const FNode& Node : GetNodes())
+	for (const FNode& Node : Graph.GetNodes())
 	{
 		for (const FPin& ToPin : Node.GetInputPins())
 		{
@@ -839,20 +737,20 @@ void FVoxelGraphCompiler::AddToBuffer()
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-void FVoxelGraphCompiler::RemoveLocalVariables()
+void FVoxelGraphCompiler::RemoveLocalVariables(FGraph& Graph, const UVoxelGraph& VoxelGraph)
 {
 	VOXEL_FUNCTION_COUNTER();
 
 	TMap<FGuid, FNode*> GuidToDeclaration;
-	for (FNode& Node : GetNodes())
+	for (FNode& Node : Graph.GetNodes())
 	{
-		const FVoxelNode_LocalVariableDeclaration* Declaration = Node.GetVoxelNode().As<FVoxelNode_LocalVariableDeclaration>();
+		const FVoxelLocalVariableDeclaration* Declaration = Node.GetVoxelNode().As<FVoxelLocalVariableDeclaration>();
 		if (!Declaration)
 		{
 			continue;
 		}
 
-		if (!TerminalGraph.FindLocalVariable(Declaration->Guid))
+		if (!VoxelGraph.FindParameterByGuid(Declaration->Guid))
 		{
 			VOXEL_MESSAGE(
 				Error,
@@ -875,9 +773,9 @@ void FVoxelGraphCompiler::RemoveLocalVariables()
 	}
 
 	TMap<FNode*, TArray<FNode*>> DeclarationToUsage;
-	for (FNode& Node : GetNodes())
+	for (FNode& Node : Graph.GetNodes())
 	{
-		const FVoxelNode_LocalVariableUsage* Usage = Node.GetVoxelNode().As<FVoxelNode_LocalVariableUsage>();
+		const FVoxelLocalVariableUsage* Usage = Node.GetVoxelNode().As<FVoxelLocalVariableUsage>();
 		if (!Usage)
 		{
 			continue;
@@ -888,7 +786,7 @@ void FVoxelGraphCompiler::RemoveLocalVariables()
 		{
 			VOXEL_MESSAGE(
 				Error,
-				"Missing local variable declaration: {0}",
+				"Invalid local variable node: {0}",
 				Node);
 			return;
 		}
@@ -909,7 +807,7 @@ void FVoxelGraphCompiler::RemoveLocalVariables()
 				InputPin.CopyInputPinTo(LinkedTo);
 			}
 
-			RemoveNode(*Usage);
+			Graph.RemoveNode(*Usage);
 		}
 	}
 
@@ -923,7 +821,7 @@ void FVoxelGraphCompiler::RemoveLocalVariables()
 		{
 			InputPin.CopyInputPinTo(LinkedTo);
 		}
-		RemoveNode(Declaration);
+		Graph.RemoveNode(Declaration);
 	}
 }
 
@@ -931,31 +829,31 @@ void FVoxelGraphCompiler::RemoveLocalVariables()
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-void FVoxelGraphCompiler::CollapseInputs()
+void FVoxelGraphCompiler::CollapseInputs(FGraph& Graph)
 {
 	VOXEL_FUNCTION_COUNTER();
 
-	TVoxelMap<FGuid, FNode*> InputGuidToNode;
+	TVoxelMap<FName, FNode*> InputNameToNode;
 
 	// Find which input node to use for each input name
-	for (FNode& Node : GetNodes())
+	for (FNode& Node : Graph.GetNodes())
 	{
-		if (const FVoxelNode_Input_WithDefaultPin* InputNode = Node.GetVoxelNode().As<FVoxelNode_Input_WithDefaultPin>())
+		if (const FVoxelNode_FunctionCallInput_WithDefaultPin* InputNode = Node.GetVoxelNode().As<FVoxelNode_FunctionCallInput_WithDefaultPin>())
 		{
-			FNode*& RootNode = InputGuidToNode.FindOrAdd(InputNode->Guid);
+			FNode*& RootNode = InputNameToNode.FindOrAdd(InputNode->Name);
 
 			// Should be handled by CheckInputs
 			ensure(
 				!RootNode ||
 				// Other input pins without a default pins are allowed
-				RootNode->GetVoxelNode().IsA<FVoxelNode_Input_WithoutDefaultPin>());
+				RootNode->GetVoxelNode().IsA<FVoxelNode_FunctionCallInput_WithoutDefaultPin>());
 
 			RootNode = &Node;
 		}
 
-		if (const FVoxelNode_Input_WithoutDefaultPin* InputNode = Node.GetVoxelNode().As<FVoxelNode_Input_WithoutDefaultPin>())
+		if (const FVoxelNode_FunctionCallInput_WithoutDefaultPin* InputNode = Node.GetVoxelNode().As<FVoxelNode_FunctionCallInput_WithoutDefaultPin>())
 		{
-			FNode*& RootNode = InputGuidToNode.FindOrAdd(InputNode->Guid);
+			FNode*& RootNode = InputNameToNode.FindOrAdd(InputNode->Name);
 			if (!RootNode)
 			{
 				RootNode = &Node;
@@ -964,16 +862,16 @@ void FVoxelGraphCompiler::CollapseInputs()
 	}
 
 	// Move other nodes link to the root input nodes
-	for (FNode& Node : GetNodesCopy())
+	for (FNode& Node : Graph.GetNodesCopy())
 	{
 		// No need to check for WithDefault, it's always going to be the root node
-		const FVoxelNode_Input_WithoutDefaultPin* InputNode = Node.GetVoxelNode().As<FVoxelNode_Input_WithoutDefaultPin>();
+		const FVoxelNode_FunctionCallInput_WithoutDefaultPin* InputNode = Node.GetVoxelNode().As<FVoxelNode_FunctionCallInput_WithoutDefaultPin>();
 		if (!InputNode)
 		{
 			continue;
 		}
 
-		FNode* RootNode = InputGuidToNode.FindRef(InputNode->Guid);
+		FNode* RootNode = InputNameToNode.FindRef(InputNode->Name);
 		if (!ensure(RootNode) ||
 			RootNode == &Node)
 		{
@@ -984,7 +882,7 @@ void FVoxelGraphCompiler::CollapseInputs()
 		ensure(Node.GetOutputPins().Num() == 1);
 
 		Node.GetOutputPin(0).CopyOutputPinTo(RootNode->GetOutputPin(0));
-		RemoveNode(Node);
+		Graph.RemoveNode(Node);
 	}
 }
 
@@ -992,13 +890,91 @@ void FVoxelGraphCompiler::CollapseInputs()
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-void FVoxelGraphCompiler::ReplaceTemplates()
+void FVoxelGraphCompiler::AddRootExecuteNode(FGraph& Graph, const UVoxelGraph& VoxelGraph)
+{
+	VOXEL_FUNCTION_COUNTER();
+
+	FNode& MergeNode = Graph.NewNode(FVoxelGraphNodeRef
+	{
+		&VoxelGraph,
+		FVoxelNodeNames::MergeNodeId
+	});
+
+	{
+		const TSharedRef<FVoxelNode_MergeExecs> MergeVoxelNode = MakeVoxelShared<FVoxelNode_MergeExecs>();
+		MergeNode.NewInputPin("Execs_0", FVoxelPinType::Make<FVoxelExec>(), FVoxelPinValue::Make<FVoxelExec>());
+		MergeNode.NewOutputPin(VOXEL_PIN_NAME(FVoxelNode_MergeExecs, ExecPin), FVoxelPinType::Make<FVoxelExec>());
+		MergeNode.SetVoxelNode(MergeVoxelNode);
+
+		for (FNode& Node : Graph.GetNodesCopy())
+		{
+			if (!Node.GetVoxelNode().IsA<FVoxelNode_Execute>())
+			{
+				continue;
+			}
+
+			// Add stats to each Execute node
+			FNode& DummyMergeNode = Graph.NewNode(Node.NodeRef);
+			const TSharedRef<FVoxelNode_MergeExecs> DummyMergeVoxelNode = MakeVoxelShared<FVoxelNode_MergeExecs>();
+			FPin& DummyInputPin = DummyMergeNode.NewInputPin("Execs_0", FVoxelPinType::Make<FVoxelExec>(), FVoxelPinValue::Make<FVoxelExec>());
+			FPin& DummyOutputPin = DummyMergeNode.NewOutputPin(VOXEL_PIN_NAME(FVoxelNode_MergeExecs, ExecPin), FVoxelPinType::Make<FVoxelExec>());
+			DummyMergeNode.SetVoxelNode(DummyMergeVoxelNode);
+
+			Node.FindInputChecked(VOXEL_PIN_NAME(FVoxelNode_Execute, ExecPin)).CopyInputPinTo(DummyInputPin);
+
+			const FName Name = MergeVoxelNode->AddPinToArray(VOXEL_PIN_NAME(FVoxelNode_MergeExecs, ExecsPins));
+			FPin& Pin = MergeNode.NewInputPin(Name, FVoxelPinType::Make<FVoxelExec>());
+			DummyOutputPin.MakeLinkTo(Pin);
+
+			Graph.RemoveNode(Node);
+		}
+
+		for (FNode& Node : Graph.GetNodesCopy())
+		{
+			if (!Node.GetVoxelNode().IsA<FVoxelExecNode>())
+			{
+				continue;
+			}
+
+			FPin& ExecPin = Node.FindOutputChecked(VOXEL_PIN_NAME(FVoxelExecNode, ExecPin));
+			if (ExecPin.GetLinkedTo().Num() > 0)
+			{
+				continue;
+			}
+
+			const FName Name = MergeVoxelNode->AddPinToArray(VOXEL_PIN_NAME(FVoxelNode_MergeExecs, ExecsPins));
+			FPin& Pin = MergeNode.NewInputPin(Name, FVoxelPinType::Make<FVoxelExec>());
+			ExecPin.MakeLinkTo(Pin);
+		}
+	}
+
+	// Add an execute node that the runtime will use to execute the graph
+	// Make sure to do so after iterating all nodes to not auto execute this node
+
+	FNode& ExecuteNode = Graph.NewNode(FVoxelGraphNodeRef
+	{
+		&VoxelGraph,
+		FVoxelNodeNames::ExecuteNodeId
+	});
+
+	ExecuteNode.SetVoxelNode(MakeVoxelShared<FVoxelRootExecuteNode>());
+	ExecuteNode.NewInputPin(VOXEL_PIN_NAME(FVoxelRootExecuteNode, ExecInPin), FVoxelPinType::Make<FVoxelExec>());
+	ExecuteNode.NewInputPin(VOXEL_PIN_NAME(FVoxelRootExecuteNode, EnableNodePin), FVoxelPinType::Make<bool>(), FVoxelPinValue::Make(true));
+	ExecuteNode.NewOutputPin(VOXEL_PIN_NAME(FVoxelRootExecuteNode, ExecPin), FVoxelPinType::Make<FVoxelExec>());
+	ExecuteNode.GetInputPin(0).MakeLinkTo(MergeNode.GetOutputPin(0));
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+void FVoxelGraphCompiler::ReplaceTemplates(FGraph& Graph)
 {
 	VOXEL_FUNCTION_COUNTER();
 
 	while (true)
 	{
-		if (!ReplaceTemplatesImpl())
+		if (!ReplaceTemplatesImpl(Graph))
 		{
 			// No nodes removed, exit
 			break;
@@ -1010,11 +986,11 @@ void FVoxelGraphCompiler::ReplaceTemplates()
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-void FVoxelGraphCompiler::RemovePassthroughs()
+void FVoxelGraphCompiler::RemovePassthroughs(FGraph& Graph)
 {
 	VOXEL_FUNCTION_COUNTER();
 
-	RemoveNodes([&](FNode& Node)
+	Graph.RemoveNodes([&](FNode& Node)
 	{
 		if (Node.Type != ENodeType::Passthrough)
 		{
@@ -1043,40 +1019,92 @@ void FVoxelGraphCompiler::RemovePassthroughs()
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-void FVoxelGraphCompiler::RemoveNodesNotLinkedToQueryableNodes()
+void FVoxelGraphCompiler::DisconnectVirtualPins(FGraph& Graph)
 {
 	VOXEL_FUNCTION_COUNTER();
 
-	TVoxelArray<const FNode*> NodesToKeep;
-	for (const FNode& Node : GetNodes())
+	for (FNode& Node : Graph.GetNodes())
 	{
 		if (Node.Type != ENodeType::Struct)
 		{
 			continue;
 		}
 
-		if (Node.GetVoxelNode().IsA<FVoxelExecNode>() ||
-			// Output nodes can be queried to get their value
-			Node.GetVoxelNode().IsA<FVoxelNode_Output>() ||
-			// Preview nodes are queried by preview widget
-			Node.GetVoxelNode().IsA<FVoxelNode_Preview>())
+		for (FPin& Pin : Node.GetInputPins())
 		{
-			NodesToKeep.Add(&Node);
+			const TSharedPtr<const FVoxelPin> VoxelPin = Node.GetVoxelNode().FindPin(Pin.Name);
+			if (!ensure(VoxelPin) ||
+				!VoxelPin->Metadata.bVirtualPin)
+			{
+				continue;
+			}
+			ensure(Pin.Direction == EPinDirection::Input);
+
+			Pin.BreakAllLinks();
+
+			if (Pin.Type.HasPinDefaultValue())
+			{
+				Pin.SetDefaultValue(FVoxelPinValue(Pin.Type.GetPinDefaultValueType()));
+			}
 		}
 	}
-	RemoveNodesImpl(NodesToKeep);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-void FVoxelGraphCompiler::CheckForLoops()
+void FVoxelGraphCompiler::RemoveUnusedNodes(FGraph& Graph)
+{
+	VOXEL_FUNCTION_COUNTER();
+
+	TArray<const FNode*> Nodes;
+	for (const FNode& Node : Graph.GetNodes())
+	{
+		if (Node.Type == ENodeType::Root)
+		{
+			Nodes.Add(&Node);
+		}
+	}
+	ensure(Nodes.Num() == 1);
+
+	TSet<const FNode*> ValidNodes;
+
+	TArray<const FNode*> NodesToVisit = Nodes;
+	while (NodesToVisit.Num() > 0)
+	{
+		const FNode* Node = NodesToVisit.Pop(false);
+		if (ValidNodes.Contains(Node))
+		{
+			continue;
+		}
+		ValidNodes.Add(Node);
+
+		for (const FPin& Pin : Node->GetInputPins())
+		{
+			for (const FPin& LinkedTo : Pin.GetLinkedTo())
+			{
+				NodesToVisit.Add(&LinkedTo.Node);
+			}
+		}
+	}
+
+	Graph.RemoveNodes([&](const FNode& Node)
+	{
+		return !ValidNodes.Contains(&Node);
+	});
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+void FVoxelGraphCompiler::CheckForLoops(FGraph& Graph)
 {
 	VOXEL_FUNCTION_COUNTER();
 
 	TSet<FNode*> VisitedNodes;
-	TVoxelArray<FNode*> NodesToSort = GetNodesArray();
+	TArray<FNode*> NodesToSort = Graph.GetNodesArray();
 
 	while (NodesToSort.Num() > 0)
 	{
@@ -1125,67 +1153,11 @@ void FVoxelGraphCompiler::CheckForLoops()
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-void FVoxelGraphCompiler::DisconnectVirtualPins()
+bool FVoxelGraphCompiler::ReplaceTemplatesImpl(FGraph& Graph)
 {
 	VOXEL_FUNCTION_COUNTER();
 
-	for (FNode& Node : GetNodes())
-	{
-		if (Node.Type != ENodeType::Struct)
-		{
-			continue;
-		}
-
-		for (FPin& Pin : Node.GetInputPins())
-		{
-			const TSharedPtr<const FVoxelPin> VoxelPin = Node.GetVoxelNode().FindPin(Pin.Name);
-			if (!ensure(VoxelPin) ||
-				!VoxelPin->Metadata.bVirtualPin)
-			{
-				continue;
-			}
-			ensure(Pin.Direction == EPinDirection::Input);
-
-			Pin.BreakAllLinks();
-
-			if (Pin.Type.HasPinDefaultValue())
-			{
-				Pin.SetDefaultValue(FVoxelPinValue(Pin.Type.GetPinDefaultValueType()));
-			}
-		}
-	}
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-void FVoxelGraphCompiler::RemoveNodesNotLinkedToRoot()
-{
-	VOXEL_FUNCTION_COUNTER();
-
-	TVoxelArray<const FNode*> NodesToKeep;
-	for (const FNode& Node : GetNodes())
-	{
-		if (Node.Type == ENodeType::Root)
-		{
-			NodesToKeep.Add(&Node);
-		}
-	}
-	ensure(NodesToKeep.Num() == 1);
-
-	RemoveNodesImpl(NodesToKeep);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-bool FVoxelGraphCompiler::ReplaceTemplatesImpl()
-{
-	VOXEL_FUNCTION_COUNTER();
-
-	for (FNode& Node : GetNodes())
+	for (FNode& Node : Graph.GetNodes())
 	{
 		if (Node.Type != ENodeType::Struct ||
 			!Node.GetVoxelNode().IsA<FVoxelTemplateNode>())
@@ -1220,10 +1192,10 @@ bool FVoxelGraphCompiler::ReplaceTemplatesImpl()
 			GVoxelTemplateNodeContext = nullptr;
 		};
 
-		InitializeTemplatesPassthroughNodes(Node);
+		InitializeTemplatesPassthroughNodes(Graph, Node);
 
-		Node.GetVoxelNode<FVoxelTemplateNode>().ExpandNode(*this, Node);
-		RemoveNode(Node);
+		Node.GetVoxelNode<FVoxelTemplateNode>().ExpandNode(Graph, Node);
+		Graph.RemoveNode(Node);
 
 		return true;
 	}
@@ -1231,13 +1203,11 @@ bool FVoxelGraphCompiler::ReplaceTemplatesImpl()
 	return false;
 }
 
-void FVoxelGraphCompiler::InitializeTemplatesPassthroughNodes(FNode& Node)
+void FVoxelGraphCompiler::InitializeTemplatesPassthroughNodes(FGraph& Graph, FNode& Node)
 {
-	VOXEL_FUNCTION_COUNTER();
-
 	for (FPin& InputPin : Node.GetInputPins())
 	{
-		FNode& Passthrough = NewNode(ENodeType::Passthrough, FVoxelTemplateNodeUtilities::GetNodeRef());
+		FNode& Passthrough = Graph.NewNode(ENodeType::Passthrough, FVoxelTemplateNodeUtilities::GetNodeRef());
 		FPin& PassthroughInputPin = Passthrough.NewInputPin("Input" + InputPin.Name, InputPin.Type);
 		FPin& PassthroughOutputPin = Passthrough.NewOutputPin(InputPin.Name, InputPin.Type);
 
@@ -1249,7 +1219,7 @@ void FVoxelGraphCompiler::InitializeTemplatesPassthroughNodes(FNode& Node)
 
 	for (FPin& OutputPin : Node.GetOutputPins())
 	{
-		FNode& Passthrough = NewNode(ENodeType::Passthrough, FVoxelTemplateNodeUtilities::GetNodeRef());
+		FNode& Passthrough = Graph.NewNode(ENodeType::Passthrough, FVoxelTemplateNodeUtilities::GetNodeRef());
 		FPin& PassthroughInputPin = Passthrough.NewInputPin(OutputPin.Name, OutputPin.Type);
 		if (OutputPin.Type.HasPinDefaultValue())
 		{
@@ -1262,35 +1232,4 @@ void FVoxelGraphCompiler::InitializeTemplatesPassthroughNodes(FNode& Node)
 		OutputPin.BreakAllLinks();
 		OutputPin.MakeLinkTo(PassthroughInputPin);
 	}
-}
-
-void FVoxelGraphCompiler::RemoveNodesImpl(const TVoxelArray<const FNode*>& RootNodes)
-{
-	VOXEL_FUNCTION_COUNTER();
-
-	TSet<const FNode*> ValidNodes;
-
-	TVoxelArray<const FNode*> NodesToVisit = RootNodes;
-	while (NodesToVisit.Num() > 0)
-	{
-		const FNode* Node = NodesToVisit.Pop();
-		if (ValidNodes.Contains(Node))
-		{
-			continue;
-		}
-		ValidNodes.Add(Node);
-
-		for (const FPin& Pin : Node->GetInputPins())
-		{
-			for (const FPin& LinkedTo : Pin.GetLinkedTo())
-			{
-				NodesToVisit.Add(&LinkedTo.Node);
-			}
-		}
-	}
-
-	RemoveNodes([&](const FNode& Node)
-	{
-		return !ValidNodes.Contains(&Node);
-	});
 }

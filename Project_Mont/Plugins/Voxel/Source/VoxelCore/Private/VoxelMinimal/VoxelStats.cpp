@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelMinimal.h"
 #include "HAL/PlatformStackWalk.h"
@@ -17,9 +17,7 @@ thread_local int32 GVoxelLLMScopeCounter = 0;
 struct FVoxelLLMScope
 {
 	const FLLMScope LLMScope = FLLMScope(LLMTagDeclaration_Voxel.GetUniqueName(), false, ELLMTagSet::None, ELLMTracker::Default);
-#if UE_MEMORY_TAGS_TRACE_ENABLED && UE_TRACE_ENABLED
 	const FMemScope MemScope = FMemScope(LLMTagDeclaration_Voxel.GetUniqueName());
-#endif
 };
 thread_local TOptional<FVoxelLLMScope> GVoxelLLMScope;
 
@@ -126,36 +124,6 @@ FString VoxelStats_CleanupFunctionName(const FString& FunctionName)
 #endif
 }
 
-FName VoxelStats_PrintfImpl(const TCHAR* Format, ...)
-{
-	constexpr int32 BufferSize = 512;
-
-	TCHAR Buffer[BufferSize];
-	int32 Result;
-	{
-		va_list VAList;
-		va_start(VAList, Format);
-		Result = FCString::GetVarArgs(Buffer, BufferSize, Format, VAList);
-		if (!ensure(Result < BufferSize))
-		{
-			Result = BufferSize - 1;
-		}
-		va_end(VAList);
-	}
-	Buffer[Result] = TEXT('\0');
-
-	return FName(FStringView(Buffer, Result));
-}
-
-FName VoxelStats_AddNum(const FString& Format, const int32 Num)
-{
-	TStringBuilderWithBuffer<TCHAR, NAME_SIZE> String;
-	String.Append(Format);
-	String.Append(TEXTVIEW(" Num="));
-	FVoxelUtilities::AppendNumber(String, Num);
-	return FName(String);
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -163,7 +131,7 @@ FName VoxelStats_AddNum(const FString& Format, const int32 Num)
 #if STATS
 FName Voxel_GetDynamicStatName(const FName Name)
 {
-	static FVoxelCriticalSection CriticalSection;
+	static FVoxelFastCriticalSection CriticalSection;
 	static TMap<FName, FName> Map;
 
 	VOXEL_SCOPE_LOCK(CriticalSection);
@@ -245,9 +213,9 @@ void FVoxelStackTrace::Capture()
 ///////////////////////////////////////////////////////////////////////////////
 
 #if STATS
-TMap<FName, const FVoxelCounter64*> GVoxelStatNameToInstanceCounter;
+TMap<FName, const FThreadSafeCounter64*> GVoxelStatNameToInstanceCounter;
 
-VOXELCORE_API void RegisterVoxelInstanceCounter(const FName StatName, const FVoxelCounter64& Counter)
+void RegisterVoxelInstanceCounter(const FName StatName, const FThreadSafeCounter64& Counter)
 {
 	check(IsInGameThread());
 	check(!GVoxelStatNameToInstanceCounter.Contains(StatName));
@@ -264,7 +232,7 @@ public:
 
 		for (const auto& It : GVoxelStatNameToInstanceCounter)
 		{
-			FThreadStats::AddMessage(It.Key, EStatOperation::Set, It.Value->Get());
+			FThreadStats::AddMessage(It.Key, EStatOperation::Set, It.Value->GetValue());
 		}
 	}
 	//~ End FVoxelTicker Interface
@@ -279,7 +247,7 @@ VOXEL_RUN_ON_STARTUP_GAME(RegisterVoxelInstanceCounters)
 		TMap<FString, int32> Leaks;
 		for (const auto& It : GVoxelStatNameToInstanceCounter)
 		{
-			if (It.Value->Get() == 0)
+			if (It.Value->GetValue() == 0)
 			{
 				continue;
 			}
@@ -293,7 +261,7 @@ VOXEL_RUN_ON_STARTUP_GAME(RegisterVoxelInstanceCounters)
 				Name = Name.Left(Index);
 			}
 
-			Leaks.Add(Name, It.Value->Get());
+			Leaks.Add(Name, It.Value->GetValue());
 		}
 
 		if (Leaks.Num() == 0)

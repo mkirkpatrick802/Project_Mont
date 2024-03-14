@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -9,38 +9,39 @@ struct FVoxelNodeLibrary
 {
 public:
 	FVoxelNodeLibrary();
+	~FVoxelNodeLibrary();
 
-	static TConstVoxelArrayView<TSharedRef<const FVoxelNode>> GetNodes()
+	static const TVoxelArray<const FVoxelNode*>& GetNodes()
 	{
 		return Get().Nodes;
 	}
 
-	static TSharedPtr<const FVoxelNode> FindMakeNode(const FVoxelPinType& Type)
+	static const FVoxelNode* FindMakeNode(const FVoxelPinType& Type)
 	{
-		return Get().TypeToMakeNode.FindRef(Type);
+		return Get().MakeNodes.FindRef(Type);
 	}
-	static TSharedPtr<const FVoxelNode> FindBreakNode(const FVoxelPinType& Type)
+	static const FVoxelNode* FindBreakNode(const FVoxelPinType& Type)
 	{
-		return Get().TypeToBreakNode.FindRef(Type);
+		return Get().BreakNodes.FindRef(Type);
 	}
 
-	static TSharedPtr<const FVoxelNode> FindCastNode(const FVoxelPinType& From, const FVoxelPinType& To)
+	static const FVoxelNode* FindCastNode(const FVoxelPinType& From, const FVoxelPinType& To)
 	{
-		return Get().FromTypeAndToTypeToCastNode.FindRef({ From, To });
+		return Get().CastNodes.FindRef({ From, To });
 	}
 
 	template<typename T>
-	static TSharedPtr<const T> GetNodeInstance()
+	static const FVoxelNode* GetNodeInstance()
 	{
-		return StaticCastSharedPtr<const T>(Get().StructToNode.FindRef(T::StaticStruct()));
+		return Get().StructToNodes.FindRef(T::StaticStruct());
 	}
 
 private:
-	TVoxelArray<TSharedRef<const FVoxelNode>> Nodes;
-	TVoxelMap<FVoxelPinType, TSharedPtr<const FVoxelNode>> TypeToMakeNode;
-	TVoxelMap < FVoxelPinType, TSharedPtr<const FVoxelNode>> TypeToBreakNode;
-	TVoxelMap<TPair<FVoxelPinType, FVoxelPinType>, TSharedPtr<const FVoxelNode>> FromTypeAndToTypeToCastNode;
-	TVoxelMap<const UScriptStruct*, TSharedPtr<const FVoxelNode>> StructToNode;
+	TVoxelArray<const FVoxelNode*> Nodes;
+	TMap<FVoxelPinType, const FVoxelNode*> MakeNodes;
+	TMap<FVoxelPinType, const FVoxelNode*> BreakNodes;
+	TMap<TPair<FVoxelPinType, FVoxelPinType>, const FVoxelNode*> CastNodes;
+	TMap<const UScriptStruct*, const FVoxelNode*> StructToNodes;
 
 	static const FVoxelNodeLibrary& Get();
 };

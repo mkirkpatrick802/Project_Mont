@@ -1,13 +1,13 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelMinimal.h"
+#include "VoxelBufferUtilities.h"
 #include "VoxelFunctionLibrary.h"
 #include "Buffer/VoxelFloatBuffers.h"
 #include "Buffer/VoxelDoubleBuffers.h"
 #include "Buffer/VoxelIntegerBuffers.h"
-#include "Utilities/VoxelBufferConversionUtilities.h"
 #include "VoxelAutocastFunctionLibrary.generated.h"
 
 UCLASS(Category = "Math|Conversions")
@@ -51,8 +51,8 @@ public:
 		const FVoxelVector2DBuffer& Vector2D) const
 	{
 		FVoxelDoubleVector2DBuffer Result;
-		Result.X = FVoxelBufferConversionUtilities::FloatToDouble(Vector2D.X);
-		Result.Y = FVoxelBufferConversionUtilities::FloatToDouble(Vector2D.Y);
+		Result.X = FVoxelBufferUtilities::FloatToDouble(Vector2D.X);
+		Result.Y = FVoxelBufferUtilities::FloatToDouble(Vector2D.Y);
 		return Result;
 	}
 
@@ -64,8 +64,8 @@ public:
 		CheckVoxelBuffersNum_Function(Vector2D, Z);
 
 		FVoxelDoubleVectorBuffer Result;
-		Result.X = FVoxelBufferConversionUtilities::FloatToDouble(Vector2D.X);
-		Result.Y = FVoxelBufferConversionUtilities::FloatToDouble(Vector2D.Y);
+		Result.X = FVoxelBufferUtilities::FloatToDouble(Vector2D.X);
+		Result.Y = FVoxelBufferUtilities::FloatToDouble(Vector2D.Y);
 		Result.Z = Z;
 		return Result;
 	}
@@ -79,8 +79,8 @@ public:
 		CheckVoxelBuffersNum_Function(Vector2D, B, A);
 
 		FVoxelDoubleLinearColorBuffer Result;
-		Result.R = FVoxelBufferConversionUtilities::FloatToDouble(Vector2D.X);
-		Result.G = FVoxelBufferConversionUtilities::FloatToDouble(Vector2D.Y);
+		Result.R = FVoxelBufferUtilities::FloatToDouble(Vector2D.X);
+		Result.G = FVoxelBufferUtilities::FloatToDouble(Vector2D.Y);
 		Result.B = B;
 		Result.A = A;
 		return Result;
@@ -117,8 +117,8 @@ public:
 		const FVoxelVectorBuffer& Vector) const
 	{
 		FVoxelDoubleVector2DBuffer Result;
-		Result.X = FVoxelBufferConversionUtilities::FloatToDouble(Vector.X);
-		Result.Y = FVoxelBufferConversionUtilities::FloatToDouble(Vector.Y);
+		Result.X = FVoxelBufferUtilities::FloatToDouble(Vector.X);
+		Result.Y = FVoxelBufferUtilities::FloatToDouble(Vector.Y);
 		return Result;
 	}
 
@@ -127,9 +127,9 @@ public:
 		const FVoxelVectorBuffer& Vector) const
 	{
 		FVoxelDoubleVectorBuffer Result;
-		Result.X = FVoxelBufferConversionUtilities::FloatToDouble(Vector.X);
-		Result.Y = FVoxelBufferConversionUtilities::FloatToDouble(Vector.Y);
-		Result.Z = FVoxelBufferConversionUtilities::FloatToDouble(Vector.Z);
+		Result.X = FVoxelBufferUtilities::FloatToDouble(Vector.X);
+		Result.Y = FVoxelBufferUtilities::FloatToDouble(Vector.Y);
+		Result.Z = FVoxelBufferUtilities::FloatToDouble(Vector.Z);
 		return Result;
 	}
 
@@ -141,9 +141,9 @@ public:
 		CheckVoxelBuffersNum_Function(Vector, A);
 
 		FVoxelDoubleLinearColorBuffer Result;
-		Result.R = FVoxelBufferConversionUtilities::FloatToDouble(Vector.X);
-		Result.G = FVoxelBufferConversionUtilities::FloatToDouble(Vector.Y);
-		Result.B = FVoxelBufferConversionUtilities::FloatToDouble(Vector.Z);
+		Result.R = FVoxelBufferUtilities::FloatToDouble(Vector.X);
+		Result.G = FVoxelBufferUtilities::FloatToDouble(Vector.Y);
+		Result.B = FVoxelBufferUtilities::FloatToDouble(Vector.Z);
 		Result.A = A;
 		return Result;
 	}
@@ -175,8 +175,8 @@ public:
 		const FVoxelLinearColorBuffer& Color) const
 	{
 		FVoxelDoubleVector2DBuffer Result;
-		Result.X = FVoxelBufferConversionUtilities::FloatToDouble(Color.R);
-		Result.Y = FVoxelBufferConversionUtilities::FloatToDouble(Color.G);
+		Result.X = FVoxelBufferUtilities::FloatToDouble(Color.R);
+		Result.Y = FVoxelBufferUtilities::FloatToDouble(Color.G);
 		return Result;
 	}
 
@@ -185,9 +185,9 @@ public:
 		const FVoxelLinearColorBuffer& Color) const
 	{
 		FVoxelDoubleVectorBuffer Result;
-		Result.X = FVoxelBufferConversionUtilities::FloatToDouble(Color.R);
-		Result.Y = FVoxelBufferConversionUtilities::FloatToDouble(Color.G);
-		Result.Z = FVoxelBufferConversionUtilities::FloatToDouble(Color.B);
+		Result.X = FVoxelBufferUtilities::FloatToDouble(Color.R);
+		Result.Y = FVoxelBufferUtilities::FloatToDouble(Color.G);
+		Result.Z = FVoxelBufferUtilities::FloatToDouble(Color.B);
 		return Result;
 	}
 
@@ -196,10 +196,10 @@ public:
 		const FVoxelLinearColorBuffer& Color) const
 	{
 		FVoxelDoubleLinearColorBuffer Result;
-		Result.R = FVoxelBufferConversionUtilities::FloatToDouble(Color.R);
-		Result.G = FVoxelBufferConversionUtilities::FloatToDouble(Color.G);
-		Result.B = FVoxelBufferConversionUtilities::FloatToDouble(Color.B);
-		Result.A = FVoxelBufferConversionUtilities::FloatToDouble(Color.A);
+		Result.R = FVoxelBufferUtilities::FloatToDouble(Color.R);
+		Result.G = FVoxelBufferUtilities::FloatToDouble(Color.G);
+		Result.B = FVoxelBufferUtilities::FloatToDouble(Color.B);
+		Result.A = FVoxelBufferUtilities::FloatToDouble(Color.A);
 		return Result;
 	}
 
@@ -209,8 +209,8 @@ public:
 		const FVoxelDoubleVector2DBuffer& Vector2D) const
 	{
 		FVoxelVector2DBuffer Result;
-		Result.X = FVoxelBufferConversionUtilities::DoubleToFloat(Vector2D.X);
-		Result.Y = FVoxelBufferConversionUtilities::DoubleToFloat(Vector2D.Y);
+		Result.X = FVoxelBufferUtilities::DoubleToFloat(Vector2D.X);
+		Result.Y = FVoxelBufferUtilities::DoubleToFloat(Vector2D.Y);
 		return Result;
 	}
 
@@ -222,8 +222,8 @@ public:
 		CheckVoxelBuffersNum_Function(Vector2D, Z);
 
 		FVoxelVectorBuffer Result;
-		Result.X = FVoxelBufferConversionUtilities::DoubleToFloat(Vector2D.X);
-		Result.Y = FVoxelBufferConversionUtilities::DoubleToFloat(Vector2D.Y);
+		Result.X = FVoxelBufferUtilities::DoubleToFloat(Vector2D.X);
+		Result.Y = FVoxelBufferUtilities::DoubleToFloat(Vector2D.Y);
 		Result.Z = Z;
 		return Result;
 	}
@@ -237,8 +237,8 @@ public:
 		CheckVoxelBuffersNum_Function(Vector2D, B, A);
 
 		FVoxelLinearColorBuffer Result;
-		Result.R = FVoxelBufferConversionUtilities::DoubleToFloat(Vector2D.X);
-		Result.G = FVoxelBufferConversionUtilities::DoubleToFloat(Vector2D.Y);
+		Result.R = FVoxelBufferUtilities::DoubleToFloat(Vector2D.X);
+		Result.G = FVoxelBufferUtilities::DoubleToFloat(Vector2D.Y);
 		Result.B = B;
 		Result.A = A;
 		return Result;
@@ -280,8 +280,8 @@ public:
 		const FVoxelDoubleVectorBuffer& Vector) const
 	{
 		FVoxelVector2DBuffer Result;
-		Result.X = FVoxelBufferConversionUtilities::DoubleToFloat(Vector.X);
-		Result.Y = FVoxelBufferConversionUtilities::DoubleToFloat(Vector.Y);
+		Result.X = FVoxelBufferUtilities::DoubleToFloat(Vector.X);
+		Result.Y = FVoxelBufferUtilities::DoubleToFloat(Vector.Y);
 		return Result;
 	}
 
@@ -290,9 +290,9 @@ public:
 		const FVoxelDoubleVectorBuffer& Vector) const
 	{
 		FVoxelVectorBuffer Result;
-		Result.X = FVoxelBufferConversionUtilities::DoubleToFloat(Vector.X);
-		Result.Y = FVoxelBufferConversionUtilities::DoubleToFloat(Vector.Y);
-		Result.Z = FVoxelBufferConversionUtilities::DoubleToFloat(Vector.Z);
+		Result.X = FVoxelBufferUtilities::DoubleToFloat(Vector.X);
+		Result.Y = FVoxelBufferUtilities::DoubleToFloat(Vector.Y);
+		Result.Z = FVoxelBufferUtilities::DoubleToFloat(Vector.Z);
 		return Result;
 	}
 
@@ -304,9 +304,9 @@ public:
 		CheckVoxelBuffersNum_Function(Vector, A);
 
 		FVoxelLinearColorBuffer Result;
-		Result.R = FVoxelBufferConversionUtilities::DoubleToFloat(Vector.X);
-		Result.G = FVoxelBufferConversionUtilities::DoubleToFloat(Vector.Y);
-		Result.B = FVoxelBufferConversionUtilities::DoubleToFloat(Vector.Z);
+		Result.R = FVoxelBufferUtilities::DoubleToFloat(Vector.X);
+		Result.G = FVoxelBufferUtilities::DoubleToFloat(Vector.Y);
+		Result.B = FVoxelBufferUtilities::DoubleToFloat(Vector.Z);
 		Result.A = A;
 		return Result;
 	}
@@ -342,8 +342,8 @@ public:
 		const FVoxelDoubleLinearColorBuffer& Color) const
 	{
 		FVoxelVector2DBuffer Result;
-		Result.X = FVoxelBufferConversionUtilities::DoubleToFloat(Color.R);
-		Result.Y = FVoxelBufferConversionUtilities::DoubleToFloat(Color.G);
+		Result.X = FVoxelBufferUtilities::DoubleToFloat(Color.R);
+		Result.Y = FVoxelBufferUtilities::DoubleToFloat(Color.G);
 		return Result;
 	}
 
@@ -352,9 +352,9 @@ public:
 		const FVoxelDoubleLinearColorBuffer& Color) const
 	{
 		FVoxelVectorBuffer Result;
-		Result.X = FVoxelBufferConversionUtilities::DoubleToFloat(Color.R);
-		Result.Y = FVoxelBufferConversionUtilities::DoubleToFloat(Color.G);
-		Result.Z = FVoxelBufferConversionUtilities::DoubleToFloat(Color.B);
+		Result.X = FVoxelBufferUtilities::DoubleToFloat(Color.R);
+		Result.Y = FVoxelBufferUtilities::DoubleToFloat(Color.G);
+		Result.Z = FVoxelBufferUtilities::DoubleToFloat(Color.B);
 		return Result;
 	}
 
@@ -363,10 +363,10 @@ public:
 		const FVoxelDoubleLinearColorBuffer& Color) const
 	{
 		FVoxelLinearColorBuffer Result;
-		Result.R = FVoxelBufferConversionUtilities::DoubleToFloat(Color.R);
-		Result.G = FVoxelBufferConversionUtilities::DoubleToFloat(Color.G);
-		Result.B = FVoxelBufferConversionUtilities::DoubleToFloat(Color.B);
-		Result.A = FVoxelBufferConversionUtilities::DoubleToFloat(Color.A);
+		Result.R = FVoxelBufferUtilities::DoubleToFloat(Color.R);
+		Result.G = FVoxelBufferUtilities::DoubleToFloat(Color.G);
+		Result.B = FVoxelBufferUtilities::DoubleToFloat(Color.B);
+		Result.A = FVoxelBufferUtilities::DoubleToFloat(Color.A);
 		return Result;
 	}
 
@@ -427,8 +427,8 @@ public:
 		const FVoxelIntPointBuffer& IntPoint) const
 	{
 		FVoxelVector2DBuffer Result;
-		Result.X = FVoxelBufferConversionUtilities::IntToFloat(IntPoint.X);
-		Result.Y = FVoxelBufferConversionUtilities::IntToFloat(IntPoint.Y);
+		Result.X = FVoxelBufferUtilities::IntToFloat(IntPoint.X);
+		Result.Y = FVoxelBufferUtilities::IntToFloat(IntPoint.Y);
 		return Result;
 	}
 
@@ -440,8 +440,8 @@ public:
 		CheckVoxelBuffersNum_Function(IntPoint, Z);
 
 		FVoxelVectorBuffer Result;
-		Result.X = FVoxelBufferConversionUtilities::IntToFloat(IntPoint.X);
-		Result.Y = FVoxelBufferConversionUtilities::IntToFloat(IntPoint.Y);
+		Result.X = FVoxelBufferUtilities::IntToFloat(IntPoint.X);
+		Result.Y = FVoxelBufferUtilities::IntToFloat(IntPoint.Y);
 		Result.Z = Z;
 		return Result;
 	}
@@ -455,8 +455,8 @@ public:
 		CheckVoxelBuffersNum_Function(IntPoint, B, A);
 
 		FVoxelLinearColorBuffer Result;
-		Result.R = FVoxelBufferConversionUtilities::IntToFloat(IntPoint.X);
-		Result.G = FVoxelBufferConversionUtilities::IntToFloat(IntPoint.Y);
+		Result.R = FVoxelBufferUtilities::IntToFloat(IntPoint.X);
+		Result.G = FVoxelBufferUtilities::IntToFloat(IntPoint.Y);
 		Result.B = B;
 		Result.A = A;
 		return Result;
@@ -467,8 +467,8 @@ public:
 		const FVoxelIntPointBuffer& IntPoint) const
 	{
 		FVoxelDoubleVector2DBuffer Result;
-		Result.X = FVoxelBufferConversionUtilities::IntToDouble(IntPoint.X);
-		Result.Y = FVoxelBufferConversionUtilities::IntToDouble(IntPoint.Y);
+		Result.X = FVoxelBufferUtilities::IntToDouble(IntPoint.X);
+		Result.Y = FVoxelBufferUtilities::IntToDouble(IntPoint.Y);
 		return Result;
 	}
 
@@ -480,8 +480,8 @@ public:
 		CheckVoxelBuffersNum_Function(IntPoint, Z);
 
 		FVoxelDoubleVectorBuffer Result;
-		Result.X = FVoxelBufferConversionUtilities::IntToDouble(IntPoint.X);
-		Result.Y = FVoxelBufferConversionUtilities::IntToDouble(IntPoint.Y);
+		Result.X = FVoxelBufferUtilities::IntToDouble(IntPoint.X);
+		Result.Y = FVoxelBufferUtilities::IntToDouble(IntPoint.Y);
 		Result.Z = Z;
 		return Result;
 	}
@@ -495,8 +495,8 @@ public:
 		CheckVoxelBuffersNum_Function(IntPoint, B, A);
 
 		FVoxelDoubleLinearColorBuffer Result;
-		Result.R = FVoxelBufferConversionUtilities::IntToDouble(IntPoint.X);
-		Result.G = FVoxelBufferConversionUtilities::IntToDouble(IntPoint.Y);
+		Result.R = FVoxelBufferUtilities::IntToDouble(IntPoint.X);
+		Result.G = FVoxelBufferUtilities::IntToDouble(IntPoint.Y);
 		Result.B = B;
 		Result.A = A;
 		return Result;
@@ -533,8 +533,8 @@ public:
 		const FVoxelIntVectorBuffer& Vector) const
 	{
 		FVoxelVector2DBuffer Result;
-		Result.X = FVoxelBufferConversionUtilities::IntToFloat(Vector.X);
-		Result.Y = FVoxelBufferConversionUtilities::IntToFloat(Vector.Y);
+		Result.X = FVoxelBufferUtilities::IntToFloat(Vector.X);
+		Result.Y = FVoxelBufferUtilities::IntToFloat(Vector.Y);
 		return Result;
 	}
 
@@ -543,9 +543,9 @@ public:
 		const FVoxelIntVectorBuffer& Vector) const
 	{
 		FVoxelVectorBuffer Result;
-		Result.X = FVoxelBufferConversionUtilities::IntToFloat(Vector.X);
-		Result.Y = FVoxelBufferConversionUtilities::IntToFloat(Vector.Y);
-		Result.Z = FVoxelBufferConversionUtilities::IntToFloat(Vector.Z);
+		Result.X = FVoxelBufferUtilities::IntToFloat(Vector.X);
+		Result.Y = FVoxelBufferUtilities::IntToFloat(Vector.Y);
+		Result.Z = FVoxelBufferUtilities::IntToFloat(Vector.Z);
 		return Result;
 	}
 
@@ -557,9 +557,9 @@ public:
 		CheckVoxelBuffersNum_Function(Vector, A);
 
 		FVoxelLinearColorBuffer Result;
-		Result.R = FVoxelBufferConversionUtilities::IntToFloat(Vector.X);
-		Result.G = FVoxelBufferConversionUtilities::IntToFloat(Vector.Y);
-		Result.B = FVoxelBufferConversionUtilities::IntToFloat(Vector.Z);
+		Result.R = FVoxelBufferUtilities::IntToFloat(Vector.X);
+		Result.G = FVoxelBufferUtilities::IntToFloat(Vector.Y);
+		Result.B = FVoxelBufferUtilities::IntToFloat(Vector.Z);
 		Result.A = A;
 		return Result;
 	}
@@ -569,8 +569,8 @@ public:
 		const FVoxelIntVectorBuffer& Vector) const
 	{
 		FVoxelDoubleVector2DBuffer Result;
-		Result.X = FVoxelBufferConversionUtilities::IntToDouble(Vector.X);
-		Result.Y = FVoxelBufferConversionUtilities::IntToDouble(Vector.Y);
+		Result.X = FVoxelBufferUtilities::IntToDouble(Vector.X);
+		Result.Y = FVoxelBufferUtilities::IntToDouble(Vector.Y);
 		return Result;
 	}
 
@@ -579,9 +579,9 @@ public:
 		const FVoxelIntVectorBuffer& Vector) const
 	{
 		FVoxelDoubleVectorBuffer Result;
-		Result.X = FVoxelBufferConversionUtilities::IntToDouble(Vector.X);
-		Result.Y = FVoxelBufferConversionUtilities::IntToDouble(Vector.Y);
-		Result.Z = FVoxelBufferConversionUtilities::IntToDouble(Vector.Z);
+		Result.X = FVoxelBufferUtilities::IntToDouble(Vector.X);
+		Result.Y = FVoxelBufferUtilities::IntToDouble(Vector.Y);
+		Result.Z = FVoxelBufferUtilities::IntToDouble(Vector.Z);
 		return Result;
 	}
 
@@ -593,9 +593,9 @@ public:
 		CheckVoxelBuffersNum_Function(Vector, A);
 
 		FVoxelDoubleLinearColorBuffer Result;
-		Result.R = FVoxelBufferConversionUtilities::IntToDouble(Vector.X);
-		Result.G = FVoxelBufferConversionUtilities::IntToDouble(Vector.Y);
-		Result.B = FVoxelBufferConversionUtilities::IntToDouble(Vector.Z);
+		Result.R = FVoxelBufferUtilities::IntToDouble(Vector.X);
+		Result.G = FVoxelBufferUtilities::IntToDouble(Vector.Y);
+		Result.B = FVoxelBufferUtilities::IntToDouble(Vector.Z);
 		Result.A = A;
 		return Result;
 	}
@@ -627,8 +627,8 @@ public:
 		const FVoxelIntVector4Buffer& Vector) const
 	{
 		FVoxelVector2DBuffer Result;
-		Result.X = FVoxelBufferConversionUtilities::IntToFloat(Vector.X);
-		Result.Y = FVoxelBufferConversionUtilities::IntToFloat(Vector.Y);
+		Result.X = FVoxelBufferUtilities::IntToFloat(Vector.X);
+		Result.Y = FVoxelBufferUtilities::IntToFloat(Vector.Y);
 		return Result;
 	}
 
@@ -637,9 +637,9 @@ public:
 		const FVoxelIntVector4Buffer& Vector) const
 	{
 		FVoxelVectorBuffer Result;
-		Result.X = FVoxelBufferConversionUtilities::IntToFloat(Vector.X);
-		Result.Y = FVoxelBufferConversionUtilities::IntToFloat(Vector.Y);
-		Result.Z = FVoxelBufferConversionUtilities::IntToFloat(Vector.Z);
+		Result.X = FVoxelBufferUtilities::IntToFloat(Vector.X);
+		Result.Y = FVoxelBufferUtilities::IntToFloat(Vector.Y);
+		Result.Z = FVoxelBufferUtilities::IntToFloat(Vector.Z);
 		return Result;
 	}
 
@@ -648,10 +648,10 @@ public:
 		const FVoxelIntVector4Buffer& Vector) const
 	{
 		FVoxelLinearColorBuffer Result;
-		Result.R = FVoxelBufferConversionUtilities::IntToFloat(Vector.X);
-		Result.G = FVoxelBufferConversionUtilities::IntToFloat(Vector.Y);
-		Result.B = FVoxelBufferConversionUtilities::IntToFloat(Vector.Z);
-		Result.A = FVoxelBufferConversionUtilities::IntToFloat(Vector.W);
+		Result.R = FVoxelBufferUtilities::IntToFloat(Vector.X);
+		Result.G = FVoxelBufferUtilities::IntToFloat(Vector.Y);
+		Result.B = FVoxelBufferUtilities::IntToFloat(Vector.Z);
+		Result.A = FVoxelBufferUtilities::IntToFloat(Vector.W);
 		return Result;
 	}
 
@@ -660,8 +660,8 @@ public:
 		const FVoxelIntVector4Buffer& Vector) const
 	{
 		FVoxelDoubleVector2DBuffer Result;
-		Result.X = FVoxelBufferConversionUtilities::IntToDouble(Vector.X);
-		Result.Y = FVoxelBufferConversionUtilities::IntToDouble(Vector.Y);
+		Result.X = FVoxelBufferUtilities::IntToDouble(Vector.X);
+		Result.Y = FVoxelBufferUtilities::IntToDouble(Vector.Y);
 		return Result;
 	}
 
@@ -670,9 +670,9 @@ public:
 		const FVoxelIntVector4Buffer& Vector) const
 	{
 		FVoxelDoubleVectorBuffer Result;
-		Result.X = FVoxelBufferConversionUtilities::IntToDouble(Vector.X);
-		Result.Y = FVoxelBufferConversionUtilities::IntToDouble(Vector.Y);
-		Result.Z = FVoxelBufferConversionUtilities::IntToDouble(Vector.Z);
+		Result.X = FVoxelBufferUtilities::IntToDouble(Vector.X);
+		Result.Y = FVoxelBufferUtilities::IntToDouble(Vector.Y);
+		Result.Z = FVoxelBufferUtilities::IntToDouble(Vector.Z);
 		return Result;
 	}
 
@@ -681,10 +681,10 @@ public:
 		const FVoxelIntVector4Buffer& Vector) const
 	{
 		FVoxelDoubleLinearColorBuffer Result;
-		Result.R = FVoxelBufferConversionUtilities::IntToDouble(Vector.X);
-		Result.G = FVoxelBufferConversionUtilities::IntToDouble(Vector.Y);
-		Result.B = FVoxelBufferConversionUtilities::IntToDouble(Vector.Z);
-		Result.A = FVoxelBufferConversionUtilities::IntToDouble(Vector.W);
+		Result.R = FVoxelBufferUtilities::IntToDouble(Vector.X);
+		Result.G = FVoxelBufferUtilities::IntToDouble(Vector.Y);
+		Result.B = FVoxelBufferUtilities::IntToDouble(Vector.Z);
+		Result.A = FVoxelBufferUtilities::IntToDouble(Vector.W);
 		return Result;
 	}
 
@@ -785,23 +785,23 @@ public:
 	UFUNCTION(meta = (Autocast))
 	FVoxelFloatBuffer IntegerToFloat(const FVoxelInt32Buffer& Value) const
 	{
-		return FVoxelBufferConversionUtilities::IntToFloat(Value);
+		return FVoxelBufferUtilities::IntToFloat(Value);
 	}
 	UFUNCTION(meta = (Autocast))
 	FVoxelDoubleBuffer IntegerToDouble(const FVoxelInt32Buffer& Value) const
 	{
-		return FVoxelBufferConversionUtilities::IntToDouble(Value);
+		return FVoxelBufferUtilities::IntToDouble(Value);
 	}
 
 	UFUNCTION(meta = (Autocast))
 	FVoxelDoubleBuffer FloatToDouble(const FVoxelFloatBuffer& Value) const
 	{
-		return FVoxelBufferConversionUtilities::FloatToDouble(Value);
+		return FVoxelBufferUtilities::FloatToDouble(Value);
 	}
 	UFUNCTION(meta = (Autocast))
 	FVoxelFloatBuffer DoubleToFloat(const FVoxelDoubleBuffer& Value) const
 	{
-		return FVoxelBufferConversionUtilities::DoubleToFloat(Value);
+		return FVoxelBufferUtilities::DoubleToFloat(Value);
 	}
 
 public:

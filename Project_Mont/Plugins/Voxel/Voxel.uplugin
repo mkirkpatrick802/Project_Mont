@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
-	"Version": 11226,
-	"VersionName": "dev-11226",
+	"Version": 2003400,
+	"VersionName": "2.0p-340.0",
 	"FriendlyName": "Voxel Plugin",
 	"Description": "State-of-the-art voxel technology for Unreal Engine",
 	"Category": "Landscape",
@@ -22,20 +22,15 @@
 		{
 			"Name": "VoxelCoreEditor",
 			"Type": "Editor",
-			"LoadingPhase": "Default"
+			"LoadingPhase": "PostEngineInit"
 		},
 		{
-			"Name": "VoxelCoreAssets",
+			"Name": "VoxelGraphCore",
 			"Type": "Runtime",
 			"LoadingPhase": "PostConfigInit"
 		},
 		{
-			"Name": "VoxelCoreAssetsEditor",
-			"Type": "Editor",
-			"LoadingPhase": "Default"
-		},
-		{
-			"Name": "VoxelGraphCore",
+			"Name": "VoxelGraphNodes",
 			"Type": "Runtime",
 			"LoadingPhase": "PostConfigInit"
 		},
@@ -45,23 +40,18 @@
 			"LoadingPhase": "Default"
 		},
 		{
-			"Name": "VoxelLandscape",
+			"Name": "VoxelLandmass",
 			"Type": "Runtime",
 			"LoadingPhase": "PostConfigInit"
 		},
 		{
-			"Name": "VoxelLandscapeEditor",
+			"Name": "VoxelLandmassEditor",
 			"Type": "Editor",
 			"LoadingPhase": "Default"
 		},
 		{
-			"Name": "VoxelCube",
+			"Name": "VoxelSpawner",
 			"Type": "Runtime",
-			"LoadingPhase": "PostConfigInit"
-		},
-		{
-			"Name": "VoxelCubeEditor",
-			"Type": "Editor",
 			"LoadingPhase": "Default"
 		},
 		{
@@ -83,6 +73,12 @@
 			"Name": "VoxelExampleEditor",
 			"Type": "Editor",
 			"LoadingPhase": "Default"
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "Niagara",
+			"Enabled": true
 		}
 	],
 	"IsBetaVersion": false,

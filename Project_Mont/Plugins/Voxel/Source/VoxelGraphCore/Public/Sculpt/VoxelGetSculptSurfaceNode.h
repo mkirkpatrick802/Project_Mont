@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -17,26 +17,8 @@ struct VOXELGRAPHCORE_API FVoxelSculptStorageQueryParameter : public FVoxelQuery
 
 	FVoxelTransformRef SurfaceToWorld;
 	TSharedPtr<FVoxelSculptStorageData> Data;
-	int32 VoxelSize = 0;
+	float VoxelSize = 0.f;
 	TSharedPtr<const TVoxelComputeValue<FVoxelSurface>> Compute;
-};
-
-#if 0 // TODO
-USTRUCT()
-struct VOXELGRAPHCORE_API FVoxelSculptSurface : public FVoxelForwardingSurface
-{
-	GENERATED_BODY()
-	GENERATED_VIRTUAL_STRUCT_BODY()
-
-public:
-	FVoxelTransformRef SurfaceToWorld;
-	TSharedPtr<FVoxelSculptStorageData> Data;
-	int32 VoxelSize = 0;
-
-	//~ Begin FVoxelSurface Interface
-	virtual FVoxelBounds GetBounds() const override;
-	virtual TValue<FVoxelBuffer> Get(FName Name, const FVoxelQuery& Query) const override;
-	//~ End FVoxelSurface Interface
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -64,9 +46,8 @@ struct VOXELGRAPHCORE_API FVoxelNode_GetSculptSurface_Distance : public FVoxelNo
 
 	VOXEL_CALL_PARAM(FVoxelTransformRef, SurfaceToWorld);
 	VOXEL_CALL_PARAM(TSharedPtr<FVoxelSculptStorageData>, Data);
-	VOXEL_CALL_PARAM(int32, VoxelSize);
+	VOXEL_CALL_PARAM(float, VoxelSize);
 	VOXEL_CALL_PARAM(TSharedPtr<const FVoxelSurface>, Surface);
 
 	VOXEL_OUTPUT_PIN(FVoxelFloatBuffer, Distance);
 };
-#endif

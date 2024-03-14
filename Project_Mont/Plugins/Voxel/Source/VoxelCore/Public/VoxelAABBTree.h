@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -54,22 +54,15 @@ public:
 	void Initialize(TVoxelArray<FElement>&& Elements);
 	void Shrink();
 
-public:
-	FORCEINLINE const FVoxelBox& GetBounds() const
-	{
-		ensure(RootBounds.IsValidAndNotEmpty());
-		return RootBounds;
-	}
-	FORCEINLINE TConstVoxelArrayView<FNode> GetNodes() const
+	const TVoxelArray<FNode>& GetNodes() const
 	{
 		return Nodes;
 	}
-	FORCEINLINE TConstVoxelArrayView<FLeaf> GetLeaves() const
+	const TVoxelArray<FLeaf>& GetLeaves() const
 	{
 		return Leaves;
 	}
 
-public:
 	using FBulkRaycastLambda = TFunctionRef<void(int32 Payload, TVoxelArrayView<FVector3f> RayPositions, TVoxelArrayView<FVector3f> RayDirections)>;
 	void BulkRaycast(
 		TConstVoxelArrayView<FVector3f> RayPositions,
@@ -84,12 +77,12 @@ public:
 			return true;
 		}
 
-		TVoxelInlineArray<int32, 64> QueuedNodes;
+		TVoxelArray<int32, TVoxelInlineAllocator<64>> QueuedNodes;
 		QueuedNodes.Add(0);
 
 		while (QueuedNodes.Num() > 0)
 		{
-			const int32 NodeIndex = QueuedNodes.Pop();
+			const int32 NodeIndex = QueuedNodes.Pop(false);
 
 			const FNode& Node = Nodes[NodeIndex];
 			if (Node.bLeaf)
@@ -131,12 +124,12 @@ public:
 			return true;
 		}
 
-		TVoxelInlineArray<int32, 64> QueuedNodes;
+		TVoxelArray<int32, TVoxelInlineAllocator<64>> QueuedNodes;
 		QueuedNodes.Add(0);
 
 		while (QueuedNodes.Num() > 0)
 		{
-			const int32 NodeIndex = QueuedNodes.Pop();
+			const int32 NodeIndex = QueuedNodes.Pop(false);
 
 			const FNode& Node = Nodes[NodeIndex];
 			if (Node.bLeaf)
@@ -171,7 +164,7 @@ public:
 		return true;
 	}
 
-	bool Intersect(const FVoxelBox& OverlapBounds) const
+	bool Overlap(const FVoxelBox& OverlapBounds) const
 	{
 		return Overlap(OverlapBounds, [](int32)
 		{
@@ -186,12 +179,12 @@ public:
 			return false;
 		}
 
-		TVoxelInlineArray<int32, 64> QueuedNodes;
+		TVoxelArray<int32, TVoxelInlineAllocator<64>> QueuedNodes;
 		QueuedNodes.Add(0);
 
 		while (QueuedNodes.Num() > 0)
 		{
-			const int32 NodeIndex = QueuedNodes.Pop();
+			const int32 NodeIndex = QueuedNodes.Pop(false);
 
 			const FNode& Node = Nodes[NodeIndex];
 			if (Node.bLeaf)
@@ -204,16 +197,9 @@ public:
 						continue;
 					}
 
-					if constexpr (std::is_void_v<decltype(Lambda(int32()))>)
+					if (Lambda(Element.Payload))
 					{
-						Lambda(Element.Payload);
-					}
-					else
-					{
-						if (Lambda(Element.Payload))
-						{
-							return true;
-						}
+						return true;
 					}
 				}
 			}
@@ -241,12 +227,12 @@ public:
 			return;
 		}
 
-		TVoxelInlineArray<int32, 64> QueuedNodes;
+		TVoxelArray<int32, TVoxelInlineAllocator<64>> QueuedNodes;
 		QueuedNodes.Add(0);
 
 		while (QueuedNodes.Num() > 0)
 		{
-			const int32 NodeIndex = QueuedNodes.Pop();
+			const int32 NodeIndex = QueuedNodes.Pop(false);
 
 			const FNode& Node = Nodes[NodeIndex];
 			if (Node.bLeaf)
@@ -275,19 +261,8 @@ public:
 			}
 		}
 	}
-	template<typename VisitType>
-	void TraverseBounds(const FVoxelBox& Bounds, VisitType&& Visit) const
-	{
-		this->Traverse(
-			[&](const FVoxelBox& OtherBounds)
-			{
-				return OtherBounds.Intersect(Bounds);
-			},
-			MoveTemp(Visit));
-	}
 
 private:
-	FVoxelBox RootBounds;
 	TVoxelArray<FNode> Nodes;
 	TVoxelArray<FLeaf> Leaves;
 };

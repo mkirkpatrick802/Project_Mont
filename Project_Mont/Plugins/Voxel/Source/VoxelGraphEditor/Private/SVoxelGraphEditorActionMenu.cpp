@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "SVoxelGraphEditorActionMenu.h"
 
@@ -25,7 +25,8 @@ public:
 
 		if (InCreateData->Action->GetTypeId() == FVoxelGraphSchemaAction::StaticGetTypeId())
 		{
-			static_cast<FVoxelGraphSchemaAction&>(*InCreateData->Action).GetIcon(Icon, Color);
+			TSharedPtr<FVoxelGraphSchemaAction> Action = StaticCastSharedPtr<FVoxelGraphSchemaAction>(InCreateData->Action);
+			Action->GetIcon(Icon, Color);
 		}
 
 		SAssignNew(ImageWidget, SImage)
@@ -129,7 +130,7 @@ void SVoxelGraphEditorActionMenu::CollectAllActions(FGraphActionListBuilderBase&
 	OutAllActions.Append(ContextMenuBuilder);
 }
 
-void SVoxelGraphEditorActionMenu::OnActionSelected(const TArray<TSharedPtr<FEdGraphSchemaAction>>& SelectedActions, const ESelectInfo::Type InSelectionType)
+void SVoxelGraphEditorActionMenu::OnActionSelected(const TArray<TSharedPtr<FEdGraphSchemaAction>>& SelectedActions, ESelectInfo::Type InSelectionType)
 {
 	if (InSelectionType != ESelectInfo::OnMouseClick &&
 		InSelectionType != ESelectInfo::OnKeyPress &&

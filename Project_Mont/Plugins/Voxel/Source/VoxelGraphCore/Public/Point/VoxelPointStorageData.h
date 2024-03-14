@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -12,7 +12,7 @@ class VOXELGRAPHCORE_API FVoxelPointStorageChunkData
 {
 public:
 	const TSharedRef<FVoxelDependency> Dependency;
-	mutable FVoxelCriticalSection CriticalSection;
+	mutable FVoxelFastCriticalSection CriticalSection;
 
 	struct FAttribute
 	{
@@ -48,6 +48,6 @@ public:
 		FString* OutError = nullptr);
 
 private:
-	mutable FVoxelCriticalSection CriticalSection;
+	mutable FVoxelFastCriticalSection CriticalSection;
 	TVoxelMap<FVoxelPointChunkRef, TSharedPtr<FVoxelPointStorageChunkData>> ChunkRefToChunkData_RequiresLock;
 };

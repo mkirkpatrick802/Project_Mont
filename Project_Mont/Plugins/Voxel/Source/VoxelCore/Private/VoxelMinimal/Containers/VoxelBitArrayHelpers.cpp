@@ -1,8 +1,8 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelMinimal.h"
 
-bool FVoxelBitArrayHelpers::TestRangeImpl(const uint32* RESTRICT ArrayData, const int32 Index, const int32 Num)
+bool FVoxelBitArrayHelpers::TestRangeImpl(const uint32* RESTRICT ArrayData, int32 Index, int32 Num)
 {
 	// Work out which uint32 index to set from, and how many
 	const int32 StartIndex = Index / NumBitsPerWord;
@@ -53,7 +53,7 @@ bool FVoxelBitArrayHelpers::TestRangeImpl(const uint32* RESTRICT ArrayData, cons
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-bool FVoxelBitArrayHelpers::TestAndClearRangeImpl(uint32* RESTRICT ArrayData, const int32 Index, const int32 Num)
+bool FVoxelBitArrayHelpers::TestAndClearRangeImpl(uint32* RESTRICT ArrayData, int32 Index, int32 Num)
 {
 	// Work out which uint32 index to set from, and how many
 	const int32 StartIndex = Index / NumBitsPerWord;
@@ -484,7 +484,7 @@ bool FVoxelBitArrayHelpers::EqualImpl(
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-void FVoxelBitArrayHelpers::SetRange(uint32* RESTRICT Data, const int32 Index, const int32 Num, const bool bValue)
+void FVoxelBitArrayHelpers::SetRange(uint32* RESTRICT Data, int32 Index, int32 Num, bool bValue)
 {
 	if (Num == 0)
 	{
@@ -552,7 +552,7 @@ void FVoxelBitArrayHelpers::SetRange(uint32* RESTRICT Data, const int32 Index, c
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-int64 FVoxelBitArrayHelpers::CountSetBits(const uint32* RESTRICT Data, const int32 NumWords)
+int64 FVoxelBitArrayHelpers::CountSetBits(const uint32* RESTRICT Data, int32 NumWords)
 {
 	int64 Count = 0;
 
@@ -573,7 +573,7 @@ int64 FVoxelBitArrayHelpers::CountSetBits(const uint32* RESTRICT Data, const int
 	return Count;
 }
 
-int64 FVoxelBitArrayHelpers::CountSetBits_UpperBound(const uint32* RESTRICT Data, const int32 NumBits)
+int64 FVoxelBitArrayHelpers::CountSetBits_UpperBound(const uint32* RESTRICT Data, int32 NumBits)
 {
 	int64 Count = 0;
 

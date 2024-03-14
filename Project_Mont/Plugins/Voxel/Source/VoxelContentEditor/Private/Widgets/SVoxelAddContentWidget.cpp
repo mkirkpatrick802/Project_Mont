@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "SVoxelAddContentWidget.h"
 #include "SVoxelAddContentTile.h"
@@ -17,125 +17,8 @@
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 
-VOXEL_INITIALIZE_STYLE(AddContentStyle)
-{
-	const FTextBlockStyle NormalText = FCoreStyle::Get().GetWidgetStyle<FTextBlockStyle>("NormalText");
-	Set("AddContent.Category", FTextBlockStyle(NormalText)
-		.SetFont(DEFAULT_FONT("Regular", 12))
-		.SetColorAndOpacity(FLinearColor(0.4f, 0.4, 0.4f, 1.0f)));
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-class SVoxelContentTagCheckBox : public SCheckBox
-{
-public:
-	VOXEL_SLATE_ARGS()
-	{
-		SLATE_ARGUMENT(FName, ContentTag)
-		SLATE_EVENT(TDelegate<void(bool)>, OnContentTagClicked)
-		SLATE_EVENT(FSimpleDelegate, OnContentTagShiftClicked)
-		SLATE_ATTRIBUTE(ECheckBoxState, IsChecked)
-	};
-
-	void Construct(const FArguments& Args)
-	{
-		OnContentTagClicked = Args._OnContentTagClicked;
-		OnContentTagShiftClicked = Args._OnContentTagShiftClicked;
-
-		const FName ContentTag = Args._ContentTag;
-		const FLinearColor TagColor = FVoxelExampleContentManager::GetContentTagColor(ContentTag);
-
-		SCheckBox::Construct(
-			SCheckBox::FArguments()
-			.Style(FAppStyle::Get(), "ContentBrowser.FilterButton")
-			.IsChecked(Args._IsChecked)
-			.OnCheckStateChanged_Lambda([this](const ECheckBoxState NewState)
-			{
-				OnContentTagClicked.ExecuteIfBound(NewState == ECheckBoxState::Checked);
-			}));
-
-		SetToolTipText(FText::FromString("Display content with tag: " + FName::NameToDisplayString(ContentTag.ToString(), false) + """.\nUse Shift+Click to exclusively select this tag."));
-
-		SetContent(
-			SNew(SBorder)
-			.Padding(1.f)
-			.BorderImage(FVoxelEditorStyle::GetBrush("Graph.NewAssetDialog.FilterCheckBox.Border"))
-			[
-				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot()
-				.VAlign(VAlign_Center)
-				.AutoWidth()
-				[
-					SNew(SImage)
-					.Image(FAppStyle::GetBrush("ContentBrowser.FilterImage"))
-					.ColorAndOpacity_Lambda([=]
-					{
-						FLinearColor Color = TagColor;
-						if (!IsChecked())
-						{
-							Color.A = 0.1f;
-						}
-
-						return Color;
-					})
-				]
-				+ SHorizontalBox::Slot()
-				.Padding(MakeAttributeLambda([this]
-				{
-					return bIsPressed ? FMargin(4.f, 2.f, 3.f, 0.f) : FMargin(4.f, 1.f, 3.f, 1.f);
-				}))
-				.VAlign(VAlign_Center)
-				.AutoWidth()
-				[
-					SNew(STextBlock)
-					.Text(FText::FromString(FName::NameToDisplayString(ContentTag.ToString(), false)))
-					.ColorAndOpacity_Lambda([this]
-					{
-						if (IsHovered())
-						{
-							return FLinearColor(0.75f, 0.75f, 0.75f, 1.f);
-						}
-
-						return IsChecked() ? FLinearColor::White : FLinearColor::Gray;
-					})
-					.TextStyle(FVoxelEditorStyle::Get(), "Graph.NewAssetDialog.ActionFilterTextBlock")
-				]
-			]
-		);
-	}
-
-	//~ Begin SCheckBox Interface
-	virtual FReply OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override
-	{
-		const FReply Reply = SCheckBox::OnMouseButtonUp(MyGeometry, MouseEvent);
-
-		if (FSlateApplication::Get().GetModifierKeys().IsShiftDown() &&
-			MouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
-		{
-			OnContentTagShiftClicked.ExecuteIfBound();
-			return FReply::Handled().ReleaseMouseCapture();
-		}
-
-		return Reply;
-	}
-	//~ End SCheckBox Interface
-
-private:
-	TDelegate<void(bool)> OnContentTagClicked;
-	FSimpleDelegate OnContentTagShiftClicked;
-};
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
 void SVoxelAddContentWidget::Construct(const FArguments& InArgs)
 {
-	GatherContent();
-
 	Filter = MakeVoxelShared<FContentSourceTextFilter>(
 		FContentSourceTextFilter::FItemToStringArray::CreateLambda([](const TSharedPtr<FVoxelExampleContent> Item, TArray<FString>& Array)
 		{
@@ -154,24 +37,14 @@ void SVoxelAddContentWidget::Construct(const FArguments& InArgs)
 				SNew(SVerticalBox)
 				+ SVerticalBox::Slot()
 				.AutoHeight()
-				.Padding(FMargin(0.f, 8.f, 0.f, 4.f))
+				.Padding(FMargin(0.f, 8.f, 0.f, 8.f))
 				[
 					SAssignNew(SearchBox, SSearchBox)
 					.OnTextChanged(this, &SVoxelAddContentWidget::SearchTextChanged)
 				]
 				+ SVerticalBox::Slot()
-				.AutoHeight()
-				.Padding(FMargin(0.f, 0.f, 0.f, 8.f))
 				[
-					CreateTagsFilterBox()
-				]
-				+ SVerticalBox::Slot()
-				[
-					SNew(SScrollBox)
-					+ SScrollBox::Slot()
-					[
-						CreateContentTilesView()
-					]
+					CreateContentTilesView()
 				]
 			]
 			+ SHorizontalBox::Slot()
@@ -184,7 +57,10 @@ void SVoxelAddContentWidget::Construct(const FArguments& InArgs)
 			]
 			+ SHorizontalBox::Slot()
 			[
-				CreateContentDetails()
+				SAssignNew(ContentDetailsBox, SBox)
+				[
+					CreateContentDetails(SelectedContent)
+				]
 			]
 		]
 		+ SVerticalBox::Slot()
@@ -195,7 +71,7 @@ void SVoxelAddContentWidget::Construct(const FArguments& InArgs)
 		]
 		+ SVerticalBox::Slot()
 		.AutoHeight()
-		.Padding(0.f, 16.f)
+		.Padding(0.f, 16.f, 0.f, 16.f)
 		[
 			SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot()
@@ -234,12 +110,14 @@ FReply SVoxelAddContentWidget::AddButtonClicked()
 
 	AddContentWindow->RequestDestroyWindow();
 
-	if (!SelectedContent)
+	const TArray<TSharedPtr<FVoxelExampleContent>> Items = ContentTilesView->GetSelectedItems();
+	ensure(Items.Num() <= 1);
+	if (Items.Num() != 1)
 	{
 		return FReply::Handled();
 	}
 
-	const FVoxelExampleContent& Content = *SelectedContent;
+	const FVoxelExampleContent& Content = *Items[0];
 
 	FString Url = "https://api.voxelplugin.dev/content/download";
 	Url += "?name=" + FPlatformHttp::UrlEncode(Content.Name);
@@ -274,46 +152,25 @@ FReply SVoxelAddContentWidget::AddButtonClicked()
 			return;
 		}
 
-		const FString DownloadUrl = ContentObject->GetStringField(TEXT("url"));
-		const int32 DownloadSize = ContentObject->GetNumberField(TEXT("size"));
-		const FString Hash = ContentObject->GetStringField(TEXT("hash"));
-
-		LOG_VOXEL(Log, "Downloading %s", *DownloadUrl);
-
-		const TSharedRef<TWeakPtr<IHttpRequest>> SharedWeakRequest = MakeVoxelShared<TWeakPtr<IHttpRequest>>();
+		const FString DownloadUrl = ContentObject->GetStringField("url");
+		const int32 DownloadSize = ContentObject->GetNumberField("size");
+		const FString Hash = ContentObject->GetStringField("hash");
 
 		FNotificationInfo Info(FText::FromString("Downloading " + Content.Name));
 		Info.bFireAndForget = false;
-		Info.ButtonDetails.Add(FNotificationButtonInfo(
-			INVTEXT("Cancel"),
-			INVTEXT("Cancel download"),
-			MakeLambdaDelegate([=]
-			{
-				if (const TSharedPtr<IHttpRequest> PinnedRequest = SharedWeakRequest->Pin())
-				{
-					PinnedRequest->CancelRequest();
-				}
-			}),
-			SNotificationItem::CS_None));
 		const TSharedPtr<SNotificationItem> Notification = FSlateNotificationManager::Get().AddNotification(Info);
 
 		const TSharedRef<IHttpRequest> NewRequest = FHttpModule::Get().CreateRequest();
-		*SharedWeakRequest = NewRequest;
-
 		NewRequest->SetURL(DownloadUrl);
 		NewRequest->SetVerb("GET");
-#if VOXEL_ENGINE_VERSION < 504
-		NewRequest->OnRequestProgress().BindLambda([=](const FHttpRequestPtr&, const int32 BytesSent, const int32 BytesReceived)
-#else
-		NewRequest->OnRequestProgress64().BindLambda([=](const FHttpRequestPtr&, const int64 BytesSent, const int64 BytesReceived)
-#endif
+		NewRequest->OnRequestProgress().BindLambda([=](FHttpRequestPtr, int32 BytesSent, int32 BytesReceived)
 		{
 			Notification->SetSubText(FText::FromString(FString::Printf(
 				TEXT("%.1f/%.1fMB"),
 				BytesReceived / double(1 << 20),
 				DownloadSize / double(1 << 20))));
 		});
-		NewRequest->OnProcessRequestComplete().BindLambda([=](FHttpRequestPtr, const FHttpResponsePtr& NewResponse, const bool bNewConnectedSuccessfully)
+		NewRequest->OnProcessRequestComplete().BindLambda([=](FHttpRequestPtr, const FHttpResponsePtr NewResponse, const bool bNewConnectedSuccessfully)
 		{
 			Notification->ExpireAndFadeout();
 
@@ -361,219 +218,39 @@ void SVoxelAddContentWidget::SearchTextChanged(const FText& Text)
 	UpdateFilteredItems();
 }
 
-TSharedRef<SWidget> SVoxelAddContentWidget::CreateTagsFilterBox()
-{
-	if (Tags.Num() == 0)
-	{
-		return SNullWidget::NullWidget;
-	}
-
-	const auto AllTagsVisible = [this]
-	{
-		for (const FName ContentTag : Tags)
-		{
-			if (!VisibleTags.Contains(ContentTag))
-			{
-				return false;
-			}
-		}
-
-		return true;
-	};
-
-	const TSharedRef<SWrapBox> TagsBox =
-		SNew(SWrapBox)
-		.UseAllottedSize(true);
-
-	TagsBox->AddSlot()
-	.Padding(5.f)
-	[
-		SNew(SBorder)
-        .BorderImage(FVoxelEditorStyle::GetBrush("Graph.NewAssetDialog.FilterCheckBox.Border"))
-        .ToolTipText(INVTEXT("Show all"))
-        .Padding(3.f)
-		[
-			SNew(SCheckBox)
-            .Style(FVoxelEditorStyle::Get(), "Graph.NewAssetDialog.FilterCheckBox")
-            .BorderBackgroundColor_Lambda([=]() -> FSlateColor
-			{
-			    return AllTagsVisible() ? FLinearColor::White : FSlateColor::UseForeground();
-			})
-            .IsChecked_Lambda([=]() -> ECheckBoxState
-            {
-			    return AllTagsVisible() ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
-			})
-            .OnCheckStateChanged_Lambda([=](ECheckBoxState)
-			{
-			    VisibleTags = AllTagsVisible() ? TSet<FName>() : Tags;
-    			UpdateFilteredItems();
-			})
-			[
-				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot()
-				.HAlign(HAlign_Center)
-				.VAlign(VAlign_Center)
-				.Padding(2.f)
-				[
-					SNew(STextBlock)
-                    .Text(INVTEXT("Show all"))
-                    .ShadowOffset(0.f)
-                    .ColorAndOpacity_Lambda([=]() -> FSlateColor
-                    {
-					    return AllTagsVisible() ? FLinearColor::Black : FLinearColor::Gray;
-					})
-                    .TextStyle(FVoxelEditorStyle::Get(), "Graph.NewAssetDialog.ActionFilterTextBlock")
-				]
-			]
-		]
-	];
-
-	TArray<FName> SortedTags = Tags.Array();
-	SortedTags.Sort([](const FName& A, const FName& B) { return A.LexicalLess(B); });
-
-	for (const FName ContentTag : SortedTags)
-	{
-		TagsBox->AddSlot()
-		.Padding(2.f)
-		[
-			SNew(SBorder)
-    		.BorderImage(FAppStyle::GetBrush(TEXT("NoBorder")))
-			.Padding(3.f)
-			[
-				SNew(SVoxelContentTagCheckBox)
-				.ContentTag(ContentTag)
-    			.IsChecked_Lambda([=]
-				{
-				    return VisibleTags.Contains(ContentTag) ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
-				})
-    			.OnContentTagClicked_Lambda([=](const bool bState)
-				{
-    				if (bState)
-    				{
-    					VisibleTags.Add(ContentTag);
-    				}
-    				else
-    				{
-    					VisibleTags.Remove(ContentTag);
-    				}
-    				UpdateFilteredItems();
-				})
-    			.OnContentTagShiftClicked_Lambda([=]
-				{
-					VisibleTags = { ContentTag };
-    				UpdateFilteredItems();
-				})
-			]
-		];
-	}
-
-	return TagsBox;
-}
-
 TSharedRef<SWidget> SVoxelAddContentWidget::CreateContentTilesView()
 {
-	const TSharedRef<SVerticalBox> VerticalBox = SNew(SVerticalBox);
+	ContentsSourceList = FVoxelExampleContentManager::Get().GetExamples();
 
-	TArray<FName> SortedCategories = Categories.Array();
-	SortedCategories.Sort([](const FName& A, const FName& B) { return A.LexicalLess(B); });
-
-	for (const FName Category : SortedCategories)
+	SAssignNew(ContentTilesView, STileView<TSharedPtr<FVoxelExampleContent>>)
+	.ListItemsSource(&FilteredList)
+	.OnGenerateTile(this, &SVoxelAddContentWidget::CreateContentSourceIconTile)
+	.OnSelectionChanged_Lambda([this](TSharedPtr<FVoxelExampleContent> NewSelection, ESelectInfo::Type SelectInfo)
 	{
-		CategoryToFilteredList.Add(Category, {});
+		SelectedContent = NewSelection;
 
-		TSharedPtr<STileView<TSharedPtr<FVoxelExampleContent>>> TilesView;
-
-		VerticalBox->AddSlot()
-		.AutoHeight()
-		[
-			SNew(SBox)
-			.Visibility_Lambda(MakeWeakPtrLambda(this, [=]
-			{
-				if (const TArray<TSharedPtr<FVoxelExampleContent>>* FilteredList = CategoryToFilteredList.Find(Category))
-				{
-					return FilteredList->Num() > 0 ? EVisibility::Visible : EVisibility::Collapsed;
-				}
-				return EVisibility::Collapsed;
-			}))
-			[
-				SNew(SVerticalBox)
-				+ SVerticalBox::Slot()
-				.AutoHeight()
-				[
-					SNew(SHorizontalBox)
-					+ SHorizontalBox::Slot()
-					.VAlign(VAlign_Center)
-					.AutoWidth()
-					[
-						SNew(STextBlock)
-						.Text(FText::FromName(Category))
-						.TextStyle(FVoxelEditorStyle::Get(), "AddContent.Category")
-					]
-					+ SHorizontalBox::Slot()
-					.Padding(FMargin(14.f, 0.f, 0.f, 0.f))
-					.VAlign(VAlign_Center)
-					.HAlign(HAlign_Fill)
-					[
-						SNew(SSeparator)
-						.Orientation(Orient_Horizontal)
-						.Thickness(1.f)
-						.SeparatorImage(FAppStyle::GetBrush("PinnedCommandList.Separator"))
-					]
-				]
-				+ SVerticalBox::Slot()
-				.AutoHeight()
-				[
-					SAssignNew(TilesView, STileView<TSharedPtr<FVoxelExampleContent>>)
-					.ListItemsSource(&CategoryToFilteredList[Category])
-					.OnGenerateTile(this, &SVoxelAddContentWidget::CreateContentSourceIconTile)
-					.OnSelectionChanged_Lambda([this](const TSharedPtr<FVoxelExampleContent> NewSelection, const ESelectInfo::Type SelectInfo)
-					{
-						if (SelectInfo == ESelectInfo::Direct)
-						{
-							return;
-						}
-
-						if (SelectedContent)
-						{
-							if (const TSharedPtr<STileView<TSharedPtr<FVoxelExampleContent>>> View = CategoryToTilesView.FindRef(SelectedContent->Category))
-							{
-								View->ClearSelection();
-							}
-						}
-
-						const TSharedPtr<FVoxelExampleContent> OldContent = SelectedContent;
-						SelectedContent = NewSelection;
-
-						UpdateContentTags(OldContent);
-					})
-					.ClearSelectionOnClick(false)
-					.ItemAlignment(EListItemAlignment::LeftAligned)
-					.ItemWidth(102.f)
-					.ItemHeight(153.f)
-					.SelectionMode(ESelectionMode::Single)
-				]
-			]
-		];
-
-		CategoryToTilesView.Add(Category, TilesView);
-	}
+		if (ContentDetailsBox)
+		{
+			ContentDetailsBox->SetContent(CreateContentDetails(NewSelection));
+		}
+	})
+	.ClearSelectionOnClick(false)
+	.ItemAlignment(EListItemAlignment::LeftAligned)
+	.ItemWidth(102.f)
+	.ItemHeight(153.f)
+	.SelectionMode(ESelectionMode::Single);
 
 	UpdateFilteredItems();
 
-	return VerticalBox;
+	return ContentTilesView.ToSharedRef();
 }
 
-TSharedRef<SWidget> SVoxelAddContentWidget::CreateContentDetails()
+TSharedRef<SWidget> SVoxelAddContentWidget::CreateContentDetails(const TSharedPtr<FVoxelExampleContent>& Selection) const
 {
-	ON_SCOPE_EXIT
-	{
-		UpdateContentTags(nullptr);
-	};
-
 	return
 		SNew(SScrollBox)
 		+ SScrollBox::Slot()
-		.Padding(0.f, 0.f, 0.f, 5.f)
+		.Padding(FMargin(0.f, 0.f, 0.f, 5.f))
 		[
 			SNew(SScaleBox)
 			.Stretch(EStretch::ScaleToFitX)
@@ -581,12 +258,7 @@ TSharedRef<SWidget> SVoxelAddContentWidget::CreateContentDetails()
 				SNew(SImage)
 				.Image_Lambda([=]() -> const FSlateBrush*
 				{
-					if (!SelectedContent)
-					{
-						return nullptr;
-					}
-
-					const ISlateBrushSource* BrushSource = SelectedContent->Image->Get();
+					const ISlateBrushSource* BrushSource = Selection->Image->Get();
 					if (!BrushSource)
 					{
 						return nullptr;
@@ -596,43 +268,21 @@ TSharedRef<SWidget> SVoxelAddContentWidget::CreateContentDetails()
 			]
 		]
 		+ SScrollBox::Slot()
-		.Padding(10.f, 0.f, 0.f, 5.f)
+		.Padding(FMargin(10.f, 0.f, 0.f, 5.f))
 		[
 			SNew(STextBlock)
 			.TextStyle(FAppStyle::Get(), "DialogButtonText")
-			.Font(FAppStyle::GetFontStyle("HeadingExtraSmall"))
+			.Font(FAppStyle::Get().GetFontStyle("HeadingExtraSmall"))
 			.ColorAndOpacity(FStyleColors::ForegroundHover)
-			.Text_Lambda([=]() -> FText
-			{
-				if (!SelectedContent)
-				{
-					return {};
-				}
-
-				return FText::FromString(SelectedContent->DisplayName);
-			})
+			.Text(FText::FromString(Selection->DisplayName))
 			.AutoWrapText(true)
 		]
 		+ SScrollBox::Slot()
-		.Padding(10.f, 0.f, 0.f, 5.f)
-		[
-			SAssignNew(SelectedContentTagsBox, SWrapBox)
-			.UseAllottedSize(true)
-		]
-		+ SScrollBox::Slot()
-		.Padding(10.f, 0.f, 0.f, 5.f)
+		.Padding(FMargin(10.f, 0.f, 0.f, 5.f))
 		[
 			SNew(STextBlock)
+			.Text(FText::FromString(Selection->Description))
 			.AutoWrapText(true)
-			.Text_Lambda([=]() -> FText
-			{
-				if (!SelectedContent)
-				{
-					return {};
-				}
-
-				return FText::FromString(SelectedContent->Description);
-			})
 		];
 }
 
@@ -644,11 +294,6 @@ TSharedRef<ITableRow> SVoxelAddContentWidget::CreateContentSourceIconTile(const 
 		.Padding(2.f)
 		[
 			SNew(SVoxelAddContentTile)
-			.ContentTags(Content->Tags)
-			.VisibleTags_Lambda([this]
-			{
-				return VisibleTags;
-			})
 			.Image_Lambda([=]() -> const FSlateBrush*
 			{
 				const ISlateBrushSource* BrushSource = Content->Thumbnail->Get();
@@ -670,149 +315,28 @@ TSharedRef<ITableRow> SVoxelAddContentWidget::CreateContentSourceIconTile(const 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-void SVoxelAddContentWidget::GatherContent()
-{
-	ContentsSourceList = FVoxelExampleContentManager::Get().GetExamples();
-
-	for (const TSharedPtr<FVoxelExampleContent>& Content : ContentsSourceList)
-	{
-		if (!Categories.Contains(Content->Category))
-		{
-			Categories.Add(Content->Category);
-		}
-
-		for (const FName ContentTag : Content->Tags)
-		{
-			if (!Tags.Contains(ContentTag))
-			{
-				Tags.Add(ContentTag);
-			}
-		}
-	}
-
-	VisibleTags = Tags;
-}
-
 void SVoxelAddContentWidget::UpdateFilteredItems()
 {
-	const TArray<TSharedPtr<FVoxelExampleContent>> FilteredList = ContentsSourceList.FilterByPredicate([&](const TSharedPtr<FVoxelExampleContent>& Content)
+	FilteredList = ContentsSourceList.FilterByPredicate([&](const TSharedPtr<FVoxelExampleContent>& Content)
 	{
-		if (!Filter->PassesFilter(Content))
-		{
-			return false;
-		}
-
-		if (Content->Tags.Num() == 0)
-		{
-			return true;
-		}
-
-		for (const FName ContentTag : Content->Tags)
-		{
-			if (VisibleTags.Contains(ContentTag))
-			{
-				return true;
-			}
-		}
-
-		return false;
+		return Filter->PassesFilter(Content);
 	});
 
-	// Clear selection, since no entries to select
-	if (FilteredList.Num() == 0 &&
-		SelectedContent)
+	ContentTilesView->RequestListRefresh();
+
+	if (FilteredList.IsEmpty())
 	{
-		if (const TSharedPtr<STileView<TSharedPtr<FVoxelExampleContent>>> TilesView = CategoryToTilesView.FindRef(SelectedContent->Category))
-		{
-			TilesView->SetSelection(nullptr, ESelectInfo::OnMouseClick);
-		}
-	}
-
-	for (const FName Category : Categories)
-	{
-		const TSharedPtr<STileView<TSharedPtr<FVoxelExampleContent>>>& TilesView = CategoryToTilesView.FindRef(Category);
-		TArray<TSharedPtr<FVoxelExampleContent>>* List = CategoryToFilteredList.Find(Category);
-		if (!ensure(TilesView) ||
-			!ensure(List))
-		{
-			continue;
-		}
-
-		*List = FilteredList.FilterByPredicate([&](const TSharedPtr<FVoxelExampleContent>& Content)
-		{
-			return Category == Content->Category;
-		});
-
-		TilesView->RequestListRefresh();
-
-		if (List->Num() == 0)
-		{
-			// Clear tiles view selection, so that all tiles could be reselected, but don't update content data
-			TilesView->ClearSelection();
-			continue;
-		}
-
-		if (List->Contains(SelectedContent))
-		{
-			TilesView->SetSelection(SelectedContent, ESelectInfo::OnMouseClick);
-		}
-		else if (
-			!SelectedContent ||
-			Category == SelectedContent->Category)
-		{
-			TilesView->SetSelection((*List)[0], ESelectInfo::OnMouseClick);
-		}
-	}
-}
-
-void SVoxelAddContentWidget::UpdateContentTags(const TSharedPtr<FVoxelExampleContent>& OldContent) const
-{
-	if (!SelectedContentTagsBox ||
-		OldContent == SelectedContent)
-	{
+		ContentTilesView->SetSelection(nullptr, ESelectInfo::Direct);
 		return;
 	}
 
-	SelectedContentTagsBox->ClearChildren();
-
-	if (!SelectedContent)
+	if (!FilteredList.Contains(SelectedContent))
 	{
-		return;
+		ContentTilesView->SetSelection(FilteredList[0], ESelectInfo::Direct);
 	}
-
-	TArray<FName> ContentTags = SelectedContent->Tags.Array();
-	ContentTags.Sort([](const FName& A, const FName& B) { return A.LexicalLess(B); });
-
-	for (const FName ContentTag : ContentTags)
+	else
 	{
-		SelectedContentTagsBox->AddSlot()
-		.Padding(3.f)
-		[
-			SNew(SBorder)
-			.Padding(0.f)
-			.BorderImage(FVoxelEditorStyle::GetBrush("Graph.NewAssetDialog.FilterCheckBox.Border"))
-			[
-				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot()
-				.VAlign(VAlign_Center)
-				.AutoWidth()
-				[
-					SNew(SImage)
-					.Image(FAppStyle::GetBrush("ContentBrowser.FilterImage"))
-					.ColorAndOpacity(FVoxelExampleContentManager::GetContentTagColor(ContentTag))
-				]
-				+ SHorizontalBox::Slot()
-				.Padding(4.f, 1.f, 4.f, 0.f)
-				.VAlign(VAlign_Center)
-				.AutoWidth()
-				[
-					SNew(STextBlock)
-					.Text(FText::FromString(FName::NameToDisplayString(ContentTag.ToString(), false)))
-					.ColorAndOpacity(FLinearColor::White)
-					.TextStyle(FVoxelEditorStyle::Get(), "Graph.NewAssetDialog.ActionFilterTextBlock")
-				]
-			]
-		];
+		ContentTilesView->SetSelection(SelectedContent, ESelectInfo::Direct);
 	}
 }
 
@@ -825,8 +349,8 @@ void SVoxelAddContentWidget::FinalizeDownload(const TArray<uint8>& InData) const
 		return;
 	}
 
-	TMap<FString, TVoxelArray64<uint8>> Files;
-	const FString ZipError = FVoxelUtilities::Unzip(UncompressedData, Files);
+	TMap<FString, TArray<uint8>> Files;
+	const FString ZipError = FVoxelSystemUtilities::Unzip(UncompressedData, Files);
 	if (!ZipError.IsEmpty() ||
 		!ensure(Files.Num() > 0))
 	{
@@ -852,28 +376,12 @@ void SVoxelAddContentWidget::FinalizeDownload(const TArray<uint8>& InData) const
 			continue;
 		}
 
+		PackageNames.Add(PackageName);
+
 		if (FPaths::FileExists(Path))
 		{
-			TArray<uint8> ExistingFileData;
-			if (FFileHelper::LoadFileToArray(ExistingFileData, *Path))
-			{
-				if (FVoxelUtilities::Equal(It.Value, ExistingFileData))
-				{
-					continue;
-				}
-			}
-
 			ExistingPackageNames.Add(PackageName);
 		}
-
-		PackageNames.Add(PackageName);
-	}
-
-	if (PackageNames.Num() == 0 &&
-		Files.Num() > 0)
-	{
-		VOXEL_MESSAGE(Info, "The downloaded files are the same as the existing ones. No files were changed.");
-		return;
 	}
 
 	if (ExistingPackageNames.Num() > 0)
@@ -953,7 +461,7 @@ void SVoxelAddContentWidget::FinalizeDownload(const TArray<uint8>& InData) const
 
 	VOXEL_MESSAGE(Info, "Content added");
 
-	FVoxelUtilities::DelayedCall([=]
+	FVoxelSystemUtilities::DelayedCall([=]
 	{
 		TArray<UObject*> AssetObjects;
 		for (const auto& It : Files)

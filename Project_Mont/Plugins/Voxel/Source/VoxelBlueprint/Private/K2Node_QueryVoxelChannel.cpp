@@ -1,9 +1,9 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "K2Node_QueryVoxelChannel.h"
-#include "Channel/VoxelChannelManager.h"
+#include "VoxelChannel.h"
 #include "Kismet2/BlueprintEditorUtils.h"
-#include "BlueprintLibrary/VoxelGraphBlueprintLibrary.h"
+#include "FunctionLibrary/VoxelGraphFunctionLibrary.h"
 
 void UK2Node_QueryVoxelChannelBase::PinDefaultValueChanged(UEdGraphPin* Pin)
 {
@@ -192,14 +192,14 @@ void UK2Node_QueryVoxelChannelBase::UpdateChannel()
 
 	if (!ChannelDefinition)
 	{
-		OnChannelDefinitionsChangedPtr.Reset();
+		DelegateOwner = {};
 		return;
 	}
 
 	SetType(ChannelDefinition->Type);
 
-	OnChannelDefinitionsChangedPtr = MakeSharedVoid();
-	GVoxelChannelManager->OnChannelDefinitionsChanged_GameThread.Add(MakeWeakPtrDelegate(OnChannelDefinitionsChangedPtr, [this]
+	DelegateOwner = MakeVoxelShared<int32>();
+	GVoxelChannelManager->OnChannelDefinitionsChanged_GameThread.Add(MakeWeakPtrDelegate(DelegateOwner, [this]
 	{
 		UpdateChannel();
 	}));
@@ -211,9 +211,7 @@ void UK2Node_QueryVoxelChannelBase::UpdateChannel()
 
 UK2Node_QueryVoxelChannel::UK2Node_QueryVoxelChannel()
 {
-	FunctionReference.SetExternalMember(
-		GET_FUNCTION_NAME_CHECKED(UVoxelGraphBlueprintLibrary, K2_QueryVoxelChannel),
-		UVoxelGraphBlueprintLibrary::StaticClass());
+	FunctionReference.SetExternalMember(GET_FUNCTION_NAME_CHECKED(UVoxelGraphFunctionLibrary, K2_QueryVoxelChannel), UVoxelGraphFunctionLibrary::StaticClass());
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -222,9 +220,7 @@ UK2Node_QueryVoxelChannel::UK2Node_QueryVoxelChannel()
 
 UK2Node_MultiQueryVoxelChannel::UK2Node_MultiQueryVoxelChannel()
 {
-	FunctionReference.SetExternalMember(
-		GET_FUNCTION_NAME_CHECKED(UVoxelGraphBlueprintLibrary, K2_MultiQueryVoxelChannel),
-		UVoxelGraphBlueprintLibrary::StaticClass());
+	FunctionReference.SetExternalMember(GET_FUNCTION_NAME_CHECKED(UVoxelGraphFunctionLibrary, K2_MultiQueryVoxelChannel), UVoxelGraphFunctionLibrary::StaticClass());
 }
 
 FEdGraphPinType UK2Node_MultiQueryVoxelChannel::GetValuePinType() const

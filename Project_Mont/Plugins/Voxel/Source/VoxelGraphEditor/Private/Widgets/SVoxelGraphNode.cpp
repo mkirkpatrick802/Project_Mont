@@ -1,12 +1,10 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "SVoxelGraphNode.h"
 #include "VoxelNode.h"
 #include "SVoxelToolTip.h"
 #include "SCommentBubble.h"
-#include "VoxelGraphToolkit.h"
 #include "SLevelOfDetailBranchNode.h"
-#include "Nodes/VoxelGraphNode_Struct.h"
 
 VOXEL_INITIALIZE_STYLE(GraphNodeEditor)
 {
@@ -60,7 +58,7 @@ void SVoxelGraphNode::UpdateGraphNode()
 	LeftNodeBox.Reset();
 	RightNodeBox.Reset();
 
-	CategoryToChildPins.Reset();
+	CategoryPins.Reset();
 
 	SetupErrorReporting();
 
@@ -72,8 +70,6 @@ void SVoxelGraphNode::UpdateGraphNode()
 	{
 		UpdateStandardNode();
 	}
-
-	OverlayWidgets = {};
 
 	FString Type;
 	FString Tooltip;
@@ -109,7 +105,6 @@ void SVoxelGraphNode::UpdateGraphNode()
 			Color = FLinearColor::Red;
 		}
 
-		FOverlayWidget& OverlayWidget = OverlayWidgets.Add_GetRef({});
 		OverlayWidget.Widget =
 			SNew(SImage)
 			.Image(ImageBrush)
@@ -121,7 +116,7 @@ void SVoxelGraphNode::UpdateGraphNode()
 	}
 }
 
-void SVoxelGraphNode::CreateOutputSideAddButton(const TSharedPtr<SVerticalBox> OutputBox)
+void SVoxelGraphNode::CreateOutputSideAddButton(TSharedPtr<SVerticalBox> OutputBox)
 {
 	const TSharedRef<SWidget> Button = AddPinButtonContent(FText::FromString(NodeDefinition->GetAddPinLabel()), {});
 	Button->SetCursor(EMouseCursor::Default);
@@ -168,22 +163,13 @@ TArray<FOverlayWidgetInfo> SVoxelGraphNode::GetOverlayWidgets(bool bSelected, co
 {
 	TArray<FOverlayWidgetInfo> Widgets;
 
-	float Offset = 0.f;
-
-	for (const auto& OverlayWidget : OverlayWidgets)
+	if (OverlayWidget.Widget)
 	{
-		if (!OverlayWidget.Widget)
-		{
-			continue;
-		}
-
 		FOverlayWidgetInfo Info;
-		Info.OverlayOffset = OverlayWidget.GetLocation(WidgetSize, Offset);
+		Info.OverlayOffset = OverlayWidget.GetLocation(WidgetSize);
 		Info.Widget = OverlayWidget.Widget;
 
 		Widgets.Add(Info);
-
-		Offset += OverlayWidget.BrushSize.X + 5.f;
 	}
 
 	return Widgets;
@@ -254,10 +240,7 @@ void SVoxelGraphNode::UpdateStandardNode()
 			[
 				SNew(SImage)
 				.Image(FAppStyle::GetBrush("Graph.Node.TitleGloss"))
-				.ColorAndOpacity_Lambda(MakeWeakPtrLambda(this, [this]
-				{
-					return FSlateColor(FMath::Lerp(GetNodeTitleColor().GetSpecifiedColor(), FLinearColor::White, 0.2f));
-				}))
+				.ColorAndOpacity(this, &SGraphNode::GetNodeTitleIconColor)
 			]
 			+ SOverlay::Slot()
 			.HAlign(HAlign_Fill)
@@ -307,7 +290,7 @@ void SVoxelGraphNode::UpdateStandardNode()
 				SNew(SBorder)
 				.Visibility(EVisibility::HitTestInvisible)
 				.BorderImage(FAppStyle::GetBrush("Graph.Node.TitleHighlight"))
-				.BorderBackgroundColor(FLinearColor::White)
+				.BorderBackgroundColor(this, &SGraphNode::GetNodeTitleIconColor)
 				[
 					SNew(SSpacer)
 					.Size(FVector2D(20, 20))
@@ -355,6 +338,17 @@ void SVoxelGraphNode::UpdateStandardNode()
 				[
 					CreateNodeContentArea()
 				]
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(Settings->GetNonPinNodeBodyPadding())
+				[
+					MakeStatWidget()
+				]
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				[
+					ErrorReporting->AsWidget()
+				]
 			]
 		]
 	];
@@ -393,19 +387,6 @@ void SVoxelGraphNode::UpdateStandardNode()
 	CreateInputSideAddButton(LeftNodeBox);
 	UpdateBottomContent(InnerVerticalBox);
 	CreateAdvancedCategory(InnerVerticalBox);
-
-	InnerVerticalBox->AddSlot()
-	.AutoHeight()
-	.Padding(Settings->GetNonPinNodeBodyPadding())
-	[
-		MakeStatWidget()
-	];
-
-	InnerVerticalBox->AddSlot()
-	.AutoHeight()
-	[
-		ErrorReporting->AsWidget()
-	];
 }
 
 void SVoxelGraphNode::UpdateCompactNode()
@@ -551,7 +532,7 @@ void SVoxelGraphNode::CreateCategorizedPinWidgets()
 {
 	TArray<UEdGraphPin*> Pins = GraphNode->Pins;
 
-	TMap<FName, TArray<UEdGraphPin*>> ParentToSplitPins;
+	TMap<FName, TArray<UEdGraphPin*>> MappedSplitPins;
 	for (UEdGraphPin* Pin : Pins)
 	{
 		if (!Pin->ParentPin)
@@ -559,10 +540,10 @@ void SVoxelGraphNode::CreateCategorizedPinWidgets()
 			continue;
 		}
 
-		ParentToSplitPins.FindOrAdd(Pin->ParentPin->PinName, {}).Add(Pin);
+		MappedSplitPins.FindOrAdd(Pin->ParentPin->PinName, {}).Add(Pin);
 	}
 
-	for (const auto& It : ParentToSplitPins)
+	for (const auto& It : MappedSplitPins)
 	{
 		for (UEdGraphPin* Pin : It.Value)
 		{
@@ -570,22 +551,19 @@ void SVoxelGraphNode::CreateCategorizedPinWidgets()
 		}
 	}
 
-	Inputs = NodeDefinition->GetInputs();
-	Outputs = NodeDefinition->GetOutputs();
-
-	if (Inputs)
+	if (const TSharedPtr<const IVoxelNodeDefinition::FNode> Inputs = NodeDefinition->GetInputs())
 	{
-		for (const TSharedRef<IVoxelNodeDefinition::FNode>& Node : Inputs->GetChildren())
+		for (const TSharedRef<IVoxelNodeDefinition::FNode>& Node : Inputs->Children)
 		{
-			CreateCategoryPinWidgets(Node, Pins, ParentToSplitPins, LeftNodeBox, true);
+			CreateCategoryPinWidgets(Node, Pins, MappedSplitPins, LeftNodeBox, true);
 		}
 	}
 
-	if (Outputs)
+	if (const TSharedPtr<const IVoxelNodeDefinition::FNode> Outputs = NodeDefinition->GetOutputs())
 	{
-		for (const TSharedRef<IVoxelNodeDefinition::FNode>& Node : Outputs->GetChildren())
+		for (const TSharedRef<IVoxelNodeDefinition::FNode>& Node : Outputs->Children)
 		{
-			CreateCategoryPinWidgets(Node, Pins, ParentToSplitPins, RightNodeBox, false);
+			CreateCategoryPinWidgets(Node, Pins, MappedSplitPins, RightNodeBox, false);
 		}
 	}
 
@@ -594,82 +572,72 @@ void SVoxelGraphNode::CreateCategorizedPinWidgets()
 		ensure(Pin->bOrphanedPin);
 		AddStandardNodePin(
 			Pin,
-			nullptr,
+			{},
+			{},
 			Pin->Direction == EGPD_Input ? LeftNodeBox : RightNodeBox);
 	}
 }
 
-void SVoxelGraphNode::CreateCategoryPinWidgets(
-	const TSharedRef<IVoxelNodeDefinition::FNode>& Node,
-	TArray<UEdGraphPin*>& Pins,
-	TMap<FName, TArray<UEdGraphPin*>>& ParentToSplitPins,
-	const TSharedPtr<SVerticalBox>& TargetContainer,
-	const bool bInput)
+void SVoxelGraphNode::CreateCategoryPinWidgets(const TSharedRef<IVoxelNodeDefinition::FNode>& Node, TArray<UEdGraphPin*>& Pins, TMap<FName, TArray<UEdGraphPin*>>& MappedSplitPins, const TSharedPtr<SVerticalBox>& TargetContainer, const bool bInput)
 {
-	if (Node->IsPin())
+	if (Node->NodeState == IVoxelNodeDefinition::ENodeState::Pin)
 	{
-		if (UEdGraphPin** PinPtr = Pins.FindByPredicate([&Node](const UEdGraphPin* Pin)
+		if (const auto* PinPtr = Pins.FindByPredicate([&Node](const UEdGraphPin* Pin)
 		{
 			return Node->Name == Pin->PinName;
 		}))
 		{
 			if (UEdGraphPin* Pin = *PinPtr)
 			{
-				AddStandardNodePin(Pin, Node, TargetContainer);
+				AddStandardNodePin(Pin, Node->GetFullPath(), Node->Path, TargetContainer);
 				Pins.RemoveSwap(Pin);
 			}
 		}
-		if (TArray<UEdGraphPin*>* SplitPinsPtr = ParentToSplitPins.Find(Node->Name))
+		if (const auto SplitPinsPtr = MappedSplitPins.Find(Node->Name))
 		{
 			for (UEdGraphPin* SplitPin : *SplitPinsPtr)
 			{
-				AddStandardNodePin(SplitPin, Node, TargetContainer);
+				AddStandardNodePin(SplitPin, Node->GetFullPath(), Node->Path, TargetContainer);
 			}
 
-			ParentToSplitPins.Remove(Node->Name);
+			MappedSplitPins.Remove(Node->Name);
 		}
 		return;
 	}
 
-	const TSharedPtr<SVerticalBox> PinsBox = CreateCategoryWidget(Node, bInput);
-
+	const TSharedPtr<SVerticalBox> PinsBox = CreateCategoryWidget(Node->Name, Node->GetFullPath(), Node->Path, Node->Children.Num(), bInput, Node->NodeState == IVoxelNodeDefinition::ENodeState::ArrayCategory);
 	if (TargetContainer != PinsBox)
 	{
 		TargetContainer->AddSlot()
 		.Padding(bInput ? FMargin(Settings->GetInputPinPadding().Left, 0.f, 0.f, 0.f) : FMargin(0.f, 0.f, Settings->GetOutputPinPadding().Right, 0.f))
 		.AutoHeight()
-		.HAlign(HAlign_Fill)
+		.HAlign(bInput ? HAlign_Left : HAlign_Right)
 		.VAlign(VAlign_Center)
 		[
 			PinsBox.ToSharedRef()
 		];
 	}
 
-	for (const TSharedRef<IVoxelNodeDefinition::FNode>& InnerNode : Node->GetChildren())
+	for (const TSharedRef<IVoxelNodeDefinition::FNode>& InnerNode : Node->Children)
 	{
-		CreateCategoryPinWidgets(InnerNode, Pins, ParentToSplitPins, PinsBox, bInput);
+		CreateCategoryPinWidgets(InnerNode, Pins, MappedSplitPins, PinsBox, bInput);
 	}
 }
 
-void SVoxelGraphNode::AddStandardNodePin(
-	UEdGraphPin* Pin,
-	const TSharedPtr<IVoxelNodeDefinition::FNode>& Node,
-	const TSharedPtr<SVerticalBox>& TargetContainer)
+void SVoxelGraphNode::AddStandardNodePin(UEdGraphPin* PinToAdd, const FName FullPath, const TArray<FName>& Path, const TSharedPtr<SVerticalBox>& TargetContainer)
 {
-	ensure(!Node || Node->IsPin());
-
-	if (!ensure(Pin))
+	if (!ensure(PinToAdd))
 	{
 		return;
 	}
 
 	// ShouldPinBeShown
-	if (!ShouldPinBeHidden(Pin))
+	if (!ShouldPinBeHidden(PinToAdd))
 	{
 		return;
 	}
 
-	const TSharedPtr<SGraphPin> NewPin = CreatePinWidget(Pin);
+	const TSharedPtr<SGraphPin> NewPin = CreatePinWidget(PinToAdd);
 	if (!ensure(NewPin.IsValid()))
 	{
 		return;
@@ -678,163 +646,106 @@ void SVoxelGraphNode::AddStandardNodePin(
 
 	PinWidget->SetOwner(SharedThis(this));
 
-	if (Node)
+	if (Path.Num() > 0)
 	{
-		for (TSharedPtr<IVoxelNodeDefinition::FNode> Parent = Node->WeakParent.Pin(); Parent; Parent = Parent->WeakParent.Pin())
+		CategoryPins.FindOrAdd(FullPath).Add(PinWidget);
+		PinWidget->SetVisibility(MakeAttributeLambda([=]
 		{
-			CategoryToChildPins.FindOrAdd(Parent->GetConcatenatedPath()).Add(PinWidget);
-		}
+			if (PinToAdd->bHidden ||
+				!NodeDefinition->IsPinVisible(PinToAdd, GraphNode))
+			{
+				return EVisibility::Collapsed;
+			}
+
+			const TSet<FName>& CollapsedCategories = PinToAdd->Direction == EGPD_Input ? GetVoxelNode().CollapsedInputCategories : GetVoxelNode().CollapsedOutputCategories;
+			bool bIsCollapsed = false;
+
+			FString Category = Path[0].ToString();
+			if (Category == "Advanced")
+			{
+				bIsCollapsed = !GetVoxelNode().bShowAdvanced;
+			}
+			else
+			{
+				bIsCollapsed = CollapsedCategories.Contains(FName(Category));
+			}
+
+			for (int32 Index = 1; Index < Path.Num() && !bIsCollapsed; Index++)
+			{
+				Category += "|" + Path[Index].ToString();
+
+				bIsCollapsed = CollapsedCategories.Contains(FName(Category));
+			}
+
+			return
+				bIsCollapsed &&
+				PinToAdd->LinkedTo.Num() == 0
+				? EVisibility::Collapsed
+				: EVisibility::Visible;
+		}));
 	}
-
-	PinWidget->SetVisibility(MakeAttributeLambda([=]
+	else
 	{
-		if (Pin->bHidden ||
-			!NodeDefinition->IsPinVisible(Pin, GraphNode))
+		PinWidget->SetVisibility(MakeAttributeLambda([=]
 		{
-			return EVisibility::Collapsed;
-		}
-
-		if (!Node)
-		{
+			if (PinToAdd->bHidden ||
+				!NodeDefinition->IsPinVisible(PinToAdd, GraphNode))
+			{
+				return EVisibility::Collapsed;
+			}
 			return EVisibility::Visible;
-		}
-
-		const TSharedPtr<IVoxelNodeDefinition::FNode> Parent = Node->WeakParent.Pin();
-		if (!Parent)
-		{
-			return EVisibility::Visible;
-		}
-
-		return
-			GetVoxelNode().IsVisible(*Parent) ||
-			Pin->LinkedTo.Num() > 0
-			? EVisibility::Visible
-			: EVisibility::Collapsed;
-	}));
+		}));
+	}
 
 	TargetContainer->AddSlot()
 		.AutoHeight()
-		.HAlign(Pin->Direction == EGPD_Input ? HAlign_Left : HAlign_Right)
+		.HAlign(PinToAdd->Direction == EGPD_Input ? HAlign_Left : HAlign_Right)
 		.VAlign(VAlign_Center)
-		.Padding(Pin->Direction == EGPD_Input ? Settings->GetInputPinPadding() : Settings->GetOutputPinPadding())
+		.Padding(PinToAdd->Direction == EGPD_Input ? Settings->GetInputPinPadding() : Settings->GetOutputPinPadding())
 		[
 			PinWidget
 		];
-	(Pin->Direction == EGPD_Input ? InputPins : OutputPins).Add(PinWidget);
+	(PinToAdd->Direction == EGPD_Input ? InputPins : OutputPins).Add(PinWidget);
 }
 
-TSharedRef<SVerticalBox> SVoxelGraphNode::CreateCategoryWidget(
-	const TSharedRef<IVoxelNodeDefinition::FNode>& Node,
-	const bool bIsInput)
+TSharedRef<SVerticalBox> SVoxelGraphNode::CreateCategoryWidget(const FName Name, const FName FullPath, const TArray<FName>& Path, const int32 ArrayNum, const bool bIsInput, const bool bIsArrayCategory)
 {
-	ensure(!Node->IsPin());
-
-	if (Node->GetPath().Num() == 1 &&
-		Node->GetPath()[0] == STATIC_FNAME("Advanced"))
+	if (FullPath == STATIC_FNAME("Advanced"))
 	{
 		bCreateAdvancedCategory = true;
 		return bIsInput ? LeftNodeBox.ToSharedRef() : RightNodeBox.ToSharedRef();
 	}
 
-	TSharedPtr<SHorizontalBox> NameRow;
-	TSharedPtr<SHorizontalBox> ButtonContent;
-	TSharedPtr<SButton> Button;
-
-	const TSharedRef<SVerticalBox> Result =
-		SNew(SVerticalBox)
-		.Visibility_Lambda([=]
+	const TSharedRef<SButton> Button =
+		SNew(SButton)
+		.ButtonStyle(FAppStyle::Get(), TEXT("SimpleButton"))
+		.ContentPadding(0)
+		.VAlign(VAlign_Center)
+		.HAlign(HAlign_Center)
+		.ClickMethod(EButtonClickMethod::MouseDown)
+		.OnClicked_Lambda([=]
 		{
-			const TSharedPtr<IVoxelNodeDefinition::FNode> Parent = Node->WeakParent.Pin();
-			if (!Parent)
+			TSet<FName>& CollapsedCategories = bIsInput ? GetVoxelNode().CollapsedInputCategories : GetVoxelNode().CollapsedOutputCategories;
+			if (CollapsedCategories.Contains(FullPath))
 			{
-				return EVisibility::Visible;
+				CollapsedCategories.Remove(FullPath);
+			}
+			else
+			{
+				CollapsedCategories.Add(FullPath);
 			}
 
-			if (GetVoxelNode().IsVisible(*Parent))
-			{
-				return EVisibility::Visible;
-			}
+			return FReply::Handled();
+		});
 
-			const TArray<TWeakPtr<SGraphPin>>* PinsPtr = CategoryToChildPins.Find(Node->GetConcatenatedPath());
-			if (!ensure(PinsPtr))
-			{
-				return EVisibility::Collapsed;
-			}
-
-			for (const TWeakPtr<SGraphPin>& WeakPinWidget : *PinsPtr)
-			{
-				const TSharedPtr<SGraphPin> PinWidget = WeakPinWidget.Pin();
-				if (!PinWidget)
-				{
-					continue;
-				}
-
-				const UEdGraphPin* Pin = PinWidget->GetPinObj();
-				if (!Pin)
-				{
-					continue;
-				}
-
-				if (Pin->LinkedTo.Num() > 0)
-				{
-					return EVisibility::Visible;
-				}
-			}
-
-			return EVisibility::Collapsed;
-		})
-		+ SVerticalBox::Slot()
-		.VAlign(VAlign_Fill)
-		.HAlign(bIsInput ? HAlign_Left : HAlign_Right)
-		[
-			SAssignNew(NameRow, SHorizontalBox)
-			+ SHorizontalBox::Slot()
-			.FillWidth(1.f)
-			[
-				SAssignNew(Button, SButton)
-				.ButtonStyle(FAppStyle::Get(), TEXT("SimpleButton"))
-				.ContentPadding(0)
-				.VAlign(VAlign_Center)
-				.HAlign(bIsInput ? HAlign_Left : HAlign_Right)
-				.ClickMethod(EButtonClickMethod::MouseDown)
-				.Cursor(EMouseCursor::Default)
-				.OnClicked_Lambda([=]
-				{
-					TSet<FName>& CollapsedCategories = bIsInput ? GetVoxelNode().CollapsedInputCategories : GetVoxelNode().CollapsedOutputCategories;
-					if (CollapsedCategories.Contains(Node->GetConcatenatedPath()))
-					{
-						CollapsedCategories.Remove(Node->GetConcatenatedPath());
-					}
-					else
-					{
-						CollapsedCategories.Add(Node->GetConcatenatedPath());
-					}
-
-					return FReply::Handled();
-				})
-				[
-					SAssignNew(ButtonContent, SHorizontalBox)
-					+ SHorizontalBox::Slot()
-					.AutoWidth()
-					.VAlign(VAlign_Center)
-					[
-						SNew(SVoxelDetailText)
-						.Text(FText::FromString(FName::NameToDisplayString(Node->Name.ToString(), false)))
-					]
-				]
-			]
-		];
-
-	ButtonContent->InsertSlot(bIsInput ? 0 : 1)
-	.AutoWidth()
-	[
+	Button->SetContent(
 		SNew(SImage)
-		.Image_Lambda([=]() -> const FSlateBrush*
+		.Image_Lambda([=, ButtonPtr = &Button.Get()]() -> const FSlateBrush*
 		{
 			const TSet<FName>& CollapsedCategories = bIsInput ? GetVoxelNode().CollapsedInputCategories : GetVoxelNode().CollapsedOutputCategories;
-			if (CollapsedCategories.Contains(Node->GetConcatenatedPath()))
+			if (CollapsedCategories.Contains(FullPath))
 			{
-				if (Button->IsHovered())
+				if (ButtonPtr->IsHovered())
 				{
 					return FAppStyle::Get().GetBrush(STATIC_FNAME("TreeArrow_Collapsed_Hovered"));
 				}
@@ -845,7 +756,7 @@ TSharedRef<SVerticalBox> SVoxelGraphNode::CreateCategoryWidget(
 			}
 			else
 			{
-				if (Button->IsHovered())
+				if (ButtonPtr->IsHovered())
 				{
 					return FAppStyle::Get().GetBrush(STATIC_FNAME("TreeArrow_Expanded_Hovered"));
 				}
@@ -855,112 +766,82 @@ TSharedRef<SVerticalBox> SVoxelGraphNode::CreateCategoryWidget(
 				}
 			}
 		})
-		.ColorAndOpacity(FSlateColor::UseForeground())
+		.ColorAndOpacity(FSlateColor::UseForeground()));
+
+	const FString CategoryDisplayName = FName::NameToDisplayString(Name.ToString(), false);
+	const TSharedRef<SHorizontalBox> CategoryNameWidget =
+		SNew(SHorizontalBox)
+		.Cursor(EMouseCursor::Default);
+	if (bIsInput)
+	{
+		CategoryNameWidget->AddSlot()
+		.AutoWidth()
+		[
+			Button
+		];
+		CategoryNameWidget->AddSlot()
+		.AutoWidth()
+		.VAlign(VAlign_Center)
+		[
+			SNew(SVoxelDetailText)
+			.Text(FText::FromString(CategoryDisplayName))
+		];
+	}
+
+	TSharedRef<SVerticalBox> Result = SNew(SVerticalBox)
+	+ SVerticalBox::Slot()
+	.HAlign(bIsInput ? HAlign_Left : HAlign_Right)
+	[
+		CategoryNameWidget
 	];
 
-	TSharedPtr<SWidget> ItemsNumWidget;
-	TSharedPtr<SWidget> VariadicPinButtons;
-	TSharedPtr<SWidget> NoEntriesWidget;
-	CreateCategoryVariadicButtons(Node, bIsInput, ItemsNumWidget, VariadicPinButtons, NoEntriesWidget);
-
-	if (ItemsNumWidget)
+	bool bAddVisibilityCheck = true;
+	if (bIsArrayCategory)
 	{
-		ButtonContent->InsertSlot(bIsInput ? 2 : 0)
+		CategoryNameWidget->AddSlot()
 		.AutoWidth()
 		.VAlign(VAlign_Center)
-		.Padding(bIsInput ? FMargin(3.f, 0.f, 0.f, 0.f) : FMargin(0.f, 0.f, 3.f, 0.f))
+		.Padding(3.f, 0.f, 0.f, 0.f)
 		[
-			ItemsNumWidget.ToSharedRef()
+			SNew(SVoxelDetailText)
+			.Text(FText::FromString("[" + LexToString(ArrayNum) + "]"))
+			.ColorAndOpacity(FLinearColor(0.2f, 0.2f, 0.2f))
 		];
-	}
 
-	if (VariadicPinButtons)
-	{
-		NameRow->GetSlot(0).SetAutoWidth();
-		NameRow->InsertSlot(bIsInput ? 1 : 0)
-		.AutoWidth()
-		[
-			VariadicPinButtons.ToSharedRef()
-		];
-	}
-
-	if (NoEntriesWidget)
-	{
-		FMargin Padding = bIsInput ? Settings->GetInputPinPadding() : Settings->GetOutputPinPadding();
-		if (bIsInput)
-		{
-			Padding.Left *= 2.f;
-		}
-		else
-		{
-			Padding.Right *= 2.f;
-		}
-
-		Result->AddSlot()
-		.Padding(Padding)
-		.AutoHeight()
-		.HAlign(bIsInput ? HAlign_Left : HAlign_Right)
-		.VAlign(VAlign_Center)
-		[
-			NoEntriesWidget.ToSharedRef()
-		];
-	}
-
-	return Result;
-}
-
-void SVoxelGraphNode::CreateCategoryVariadicButtons(
-	const TSharedRef<IVoxelNodeDefinition::FNode>& Node,
-	const bool bIsInput,
-	TSharedPtr<SWidget>& OutItemsNumWidget,
-	TSharedPtr<SWidget>& OutButtonsWidget,
-	TSharedPtr<SWidget>& OutNoEntriesWidget) const
-{
-	if (!Node->IsVariadicPin())
-	{
-		return;
-	}
-
-	OutItemsNumWidget =
-		SNew(SVoxelDetailText)
-		.Text(FText::FromString("[" + LexToString(Node->GetChildren().Num()) + "]"))
-		.ColorAndOpacity(FLinearColor(0.2f, 0.2f, 0.2f));
-
-	OutButtonsWidget =
-		SNew(SHorizontalBox)
-		+ SHorizontalBox::Slot()
+		CategoryNameWidget->AddSlot()
 		.AutoWidth()
 		.VAlign(VAlign_Center)
-		.Padding(bIsInput ? FMargin(5.f, 0.f, 0.f, 0.f) : FMargin(0.f, 0.f, 2.f, 0.f))
+		.Padding(5.f, 0.f, 0.f, 0.f)
 		[
 			SNew(SButton)
 			.ContentPadding(0.0f)
 			.Cursor(EMouseCursor::Default)
 			.ToolTipText(INVTEXT("Remove pin"))
 			.ButtonStyle(FAppStyle::Get(), "NoBorder")
-			.IsEnabled_Lambda([=]
+			.IsEnabled_Lambda([this, Name]
 			{
-				return IsNodeEditable() && NodeDefinition->Variadic_CanRemovePinFrom(Node->Name);
+				return IsNodeEditable() && NodeDefinition->CanRemoveFromCategory(Name);
 			})
-			.OnClicked_Lambda([=]
+			.OnClicked_Lambda([this, Name]
 			{
 				const FVoxelTransaction Transaction(GetVoxelNode(), "Remove pin");
-				NodeDefinition->Variadic_RemovePinFrom(Node->Name);
+				NodeDefinition->RemoveFromCategory(Name);
 				return FReply::Handled();
 			})
-			.Visibility_Lambda([=]
+			.Visibility_Lambda([this, Name]
 			{
-				return GetButtonVisibility(NodeDefinition->Variadic_CanAddPinTo(Node->Name) || NodeDefinition->Variadic_CanRemovePinFrom(Node->Name));
+				return GetButtonVisibility(NodeDefinition->CanAddToCategory(Name) || NodeDefinition->CanRemoveFromCategory(Name));
 			})
 			[
 				SNew(SImage)
 				.Image(FVoxelEditorStyle::GetBrush(TEXT("Icons.MinusCircle")))
 			]
-		]
-		+ SHorizontalBox::Slot()
+		];
+
+		CategoryNameWidget->AddSlot()
 		.AutoWidth()
 		.VAlign(VAlign_Center)
-		.Padding(bIsInput ? FMargin(2.f, 0.f, 0.f, 0.f) : FMargin(0.f, 0.f, 5.f, 0.f))
+		.Padding(2.f, 0.f, 0.f, 0.f)
 		[
 			SNew(SButton)
 			.ContentPadding(0.0f)
@@ -969,22 +850,17 @@ void SVoxelGraphNode::CreateCategoryVariadicButtons(
 			.ButtonStyle(FAppStyle::Get(), "NoBorder")
 			.IsEnabled_Lambda([=]
 			{
-				return IsNodeEditable() && NodeDefinition->Variadic_CanAddPinTo(Node->Name);
+				return IsNodeEditable() && NodeDefinition->CanAddToCategory(Name);
 			})
 			.OnClicked_Lambda([=]
 			{
 				const FVoxelTransaction Transaction(GetVoxelNode(), "Add pin");
-				const FName NewPin = NodeDefinition->Variadic_AddPinTo(Node->Name);
-				if (!NewPin.IsNone())
-				{
-					NodeDefinition->ExposePin(NewPin);
-				}
-
+				NodeDefinition->AddToCategory(Name);
 				return FReply::Handled();
 			})
 			.Visibility_Lambda([=]
 			{
-				return GetButtonVisibility(NodeDefinition->Variadic_CanAddPinTo(Node->Name) || NodeDefinition->Variadic_CanRemovePinFrom(Node->Name));
+				return GetButtonVisibility(NodeDefinition->CanAddToCategory(Name) || NodeDefinition->CanRemoveFromCategory(Name));
 			})
 			[
 				SNew(SImage)
@@ -992,19 +868,141 @@ void SVoxelGraphNode::CreateCategoryVariadicButtons(
 			]
 		];
 
-	if (Node->GetChildren().Num() > 0)
-	{
-		return;
+		if (ArrayNum == 0)
+		{
+			const FMargin Padding = Settings->GetInputPinPadding();
+
+			Result->AddSlot()
+			.Padding(Padding + FMargin(Padding.Left, 0.f, 0.f, 0.f))
+			.AutoHeight()
+			.HAlign(HAlign_Left)
+			.VAlign(VAlign_Center)
+			[
+				SNew(SVoxelDetailText)
+				.Visibility_Lambda([=]
+				{
+					return GetVoxelNode().CollapsedInputCategories.Contains(FullPath) ? EVisibility::Collapsed : EVisibility::Visible;
+				})
+				.Text(INVTEXT("No entries"))
+				.ColorAndOpacity(FLinearColor(0.2f, 0.2f, 0.2f))
+			];
+
+			if (Path.Num() > 1)
+			{
+				bAddVisibilityCheck = false;
+				Result->SetVisibility(MakeAttributeLambda([=]
+				{
+					const TSet<FName>& CollapsedCategories = bIsInput ? GetVoxelNode().CollapsedInputCategories : GetVoxelNode().CollapsedOutputCategories;
+
+					FString Category = Path[0].ToString();
+
+					if (Category == "Advanced")
+					{
+						if (!GetVoxelNode().bShowAdvanced)
+						{
+							return EVisibility::Collapsed;
+						}
+					}
+					else if (CollapsedCategories.Contains(FName(Category)))
+					{
+						return EVisibility::Collapsed;
+					}
+
+					for (int32 Index = 1; Index < Path.Num() - 1; Index++)
+					{
+						Category += "|" + Path[Index].ToString();
+						if (CollapsedCategories.Contains(FName(Category)))
+						{
+							return EVisibility::Collapsed;
+						}
+					}
+
+					return EVisibility::Visible;
+				}));
+			}
+		}
 	}
 
-	OutNoEntriesWidget =
-		SNew(SVoxelDetailText)
-		.Visibility_Lambda([=]
+	if (bAddVisibilityCheck &&
+		Path.Num() > 1)
+	{
+		Result->SetVisibility(MakeAttributeLambda([=]
 		{
-			return GetVoxelNode().IsVisible(*Node) ? EVisibility::Visible : EVisibility::Collapsed;
-		})
-		.Text(INVTEXT("No entries"))
-		.ColorAndOpacity(FLinearColor(0.2f, 0.2f, 0.2f));
+			const TSet<FName>& CollapsedCategories = bIsInput ? GetVoxelNode().CollapsedInputCategories : GetVoxelNode().CollapsedOutputCategories;
+
+			bool bIsCollapsed = false;
+
+			FString Category = Path[0].ToString();
+			if (Category == "Advanced")
+			{
+				bIsCollapsed = !GetVoxelNode().bShowAdvanced;
+			}
+			else
+			{
+				bIsCollapsed = CollapsedCategories.Contains(FName(Category));
+			}
+
+			for (int32 Index = 1; Index < Path.Num() - 1 && !bIsCollapsed; Index++)
+			{
+				Category += "|" + Path[Index].ToString();
+
+				bIsCollapsed = CollapsedCategories.Contains(FName(Category));
+			}
+
+			if (!bIsCollapsed)
+			{
+				return EVisibility::Visible;
+			}
+
+			const TArray<TWeakPtr<SGraphPin>>* PinsPtr = CategoryPins.Find(FullPath);
+			if (!ensure(PinsPtr))
+			{
+				return EVisibility::Collapsed;
+			}
+			else
+			{
+				for (const TWeakPtr<SGraphPin>& Pin : *PinsPtr)
+				{
+					const TSharedPtr<SGraphPin> PinnedPin = Pin.Pin();
+					if (!PinnedPin)
+					{
+						continue;
+					}
+
+					const UEdGraphPin* PinObject = PinnedPin->GetPinObj();
+					if (!PinObject)
+					{
+						continue;
+					}
+
+					if (PinObject->LinkedTo.Num() > 0)
+					{
+						return EVisibility::Visible;
+					}
+				}
+
+				return EVisibility::Collapsed;
+			}
+		}));
+	}
+
+	if (!bIsInput)
+	{
+		CategoryNameWidget->AddSlot()
+		.AutoWidth()
+		.VAlign(VAlign_Center)
+		[
+			SNew(SVoxelDetailText)
+			.Text(FText::FromString(CategoryDisplayName))
+		];
+		CategoryNameWidget->AddSlot()
+		.AutoWidth()
+		[
+			Button
+		];
+	}
+
+	return Result;
 }
 
 void SVoxelGraphNode::CreateAdvancedCategory(const TSharedPtr<SVerticalBox>& MainBox) const
@@ -1055,50 +1053,30 @@ void SVoxelGraphNode::CreateAdvancedCategory(const TSharedPtr<SVerticalBox>& Mai
 
 TSharedRef<SWidget> SVoxelGraphNode::MakeStatWidget() const
 {
+	const FLinearColor Color = FLinearColor(FColor::Orange) * 0.6f;
+
 	const TSharedRef<SVerticalBox> VBox =
 		SNew(SVerticalBox)
 		.Cursor(EMouseCursor::Default);
 
-	const auto AddStatWidget = [&](IVoxelNodeStatProvider* Provider, UEdGraphPin* Pin)
+	for (IVoxelNodeStatProvider* Provider : GVoxelNodeStatProviders)
 	{
-		TAttribute<FSlateColor> Color;
-		if (Pin)
-		{
-			Color = MakeAttributeLambda([=]() -> FSlateColor
-			{
-				const FLinearColor Result = FLinearColor(FColor::Orange);
-				return Result * (FindWidgetForPin(Pin)->IsHovered() ? 1.f : 0.6f);
-			});
-		}
-		else
-		{
-			Color = FLinearColor(FColor::Orange) * 0.6f;
-		}
-
 		VBox->AddSlot()
 		.AutoHeight()
 		[
 			SNew(SOverlay)
-			.ToolTipText_Lambda([this, Provider, Pin]
+			.ToolTipText_Lambda([this, Provider]
 			{
-				return Pin ? Provider->GetPinToolTip(*Pin) : Provider->GetNodeToolTip(GetVoxelNode());
+				return Provider->GetToolTip(GetVoxelNode());
 			})
-			.Visibility_Lambda([this, Provider, Pin]
+			.Visibility_Lambda([this, Provider]
 			{
-				if (const TSharedPtr<FVoxelGraphToolkit> Toolkit = GetVoxelNode().GetToolkit())
-				{
-					if (!Provider->IsEnabled(*Toolkit->Asset))
-					{
-						return EVisibility::Collapsed;
-					}
-				}
-				else
+				if (!GVoxelEnableNodeStats)
 				{
 					return EVisibility::Collapsed;
 				}
 
-				const FText Text = Pin ? Provider->GetPinText(*Pin) : Provider->GetNodeText(GetVoxelNode());
-				if (Text.IsEmpty())
+				if (Provider->GetText(GetVoxelNode()).IsEmpty())
 				{
 					return EVisibility::Collapsed;
 				}
@@ -1106,30 +1084,28 @@ TSharedRef<SWidget> SVoxelGraphNode::MakeStatWidget() const
 				return EVisibility::Visible;
 			})
 			+ SOverlay::Slot()
-			.HAlign(HAlign_Fill)
 			[
 				SNew(SImage)
 				.Image(FVoxelEditorStyle::GetBrush("Node.Stats.TitleGloss"))
 				.ColorAndOpacity(Color)
 			]
 			+ SOverlay::Slot()
-			.HAlign(HAlign_Fill)
+			.HAlign(HAlign_Left)
 			.VAlign(VAlign_Center)
 			[
 				SNew(SBorder)
 				.BorderImage(FVoxelEditorStyle::GetBrush("Node.Stats.ColorSpill"))
-				.Padding(FMargin(10.f, 5.f, 20.f, 5.f))
+				.Padding(FMargin(10.f, 5.f, 20.f, 3.f))
 				.BorderBackgroundColor(Color)
 				[
 					SNew(SHorizontalBox)
 					+ SHorizontalBox::Slot()
-					.VAlign(VAlign_Center)
+					.VAlign(VAlign_Top)
 					.Padding(FMargin(0.f, 0.f, 4.f, 0.f))
 					.AutoWidth()
 					[
 						SNew(SImage)
-						.DesiredSizeOverride(FVector2D(16.f, 16.f))
-						.Image(FSlateIcon(Provider->GetIconStyleSetName(), Provider->GetIconName()).GetIcon())
+						.Image(FAppStyle::GetBrush("GraphEditor.Timeline_16x"))
 						.ColorAndOpacity(Color)
 					]
 					+ SHorizontalBox::Slot()
@@ -1139,35 +1115,20 @@ TSharedRef<SWidget> SVoxelGraphNode::MakeStatWidget() const
 						[
 							SNew(STextBlock)
 							.ColorAndOpacity(FCoreStyle::Get().GetColor("ErrorReporting.ForegroundColor"))
-							.Text_Lambda([this, Provider, Pin]
+							.Text_Lambda([this, Provider]
 							{
-								return Pin ? Provider->GetPinText(*Pin) : Provider->GetNodeText(GetVoxelNode());
+								return Provider->GetText(GetVoxelNode());
 							})
 						]
 					]
 				]
 			]
 		];
-	};
-
-	for (IVoxelNodeStatProvider* Provider : GVoxelNodeStatProviders)
-	{
-		AddStatWidget(Provider, nullptr);
-
-		for (UEdGraphPin* Pin : GraphNode->Pins)
-		{
-			if (Pin->Direction != EGPD_Output)
-			{
-				continue;
-			}
-
-			AddStatWidget(Provider, Pin);
-		}
 	}
 	return VBox;
 }
 
-EVisibility SVoxelGraphNode::GetButtonVisibility(const bool bVisible) const
+EVisibility SVoxelGraphNode::GetButtonVisibility(bool bVisible) const
 {
 	if (SGraphNode::IsAddPinButtonVisible() == EVisibility::Collapsed)
 	{
@@ -1180,15 +1141,13 @@ EVisibility SVoxelGraphNode::GetButtonVisibility(const bool bVisible) const
 
 void SVoxelGraphNode::CreateStandardNodeTitleButtons(const TSharedPtr<SHorizontalBox>& TitleBox)
 {
-	TSharedPtr<SHorizontalBox> Box;
-
 	TitleBox->AddSlot()
 	.FillWidth(1.f)
 	.HAlign(HAlign_Right)
 	.VAlign(VAlign_Center)
 	.Padding(0.f, 1.f, 7.f, 0.f)
 	[
-		SAssignNew(Box, SHorizontalBox)
+		SNew(SHorizontalBox)
 		+ SHorizontalBox::Slot()
 		.Padding(0.f, 0.f, 2.f, 0.f)
 		[
@@ -1242,66 +1201,5 @@ void SVoxelGraphNode::CreateStandardNodeTitleButtons(const TSharedPtr<SHorizonta
 				.Image(FAppStyle::GetBrush(TEXT("Icons.PlusCircle")))
 			]
 		]
-	];
-
-	UVoxelGraphNode_Struct* StructNode = Cast<UVoxelGraphNode_Struct>(&GetVoxelNode());
-	if (!StructNode ||
-		!StructNode->Struct)
-	{
-		return;
-	}
-
-	bool bShowOverlay = false;
-	for (const FProperty& Property : GetStructProperties(StructNode->Struct->GetStruct()))
-	{
-		if (!Property.HasAnyPropertyFlags(CPF_Edit) ||
-			Property.GetFName() == GET_MEMBER_NAME_CHECKED(FVoxelNode, ExposedPinValues))
-		{
-			continue;
-		}
-
-		bShowOverlay = true;
-		break;
-	}
-
-	for (const FName PinName : StructNode->Struct->PrivatePinsOrder)
-	{
-		if (const TSharedPtr<FVoxelNode::FVariadicPin> VariadicPin = StructNode->Struct->PrivateNameToVariadicPin.FindRef(PinName))
-		{
-			if (VariadicPin->PinTemplate.Metadata.bShowInDetail)
-			{
-				bShowOverlay = true;
-				break;
-			}
-
-			continue;
-		}
-
-		if (const TSharedPtr<FVoxelPin> VoxelPin = StructNode->Struct->FindPin(PinName))
-		{
-			if (VoxelPin->Metadata.bShowInDetail)
-			{
-				bShowOverlay = true;
-				break;
-			}
-		}
-	}
-
-	if (!bShowOverlay)
-	{
-		return;
-	}
-
-	const FSlateBrush* ImageBrush = FAppStyle::GetBrush(TEXT("Kismet.Tabs.Palette"));
-	const FLinearColor Color = FLinearColor::White;
-
-	Box->AddSlot()
-	.Padding(3.f, 0.f, 0.f, 0.f)
-	[
-		SNew(SImage)
-		.Image(ImageBrush)
-		.ToolTipText(INVTEXT("This node is configurable through the details panel. Select the node to make changes"))
-		.Visibility(EVisibility::Visible)
-		.ColorAndOpacity(Color)
 	];
 }

@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "FunctionLibrary/VoxelBasicFunctionLibrary.h"
 #include "Point/VoxelChunkedPointSet.h"
@@ -6,7 +6,7 @@
 
 VOXEL_RUN_ON_STARTUP_GAME(VoxelBasicFunctionLibraryMigrations)
 {
-	REGISTER_VOXEL_FUNCTION_MIGRATION("Get Brush Transform", UVoxelBasicFunctionLibrary, GetLocalToQuery);
+	REGISTER_VOXEL_FUNCTION_MIGRATION("Get Brush Transform", UVoxelBasicFunctionLibrary, GetTransform);
 	REGISTER_VOXEL_FUNCTION_MIGRATION("Get Spawnable Bounds", UVoxelBasicFunctionLibrary, GetPointChunkBounds);
 }
 
@@ -123,23 +123,9 @@ bool UVoxelBasicFunctionLibrary::IsServer() const
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-FTransform UVoxelBasicFunctionLibrary::GetLocalToQuery() const
+FTransform UVoxelBasicFunctionLibrary::GetTransform() const
 {
 	const FMatrix Transform = GetQuery().GetLocalToQuery().Get(GetQuery());
-	ensureVoxelSlow(FTransform(Transform).ToMatrixWithScale().Equals(Transform));
-	return FTransform(Transform);
-}
-
-FTransform UVoxelBasicFunctionLibrary::GetQueryToWorld() const
-{
-	const FMatrix Transform = GetQuery().GetQueryToWorld().Get(GetQuery());
-	ensureVoxelSlow(FTransform(Transform).ToMatrixWithScale().Equals(Transform));
-	return FTransform(Transform);
-}
-
-FTransform UVoxelBasicFunctionLibrary::GetLocalToWord() const
-{
-	const FMatrix Transform = GetQuery().GetLocalToWorld().Get(GetQuery());
 	ensureVoxelSlow(FTransform(Transform).ToMatrixWithScale().Equals(Transform));
 	return FTransform(Transform);
 }

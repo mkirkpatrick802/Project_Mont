@@ -1,4 +1,4 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -7,6 +7,15 @@
 class FVoxelQuery;
 class FVoxelDependency;
 class FVoxelTransformRefImpl;
+
+class IVoxelTransformProvider
+{
+public:
+	virtual ~IVoxelTransformProvider() = default;
+
+	virtual FName GetName() const = 0;
+	virtual FMatrix GetTransform() const = 0;
+};
 
 class VOXELGRAPHCORE_API FVoxelTransformRef
 {
@@ -17,6 +26,7 @@ public:
 	}
 	static FVoxelTransformRef Make(const AActor& Actor);
 	static FVoxelTransformRef Make(const USceneComponent& Component);
+	static FVoxelTransformRef Make(const TSharedRef<const IVoxelTransformProvider>& Provider);
 
 	static void NotifyTransformChanged(const USceneComponent& Component);
 
@@ -32,12 +42,13 @@ public:
 	DECLARE_DELEGATE_OneParam(FOnChanged, const FMatrix& NewTransform);
 	void AddOnChanged(const FOnChanged& OnChanged, bool bFireNow = true) const;
 
-public:
 	FORCEINLINE bool operator==(const FVoxelTransformRef& Other) const
 	{
-		return
-			bIsInverted == Other.bIsInverted &&
-			Impl == Other.Impl;
+		return Impl == Other.Impl;
+	}
+	FORCEINLINE bool operator!=(const FVoxelTransformRef& Other) const
+	{
+		return Impl != Other.Impl;
 	}
 	FORCEINLINE friend uint32 GetTypeHash(const FVoxelTransformRef& Ref)
 	{
@@ -45,14 +56,10 @@ public:
 	}
 
 private:
-	FVoxelTransformRef(
-		const bool bIsInverted,
-		const TSharedPtr<FVoxelTransformRefImpl>& Impl)
-		: bIsInverted(bIsInverted)
-		, Impl(Impl)
+	explicit FVoxelTransformRef(const TSharedRef<const FVoxelTransformRefImpl>& Impl)
+		: Impl(Impl)
 	{
 	}
 
-	bool bIsInverted = false;
-	TSharedPtr<FVoxelTransformRefImpl> Impl;
+	TSharedPtr<const FVoxelTransformRefImpl> Impl;
 };

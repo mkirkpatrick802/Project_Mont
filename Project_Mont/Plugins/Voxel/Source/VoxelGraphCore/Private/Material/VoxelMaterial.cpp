@@ -1,15 +1,11 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "Material/VoxelMaterial.h"
 #include "Material/VoxelMaterialDefinitionInterface.h"
+#include "VoxelTaskGroup.h"
 
 void FVoxelComputedMaterialParameter::Append(const FVoxelComputedMaterialParameter& Other)
 {
-	if (!MaterialOverride)
-	{
-		MaterialOverride = Other.MaterialOverride;
-	}
-
 	ScalarParameters.Append(Other.ScalarParameters);
 	VectorParameters.Append(Other.VectorParameters);
 	TextureParameters.Append(Other.TextureParameters);
@@ -31,16 +27,7 @@ TSharedRef<FVoxelMaterialRef> FVoxelComputedMaterial::MakeMaterial_GameThread() 
 	}
 	else
 	{
-		if (Parameters.MaterialOverride)
-		{
-			Material = FVoxelMaterialRef::MakeInstance(Parameters.MaterialOverride->GetMaterial());
-			// Make sure to keep the parent resources alive
-			Material->AddResource(Parameters.MaterialOverride);
-		}
-		else
-		{
-			Material = FVoxelMaterialRef::MakeInstance(nullptr);
-		}
+		Material = FVoxelMaterialRef::MakeInstance(nullptr);
 	}
 
 	Material->SetDynamicParameter_GameThread(
@@ -80,8 +67,8 @@ TVoxelFutureValue<FVoxelComputedMaterial> FVoxelMaterial::Compute(const FVoxelQu
 
 	for (const TSharedRef<const FVoxelMaterialParameter>& Parameter : Parameters)
 	{
-		ensure(!Parameter->NodeRef.IsExplicitlyNull());
-		FVoxelTaskReferencer::Get().AddRef(Parameter);
+		ensure(!Parameter->Node.IsExplicitlyNull());
+		FVoxelTaskGroup::Get().GetReferencer().AddRef(Parameter);
 
 		TVoxelFutureValue<FVoxelComputedMaterialParameter> ComputedParameter = Parameter->Compute(Query);
 		if (!ComputedParameter.IsValid())
@@ -93,11 +80,11 @@ TVoxelFutureValue<FVoxelComputedMaterial> FVoxelMaterial::Compute(const FVoxelQu
 	}
 
 	return
-		MakeVoxelTask()
+		MakeVoxelTask(STATIC_FNAME("FVoxelMaterial.Compute"))
 		.Dependencies(ComputedParameters)
 		.Execute<FVoxelComputedMaterial>([ParentMaterial = ParentMaterial, Parameters = Parameters, ComputedParameters]
 		{
-			TVoxelMap<FName, const FVoxelMaterialParameter*> NameToParameter;
+			TVoxelAddOnlyMap<FName, const FVoxelMaterialParameter*> NameToParameter;
 			NameToParameter.Reserve(2 * Parameters.Num());
 
 			FVoxelComputedMaterialParameter MergedParameter;
@@ -112,8 +99,8 @@ TVoxelFutureValue<FVoxelComputedMaterial> FVoxelMaterial::Compute(const FVoxelQu
 					{
 						VOXEL_MESSAGE(Error, "Material parameter {0} is set by {1} and {2}",
 							Name,
-							(**ParameterPtr).NodeRef,
-							Parameter.NodeRef);
+							(**ParameterPtr).Node,
+							Parameter.Node);
 						return;
 					}
 					NameToParameter.Add_CheckNew(Name, &Parameter);

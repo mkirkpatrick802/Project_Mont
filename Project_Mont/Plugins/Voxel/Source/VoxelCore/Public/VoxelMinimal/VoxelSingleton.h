@@ -1,4 +1,4 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -13,7 +13,6 @@ public:
 
 	virtual void Initialize() {}
 	virtual void Tick() {}
-	virtual void Tick_Async() {}
 	virtual void AddReferencedObjects(FReferenceCollector& Collector) {}
 	virtual bool IsEditorOnly() const { return false; }
 };
@@ -28,3 +27,11 @@ public:
 		return true;
 	}
 };
+
+#define MakeVoxelSingleton(Type) \
+	[] \
+	{ \
+		checkStatic(TIsDerivedFrom<Type, FVoxelSingleton>::Value); \
+		VOXEL_FUNCTION_COUNTER(); \
+		return new Type(); \
+	}()

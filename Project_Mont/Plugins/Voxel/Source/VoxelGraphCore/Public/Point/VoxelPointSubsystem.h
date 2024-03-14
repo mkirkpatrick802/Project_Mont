@@ -1,4 +1,4 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -14,6 +14,6 @@ struct VOXELGRAPHCORE_API FVoxelPointSubsystem : public FVoxelSubsystem
 	GENERATED_BODY()
 	GENERATED_VOXEL_SUBSYSTEM_BODY(FVoxelPointSubsystem)
 
-	FVoxelCriticalSection CriticalSection;
+	FVoxelFastCriticalSection CriticalSection;
 	TVoxelMap<FVoxelPointChunkProviderRef, TSharedPtr<const FVoxelChunkedPointSet>> ChunkProviderToChunkedPointSet_RequiresLock;
 };

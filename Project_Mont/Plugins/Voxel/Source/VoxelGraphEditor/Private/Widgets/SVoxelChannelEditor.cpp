@@ -1,9 +1,10 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "Widgets/SVoxelChannelEditor.h"
+
+#include "VoxelChannel.h"
 #include "VoxelSettings.h"
 #include "VoxelGraphVisuals.h"
-#include "Channel/VoxelChannelManager.h"
 #include "Customizations/VoxelChannelEditorDefinitionCustomization.h"
 
 #include "IStructureDetailsView.h"
@@ -14,7 +15,6 @@ void SVoxelChannelEditor::Construct(const FArguments& InArgs)
 	MaxHeight = InArgs._MaxHeight;
 	SelectedChannel = InArgs._SelectedChannel;
 	OnChannelSelectedDelegate = InArgs._OnChannelSelected;
-	ChannelType = InArgs._ChannelType;
 
 	MapChannels();
 
@@ -300,13 +300,13 @@ FReply SVoxelChannelEditor::OnAddSubChannelClicked(TSharedPtr<FChannelNode> Item
 	FVoxelChannelEditorDefinition Def;
 	Def.bEditChannel = false;
 	Def.SaveLocation = Item ? Item->Owner : GetMutableDefault<UVoxelSettings>();
-	Def.Type = !ChannelType.IsValid() || ChannelType.IsWildcard() ? FVoxelPinType::Make<float>().GetBufferType() : ChannelType;
+	Def.Type = FVoxelPinType::Make<float>().GetBufferType();
 	Def.DefaultValue = FVoxelPinValue(Def.Type.GetExposedType());
 	Def.Name = FName(FullPath.ToString().RightChop(FullPath.ToString().Find(".") + 1));
 
 	TSet<FName> ChannelsList;
 	AllChannels.GetKeys(ChannelsList);
-	SVoxelChannelEditDialog::EditChannel(ChannelsList, Def, OnChannelSelectedDelegate, ChannelType);
+	SVoxelChannelEditDialog::EditChannel(ChannelsList, Def, OnChannelSelectedDelegate);
 
 	return FReply::Handled();
 }
@@ -328,14 +328,14 @@ FReply SVoxelChannelEditor::OnEditChannelClicked(TSharedPtr<FChannelNode> Item)
 	}
 	else
 	{
-		ChannelToEdit.Type = !ChannelType.IsValid() || ChannelType.IsWildcard() ? FVoxelPinType::Make<float>().GetBufferType() : ChannelType;
+		ChannelToEdit.Type = FVoxelPinType::Make<float>().GetBufferType();
 		ChannelToEdit.DefaultValue = FVoxelPinValue(ChannelToEdit.Type.GetExposedType());
 	}
 
 	TSet<FName> ChannelsList;
 	AllChannels.GetKeys(ChannelsList);
 
-	SVoxelChannelEditDialog::EditChannel(ChannelsList, ChannelToEdit, OnChannelSelectedDelegate, ChannelType);
+	SVoxelChannelEditDialog::EditChannel(ChannelsList, ChannelToEdit, OnChannelSelectedDelegate);
 
 	return FReply::Handled();
 }
@@ -486,14 +486,6 @@ void SVoxelChannelEditor::MapChannels()
 				AllChannels.Add(RootPath, Node);
 			}
 
-			// We want to fill channel registries and add project storage
-			if (ChannelType.IsValid() &&
-				!ChannelType.IsWildcard() &&
-				ChannelType != Channel.Type)
-			{
-				continue;
-			}
-
 			FString FullPath = RootPath.ToString() + ".";
 			for (int32 Index = 1; Index < Path.Num(); Index++)
 			{
@@ -601,7 +593,6 @@ void SVoxelChannelEditDialog::Construct(const FArguments& InArgs)
 	ChannelsList = InArgs._ChannelsList;
 	ChannelToEdit = InArgs._ChannelToEdit;
 	OnChannelSelected = InArgs._OnChannelSelected;
-	ChannelType = InArgs._ChannelType;
 
 	CreateDetailsView();
 
@@ -640,7 +631,7 @@ void SVoxelChannelEditDialog::Construct(const FArguments& InArgs)
 	];
 }
 
-void SVoxelChannelEditDialog::EditChannel(const TSet<FName>& ChannelsList, const FVoxelChannelEditorDefinition& Channel, const SVoxelChannelEditor::FOnChannelSelected& Delegate, const FVoxelPinType& ChannelType)
+void SVoxelChannelEditDialog::EditChannel(const TSet<FName>& ChannelsList, const FVoxelChannelEditorDefinition& Channel, const SVoxelChannelEditor::FOnChannelSelected& Delegate)
 {
 	const TSharedRef<SWindow> EditWindow = SNew(SWindow)
 		.Title(Channel.bEditChannel ? INVTEXT("Edit Channel") : INVTEXT("Create Channel"))
@@ -653,8 +644,7 @@ void SVoxelChannelEditDialog::EditChannel(const TSet<FName>& ChannelsList, const
 		.ParentWindow(EditWindow)
 		.ChannelsList(ChannelsList)
 		.ChannelToEdit(Channel)
-		.OnChannelSelected(Delegate)
-		.ChannelType(ChannelType);
+		.OnChannelSelected(Delegate);
 
 	EditWindow->SetContent(ChannelEditDialog);
 
@@ -793,9 +783,9 @@ void SVoxelChannelEditDialog::CreateDetailsView()
 	FPropertyEditorModule& PropertyModule = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
 	DetailsView = PropertyModule.CreateStructureDetailView(Args, StructArgs, StructOnScope);
 	DetailsView->GetDetailsView()->SetDisableCustomDetailLayouts(false);
-	DetailsView->GetDetailsView()->SetGenericLayoutDetailsDelegate(MakeLambdaDelegate([this]() -> TSharedRef<IDetailCustomization>
+	DetailsView->GetDetailsView()->SetGenericLayoutDetailsDelegate(MakeLambdaDelegate([]() -> TSharedRef<IDetailCustomization>
 	{
-		return MakeVoxelShared<FVoxelChannelEditorDefinitionCustomization>(ChannelType);
+		return MakeVoxelShared<FVoxelChannelEditorDefinitionCustomization>();
 	}));
 	DetailsView->GetDetailsView()->ForceRefresh();
 

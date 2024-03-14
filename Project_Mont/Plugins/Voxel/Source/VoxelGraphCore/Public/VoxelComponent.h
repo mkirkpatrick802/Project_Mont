@@ -1,58 +1,36 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelMinimal.h"
 #include "VoxelRuntimeProvider.h"
-#include "VoxelParameterOverridesOwner.h"
 #include "VoxelParameterOverrideCollection_DEPRECATED.h"
 #include "VoxelComponent.generated.h"
 
-class UVoxelGraph;
-class UVoxelParameterContainer_DEPRECATED;
 class FVoxelRuntime;
+class UVoxelGraphInterface;
+class UVoxelParameterContainer;
 
 UCLASS(ClassGroup = Voxel, DisplayName = "Voxel Component", HideCategories = ("Rendering", "Physics", "LOD", "Activation", "Collision", "Cooking", "AssetUserData"), meta = (BlueprintSpawnableComponent))
 class VOXELGRAPHCORE_API UVoxelComponent
 	: public USceneComponent
 	, public IVoxelRuntimeProvider
-	, public IVoxelParameterOverridesObjectOwner
 {
 	GENERATED_BODY()
 
 public:
+	UPROPERTY(BlueprintReadOnly, Category = "Voxel", meta = (ProviderClass = "/Script/VoxelGraphCore.VoxelGraphInterface"))
+	TObjectPtr<UVoxelParameterContainer> ParameterContainer;
+
 	FSimpleMulticastDelegate OnRuntimeCreated;
 	FSimpleMulticastDelegate OnRuntimeDestroyed;
 
-private:
-	UPROPERTY(EditAnywhere, Category = "Voxel", DisplayName = "Graph")
-#if CPP
-	union
-	{
-		TObjectPtr<UVoxelGraph> Graph = nullptr;
-		TObjectPtr<UVoxelGraph> Graph_NewProperty;
-	};
-#else
-	TObjectPtr<UVoxelGraph> Graph_NewProperty;
-#endif
-
-	UPROPERTY()
-	FVoxelParameterOverrides ParameterOverrides;
-
-	friend class FUVoxelComponentCustomization;
-
 public:
-	// Removed in 340
 	UPROPERTY()
-	TSoftObjectPtr<UVoxelGraph> Graph_DEPRECATED;
+	TSoftObjectPtr<UVoxelGraphInterface> Graph_DEPRECATED;
 
-	// Removed in 340
 	UPROPERTY()
 	FVoxelParameterOverrideCollection_DEPRECATED ParameterCollection_DEPRECATED;
-
-	// Removed in 341
-	UPROPERTY()
-	TObjectPtr<UVoxelParameterContainer_DEPRECATED> ParameterContainer_DEPRECATED;
 
 public:
 	UVoxelComponent();
@@ -62,22 +40,12 @@ public:
 	virtual void OnRegister() override;
 	virtual void OnUnregister() override;
 	virtual void PostLoad() override;
-	virtual void PostInitProperties() override;
-	virtual void TickComponent(
-		float DeltaTime,
-		ELevelTick TickType,
-		FActorComponentTickFunction* ThisTickFunction) override;
-	virtual void UpdateBounds() override;
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+
 #if WITH_EDITOR
 	virtual void PostEditUndo() override;
-	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
 #endif
 	//~ End USceneComponent Interface
-
-	//~ Begin IVoxelParameterOverridesOwner Interface
-	virtual bool ShouldForceEnableOverride(const FVoxelParameterPath& Path) const override;
-	virtual FVoxelParameterOverrides& GetParameterOverrides() override;
-	//~ End IVoxelParameterOverridesOwner Interface
 
 public:
 	//~ Begin IVoxelRuntimeProvider Interface
@@ -110,13 +78,10 @@ public:
 	void DestroyRuntime();
 
 	UFUNCTION(BlueprintCallable, Category = "Voxel")
-	virtual UVoxelGraph* GetGraph() const override
-	{
-		return Graph;
-	}
+	UVoxelGraphInterface* GetGraph() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Voxel")
-	void SetGraph(UVoxelGraph* NewGraph);
+	void SetGraph(UVoxelGraphInterface* NewGraph);
 
 private:
 	bool bRuntimeCreateQueued = false;

@@ -1,4 +1,4 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -102,7 +102,6 @@ public:
 
 	virtual int32 Compile(FMaterialCompiler* Compiler, int32 OutputIndex) override;
 	virtual void GetCaption(TArray<FString>& OutCaptions) const override;
-	virtual FText GetKeywords() const override { return INVTEXT("Get Sample Voxel"); }
 #endif
 	//~ End UMaterialExpression Interface
 

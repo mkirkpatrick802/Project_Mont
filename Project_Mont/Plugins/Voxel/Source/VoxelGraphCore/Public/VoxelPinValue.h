@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -74,7 +74,7 @@ public:
 		return Result;
 	}
 
-	static FVoxelTerminalPinValue MakeStruct(const FConstVoxelStructView Struct)
+	static FVoxelTerminalPinValue MakeStruct(FConstVoxelStructView Struct)
 	{
 		return FVoxelTerminalPinValue(Super::MakeStruct(Struct));
 	}
@@ -114,26 +114,22 @@ public:
 	FVoxelPinValue() = default;
 	explicit FVoxelPinValue(const FVoxelPinType& Type);
 
-	template<typename T, typename = std::enable_if_t<
-		TIsSafeVoxelPinValue<T>::Value &&
-		!TIsVoxelBuffer<T>::Value &&
-		!TIsDerivedFrom<T, UObject>::Value>>
+	template<typename T>
 	static FVoxelPinValue Make(const T& Value = FVoxelUtilities::MakeSafe<T>())
 	{
+		checkStatic(TIsSafeVoxelPinValue<T>::Value);
+		checkStatic(!TIsVoxelBuffer<T>::Value);
+
 		FVoxelPinValue Result(FVoxelPinType::Make<T>());
 		Result.Get<T>() = Value;
 		return Result;
 	}
-	template<typename T, typename = std::enable_if_t<TIsDerivedFrom<T, UObject>::Value>>
-	static FVoxelPinValue Make(T* Value = nullptr)
+	// For objects
+	template<typename T>
+	static FVoxelPinValue Make(T* Value)
 	{
-		FVoxelPinValue Result(FVoxelPinType::Make<T>());
-		Result.Get<T>() = Value;
-		return Result;
-	}
-	template<typename T, typename = std::enable_if_t<TIsDerivedFrom<T, UObject>::Value>>
-	static FVoxelPinValue Make(const TObjectPtr<T>& Value)
-	{
+		checkStatic(TIsDerivedFrom<T, UObject>::Value);
+
 		FVoxelPinValue Result(FVoxelPinType::Make<T>());
 		Result.Get<T>() = Value;
 		return Result;
@@ -146,9 +142,8 @@ public:
 	static FVoxelPinValue MakeFromProperty(const FProperty& Property, const void* Memory);
 
 	using FVoxelPinValueBase::Fixup;
-	void Fixup(const FVoxelPinType& NewType);
+	void Fixup(const FVoxelPinType& NewType, UObject* Outer);
 	bool ImportFromUnrelated(FVoxelPinValue Other);
-	bool Serialize(FArchive& Ar);
 	void PostSerialize(const FArchive& Ar);
 	FVoxelTerminalPinValue AsTerminalValue() const;
 
@@ -196,9 +191,6 @@ private:
 	TArray<FVoxelTerminalPinValue> Array;
 
 	UPROPERTY()
-	FName EnumValueName;
-
-	UPROPERTY()
 	uint8 Enum_DEPRECATED = 0;
 
 	explicit FVoxelPinValue(const FVoxelPinValueBase& Value)
@@ -217,7 +209,7 @@ private:
 	virtual void ExportToProperty_Array(const FProperty& Property, void* Memory) const override;
 	virtual bool ImportFromString_Array(const FString& Value) override;
 	virtual uint32 GetHash_Array() const override;
-	virtual void Fixup_Array() override;
+	virtual void Fixup_Array(UObject* Outer) override;
 	virtual bool Equal_Array(const FVoxelPinValueBase& Other) const override;
 
 public:
@@ -246,7 +238,6 @@ struct TStructOpsTypeTraits<FVoxelPinValue> : public TStructOpsTypeTraitsBase2<F
 {
 	enum
 	{
-		WithSerializer = true,
 		WithPostSerialize = true,
 	};
 };

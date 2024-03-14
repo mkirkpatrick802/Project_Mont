@@ -1,10 +1,10 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelMinimal.h"
+#include "VoxelChannel.h"
 #include "VoxelDeveloperSettings.h"
-#include "Channel/VoxelChannelRegistry.h"
 #include "VoxelSettings.generated.h"
 
 class UVoxelFloatDetailTexture;
@@ -21,14 +21,14 @@ public:
 	}
 
 public:
+	// Number of threads allocated for the voxel background processing. Setting it too high may impact performance
+	// The threads are shared across all voxel worlds
+	// Can be set using voxel.NumThreads
+	UPROPERTY(Config, EditAnywhere, Category = "Config", meta = (ClampMin = 1, ConsoleVariable = "voxel.NumThreads"))
+	int32 NumberOfThreads = 0;
+
 	UPROPERTY(Config, EditAnywhere, Category = "Config")
 	TArray<FVoxelChannelExposedDefinition> GlobalChannels;
-
-public:
-	// If true, will load UVoxelChannelRegistry on startup instead of blocking the game thread
-	// If true, you need to wait until FVoxelRuntime::CanBeCreated returns true before loading any Voxel Actor
-	UPROPERTY(Config, EditAnywhere, Category = "Cooked")
-	bool bAsyncLoadChannelRegistries = false;
 
 public:
 	// If true graphs will have their own thumbnails rendered

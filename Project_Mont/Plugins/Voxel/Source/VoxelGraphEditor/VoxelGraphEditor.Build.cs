@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -9,10 +9,8 @@ public class VoxelGraphEditor : ModuleRules_Voxel
         PrivateDependencyModuleNames.AddRange(
             new string[]
             {
-                "VoxelGraphCore",
+                "VoxelGraphNodes",
                 "VoxelContentEditor",
-                "UMG",
-                "HTTP",
                 "MainFrame",
                 "ToolMenus",
                 "MessageLog",
@@ -22,11 +20,12 @@ public class VoxelGraphEditor : ModuleRules_Voxel
                 "EditorWidgets",
                 "BlueprintGraph",
                 "ApplicationCore",
-                "SlateRHIRenderer",
                 "SharedSettingsWidgets",
-                "WorkspaceMenuStructure",
                 "InteractiveToolsFramework",
                 "EditorInteractiveToolsFramework",
+
+                // For SItemSelector
+                "NiagaraEditor",
             }
         );
     }

@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -16,7 +16,7 @@ struct VOXELGRAPHCORE_API FVoxelMaterialScalarParameter : public FVoxelMaterialP
 	FName Name;
 	float Value = 0.f;
 
-	virtual TValue<FVoxelComputedMaterialParameter> Compute(const FVoxelQuery& Query) const override;
+	virtual TVoxelFutureValue<FVoxelComputedMaterialParameter> Compute(const FVoxelQuery& Query) const override;
 };
 
 USTRUCT()
@@ -28,7 +28,7 @@ struct VOXELGRAPHCORE_API FVoxelMaterialVectorParameter : public FVoxelMaterialP
 	FName Name;
 	FVector4 Value = FVector4::Zero();
 
-	virtual TValue<FVoxelComputedMaterialParameter> Compute(const FVoxelQuery& Query) const override;
+	virtual TVoxelFutureValue<FVoxelComputedMaterialParameter> Compute(const FVoxelQuery& Query) const override;
 };
 
 UCLASS()

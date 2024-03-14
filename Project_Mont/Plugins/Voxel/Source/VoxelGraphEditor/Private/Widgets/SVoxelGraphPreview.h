@@ -1,4 +1,4 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -6,7 +6,7 @@
 #include "VoxelTransformRef.h"
 #include "VoxelGraphNodeRef.h"
 
-class UVoxelTerminalGraph;
+class UVoxelGraph;
 class SVoxelGraphPreviewImage;
 class SVoxelGraphPreviewScale;
 class SVoxelGraphPreviewRuler;
@@ -17,8 +17,11 @@ struct FVoxelPreviewHandler;
 class SVoxelGraphPreview : public SCompoundWidget
 {
 public:
+	TWeakObjectPtr<UVoxelGraph> WeakGraph;
+
 	VOXEL_SLATE_ARGS()
 	{
+		SLATE_ARGUMENT(UVoxelGraph*, Graph);
 	};
 
 	void Construct(const FArguments& Args);
@@ -27,13 +30,12 @@ public:
 	{
 		bUpdateQueued = true;
 	}
-	void SetTerminalGraph(UVoxelTerminalGraph* NewTerminalGraph);
 
 	TSharedRef<SWidget> GetPreviewStats() const;
-	void AddReferencedObjects(FReferenceCollector& Collector);
+	void AddReferencedObjects(FReferenceCollector& Collector) const;
 
 	//~ Begin SWidget Interface
-	virtual void Tick(const FGeometry& AllottedGeometry, double InCurrentTime, float InDeltaTime) override;
+	virtual void Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime) override;
 	virtual FReply OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
 	virtual FReply OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
 	virtual FReply OnMouseMove(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
@@ -41,11 +43,22 @@ public:
 	//~ End SWidget Interface
 
 private:
-	TObjectPtr<USceneComponent> SceneComponent;
-	FVoxelTransformRef TransformRef;
+	class FTransformProvider : public IVoxelTransformProvider
+	{
+	public:
+		FMatrix Transform = FMatrix::Identity;
 
-	TWeakObjectPtr<UVoxelTerminalGraph> WeakTerminalGraph;
-	FSharedVoidPtr OnEdGraphChangedPtr;
+		virtual FName GetName() const override
+		{
+			return "Preview";
+		}
+		virtual FMatrix GetTransform() const override
+		{
+			return Transform;
+		}
+	};
+	const TSharedRef<FTransformProvider> TransformProvider = MakeVoxelShared<FTransformProvider>();
+	const FVoxelTransformRef TransformRef = FVoxelTransformRef::Make(TransformProvider);
 
 	bool bUpdateQueued = false;
 	double ProcessingStartTime = 0;
@@ -56,8 +69,6 @@ private:
 	TSharedPtr<SVoxelGraphPreviewStats> PreviewStats;
 	TSharedPtr<SVoxelGraphPreviewImage> PreviewImage;
 	TSharedPtr<SVoxelGraphPreviewRuler> PreviewRuler;
-
-	TSharedPtr<SBox> DepthSliderContainer;
 	TSharedPtr<SVoxelGraphPreviewDepthSlider> DepthSlider;
 
 	FVector2D MousePosition = FVector2D::ZeroVector;

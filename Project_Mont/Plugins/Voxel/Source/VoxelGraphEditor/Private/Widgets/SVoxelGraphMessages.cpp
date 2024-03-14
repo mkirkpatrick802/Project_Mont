@@ -1,14 +1,9 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "SVoxelGraphMessages.h"
 #include "VoxelGraph.h"
-#include "VoxelMessage.h"
-#include "VoxelTerminalGraph.h"
+#include "VoxelRuntimeGraph.h"
 #include "SVoxelNotification.h"
-#include "VoxelMessageTokens.h"
-#include "Nodes/VoxelGraphNode.h"
-#include "VoxelGraphMessageTokens.h"
-#include "VoxelTerminalGraphRuntime.h"
 
 void SVoxelGraphMessages::Construct(const FArguments& Args)
 {
@@ -17,27 +12,21 @@ void SVoxelGraphMessages::Construct(const FArguments& Args)
 
 	ChildSlot
 	[
-		SNew(SScrollBox)
-		.Orientation(Orient_Horizontal)
-		+ SScrollBox::Slot()
-		.FillSize(1.f)
-		[
-			SAssignNew(Tree, STree)
-			.TreeItemsSource(&Nodes)
-			.OnGenerateRow_Lambda([=](const TSharedPtr<INode>& Node, const TSharedRef<STableViewBase>& OwnerTable)
-			{
-				return
-					SNew(STableRow<TSharedPtr<INode>>, OwnerTable)
-					[
-						Node->GetWidget()
-					];
-			})
-			.OnGetChildren_Lambda([=](const TSharedPtr<INode>& Node, TArray<TSharedPtr<INode>>& OutChildren)
-			{
-				OutChildren = Node->GetChildren();
-			})
-			.SelectionMode(ESelectionMode::None)
-		]
+		SAssignNew(Tree, STree)
+		.TreeItemsSource(&Nodes)
+		.OnGenerateRow_Lambda([&](const TSharedPtr<INode>& Node, const TSharedRef<STableViewBase>& OwnerTable)
+		{
+			return
+				SNew(STableRow<TSharedPtr<INode>>, OwnerTable)
+				[
+					Node->GetWidget()
+				];
+		})
+		.OnGetChildren_Lambda([&](const TSharedPtr<INode>& Node, TArray<TSharedPtr<INode>>& OutChildren)
+		{
+			OutChildren = Node->GetChildren();
+		})
+		.SelectionMode(ESelectionMode::None)
 	];
 
 	Tree->SetItemExpansion(CompileNode, true);
@@ -52,8 +41,6 @@ void SVoxelGraphMessages::Construct(const FArguments& Args)
 
 void SVoxelGraphMessages::UpdateNodes()
 {
-	VOXEL_FUNCTION_COUNTER();
-
 	UVoxelGraph* RootGraph = WeakGraph.Get();
 	if (!ensure(RootGraph))
 	{
@@ -61,90 +48,32 @@ void SVoxelGraphMessages::UpdateNodes()
 	}
 
 	MessageToCanonMessage.Reset();
-	HashToCanonMessage.Reset();
+	StringToCanonMessage.Reset();
 
 	TSet<TSharedPtr<INode>> VisitedNodes;
 	TSet<TSharedPtr<INode>> NodesToExpand;
 
-	RootGraph->ForeachTerminalGraph_NoInheritance([&](UVoxelTerminalGraph& TerminalGraph)
+	for (UVoxelGraph* Graph : RootGraph->GetAllGraphs())
 	{
-		for (UEdGraphNode* GraphNode : TerminalGraph.GetEdGraph().Nodes)
-		{
-			if (!GraphNode->bHasCompilerMessage)
-			{
-				continue;
-			}
+		const UVoxelRuntimeGraph& RuntimeGraph = Graph->GetRuntimeGraph();
 
-			GraphNode->bHasCompilerMessage = false;
-			GraphNode->ErrorType = EMessageSeverity::Info;
-			GraphNode->ErrorMsg.Reset();
-
-			UVoxelGraphNode* VoxelNode = Cast<UVoxelGraphNode>(GraphNode);
-			if (!ensure(VoxelNode))
-			{
-				continue;
-			}
-
-			VoxelNode->RefreshNode();
-		}
-
-		const UVoxelTerminalGraphRuntime& Runtime = TerminalGraph.GetRuntime();
-
-		TSharedPtr<FGraphNode>& CompileGraphNode = CompileNode->GraphToNode.FindOrAdd(&TerminalGraph);
+		TSharedPtr<FGraphNode>& CompileGraphNode = CompileNode->GraphToNode.FindOrAdd(Graph);
 		if (!CompileGraphNode)
 		{
-			CompileGraphNode = MakeVoxelShared<FGraphNode>(&TerminalGraph);
+			CompileGraphNode = MakeVoxelShared<FGraphNode>(Graph);
 			NodesToExpand.Add(CompileGraphNode);
 		}
 
-		TSharedPtr<FGraphNode>& RuntimeGraphNode = RuntimeNode->GraphToNode.FindOrAdd(&TerminalGraph);
+		TSharedPtr<FGraphNode>& RuntimeGraphNode = RuntimeNode->GraphToNode.FindOrAdd(Graph);
 		if (!RuntimeGraphNode)
 		{
-			RuntimeGraphNode = MakeVoxelShared<FGraphNode>(&TerminalGraph);
+			RuntimeGraphNode = MakeVoxelShared<FGraphNode>(Graph);
 			NodesToExpand.Add(RuntimeGraphNode);
 		}
 
-		for (const TSharedRef<FVoxelMessage>& Message : Runtime.GetCompileMessages())
+		for (const TSharedRef<FTokenizedMessage>& Message : RuntimeGraph.CompileMessages)
 		{
 			VisitedNodes.Add(CompileGraphNode);
-
-			for (const TSharedRef<FVoxelMessageToken>& Token : Message->GetTokens())
-			{
-				UVoxelGraphNode* GraphNode = nullptr;
-				if (const TSharedPtr<FVoxelMessageToken_NodeRef> TypedToken = Cast<FVoxelMessageToken_NodeRef>(Token))
-				{
-					GraphNode = Cast<UVoxelGraphNode>(TypedToken->NodeRef.GetGraphNode_EditorOnly());
-				}
-				if (const TSharedPtr<FVoxelMessageToken_PinRef> TypedToken = Cast<FVoxelMessageToken_PinRef>(Token))
-				{
-					GraphNode = Cast<UVoxelGraphNode>(TypedToken->PinRef.NodeRef.GetGraphNode_EditorOnly());
-				}
-				if (const TSharedPtr<FVoxelMessageToken_Pin> TypedToken = Cast<FVoxelMessageToken_Pin>(Token))
-				{
-					if (const UEdGraphPin* Pin = TypedToken->PinReference.Get())
-					{
-						GraphNode = Cast<UVoxelGraphNode>(Pin->GetOwningNodeUnchecked());
-					}
-				}
-
-				if (!GraphNode ||
-					// Try not to leak errors
-					GraphNode->GetTypedOuter<UVoxelTerminalGraph>() != &TerminalGraph)
-				{
-					continue;
-				}
-
-				GraphNode->bHasCompilerMessage = true;
-				GraphNode->ErrorType = FMath::Min<int32>(GraphNode->ErrorType, Message->GetMessageSeverity());
-
-				if (!GraphNode->ErrorMsg.IsEmpty())
-				{
-					GraphNode->ErrorMsg += "\n";
-				}
-				GraphNode->ErrorMsg += Message->ToString();
-
-				GraphNode->RefreshNode();
-			}
 
 			TSharedPtr<FMessageNode>& MessageNode = CompileGraphNode->MessageToNode.FindOrAdd(Message);
 			if (!MessageNode)
@@ -155,11 +84,11 @@ void SVoxelGraphMessages::UpdateNodes()
 			VisitedNodes.Add(MessageNode);
 		}
 
-		for (const TSharedRef<FVoxelMessage>& Message : Runtime.GetRuntimeMessages())
+		for (const TSharedRef<FTokenizedMessage>& Message : RuntimeGraph.RuntimeMessages)
 		{
 			VisitedNodes.Add(RuntimeGraphNode);
 
-			const TSharedRef<FVoxelMessage> CanonMessage = GetCanonMessage(Message);
+			const TSharedRef<FTokenizedMessage> CanonMessage = GetCanonMessage(Message);
 
 			TSharedPtr<FMessageNode>& MessageNode = RuntimeGraphNode->MessageToNode.FindOrAdd(CanonMessage);
 			if (!MessageNode)
@@ -170,7 +99,7 @@ void SVoxelGraphMessages::UpdateNodes()
 			VisitedNodes.Add(MessageNode);
 		}
 
-		for (const auto& It : Runtime.GetPinNameToCompileMessages())
+		for (const auto& It : RuntimeGraph.PinRefToCompileMessages)
 		{
 			if (It.Value.Num() == 0)
 			{
@@ -179,7 +108,7 @@ void SVoxelGraphMessages::UpdateNodes()
 
 			VisitedNodes.Add(CompileGraphNode);
 
-			TSharedPtr<FPinNode>& PinNode = CompileGraphNode->PinNameToNode.FindOrAdd(It.Key);
+			TSharedPtr<FPinNode>& PinNode = CompileGraphNode->PinRefToNode.FindOrAdd(It.Key);
 			if (!PinNode)
 			{
 				PinNode = MakeVoxelShared<FPinNode>(It.Key);
@@ -187,7 +116,7 @@ void SVoxelGraphMessages::UpdateNodes()
 			}
 			VisitedNodes.Add(PinNode);
 
-			for (const TSharedRef<FVoxelMessage>& Message : It.Value)
+			for (const TSharedRef<FTokenizedMessage>& Message : It.Value)
 			{
 				TSharedPtr<FMessageNode>& MessageNode = PinNode->MessageToNode.FindOrAdd(Message);
 				if (!MessageNode)
@@ -198,7 +127,7 @@ void SVoxelGraphMessages::UpdateNodes()
 				VisitedNodes.Add(MessageNode);
 			}
 		}
-	});
+	}
 
 	const auto Cleanup = [&](FRootNode& RootNode)
 	{
@@ -210,14 +139,6 @@ void SVoxelGraphMessages::UpdateNodes()
 				continue;
 			}
 
-			// Put errors on top
-			const auto SortPredicate = [](const TSharedPtr<FVoxelMessage>& A, const TSharedPtr<FVoxelMessage>& B)
-			{
-				return A->GetMessageSeverity() < B->GetMessageSeverity();
-			};
-
-			GraphNodeIt.Value()->MessageToNode.KeySort(SortPredicate);
-
 			for (auto MessageIt = GraphNodeIt.Value()->MessageToNode.CreateIterator(); MessageIt; ++MessageIt)
 			{
 				if (!VisitedNodes.Contains(MessageIt.Value()))
@@ -226,15 +147,13 @@ void SVoxelGraphMessages::UpdateNodes()
 				}
 			}
 
-			for (auto PinIt = GraphNodeIt.Value()->PinNameToNode.CreateIterator(); PinIt; ++PinIt)
+			for (auto PinIt = GraphNodeIt.Value()->PinRefToNode.CreateIterator(); PinIt; ++PinIt)
 			{
 				if (!VisitedNodes.Contains(PinIt.Value()))
 				{
 					PinIt.RemoveCurrent();
 					continue;
 				}
-
-				PinIt.Value()->MessageToNode.KeySort(SortPredicate);
 
 				for (auto MessageIt = PinIt.Value()->MessageToNode.CreateIterator(); MessageIt; ++MessageIt)
 				{
@@ -303,17 +222,14 @@ TSharedRef<SWidget> SVoxelGraphMessages::FGraphNode::GetWidget() const
 {
 	return SNew(STextBlock).Text_Lambda([Graph = Graph]
 	{
-		if (!Graph.IsValid())
+		if (Graph.IsValid())
+		{
+			return FText::FromString(Graph->GetGraphName());
+		}
+		else
 		{
 			return INVTEXT("Invalid");
 		}
-
-		if (Graph->IsMainTerminalGraph())
-		{
-			return INVTEXT("Main Graph");
-		}
-
-		return FText::FromString(Graph->GetDisplayName());
 	});
 }
 
@@ -324,7 +240,7 @@ TArray<TSharedPtr<SVoxelGraphMessages::INode>> SVoxelGraphMessages::FGraphNode::
 	{
 		Children.Add(It.Value);
 	}
-	for (const auto& It : PinNameToNode)
+	for (const auto& It : PinRefToNode)
 	{
 		Children.Add(It.Value);
 	}
@@ -337,7 +253,7 @@ TArray<TSharedPtr<SVoxelGraphMessages::INode>> SVoxelGraphMessages::FGraphNode::
 
 TSharedRef<SWidget> SVoxelGraphMessages::FPinNode::GetWidget() const
 {
-	return SNew(STextBlock).Text(FText::FromString(PinName.ToString()));
+	return SNew(STextBlock).Text(FText::FromString(PinRef.Node.EdGraphNodeTitle.ToString() + "." + PinRef.PinName.ToString()));
 }
 
 TArray<TSharedPtr<SVoxelGraphMessages::INode>> SVoxelGraphMessages::FPinNode::GetChildren() const
@@ -368,22 +284,22 @@ TArray<TSharedPtr<SVoxelGraphMessages::INode>> SVoxelGraphMessages::FMessageNode
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-TSharedRef<FVoxelMessage> SVoxelGraphMessages::GetCanonMessage(const TSharedRef<FVoxelMessage>& Message)
+TSharedRef<FTokenizedMessage> SVoxelGraphMessages::GetCanonMessage(const TSharedRef<FTokenizedMessage>& Message)
 {
-	if (const TSharedPtr<FVoxelMessage> CanonMessage = MessageToCanonMessage.FindRef(Message).Pin())
+	if (const TSharedPtr<FTokenizedMessage> CanonMessage = MessageToCanonMessage.FindRef(Message).Pin())
 	{
 		return CanonMessage.ToSharedRef();
 	}
 
-	TWeakPtr<FVoxelMessage>& WeakCanonMessage = HashToCanonMessage.FindOrAdd(Message->GetHash());
+	TWeakPtr<FTokenizedMessage>& WeakCanonMessage = StringToCanonMessage.FindOrAdd(Message->ToText().ToString());
 
-	if (const TSharedPtr<FVoxelMessage> CanonMessage = WeakCanonMessage.Pin())
+	if (const TSharedPtr<FTokenizedMessage> CanonMessage = WeakCanonMessage.Pin())
 	{
-		MessageToCanonMessage.Add_EnsureNew(Message, CanonMessage);
+		MessageToCanonMessage.Add(Message, CanonMessage);
 		return CanonMessage.ToSharedRef();
 	}
 
 	WeakCanonMessage = Message;
-	MessageToCanonMessage.Add_EnsureNew(Message, Message);
+	MessageToCanonMessage.Add(Message, Message);
 	return Message;
 }

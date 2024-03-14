@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -29,15 +29,6 @@ class AVoxelPreviewActor : public AVoxelActor
 public:
 	UPROPERTY(EditAnywhere, Category = "Config")
 	TObjectPtr<AVoxelActor> TargetActor;
-
-	void LoadGraphFromConfig();
-	void SaveGraphToConfig() const;
-
-	void LoadParametersFromConfig();
-	void SaveParametersToConfig() const;
-
-	friend class UVoxelSculptTool;
-	friend class FAVoxelPreviewActorCustomization;
 };
 
 UCLASS()

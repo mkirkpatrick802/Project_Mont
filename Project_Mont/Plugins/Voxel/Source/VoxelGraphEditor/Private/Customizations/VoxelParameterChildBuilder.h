@@ -1,11 +1,11 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelEditorMinimal.h"
 
 class FDetailItemNode;
-class FVoxelParameterView;
+class IVoxelParameterView;
 class FVoxelParameterDetails;
 
 class FVoxelParameterChildBuilder
@@ -19,7 +19,7 @@ public:
 	bool bIsExpanded = false;
 	TWeakPtr<const FDetailItemNode> WeakNode;
 	FSimpleDelegate OnRegenerateChildren;
-	TVoxelArray<TVoxelArray<FVoxelParameterView*>> ParameterViewsCommonChildren;
+	TVoxelArray<TVoxelArray<IVoxelParameterView*>> ParameterViewsCommonChildren;
 
 	FVoxelParameterChildBuilder(
 		FVoxelParameterDetails& ParameterDetails,
@@ -32,7 +32,7 @@ public:
 	void UpdateExpandedState();
 
 	//~ Begin IDetailCustomNodeBuilder Interface
-	virtual void SetOnRebuildChildren(FSimpleDelegate InOnRegenerateChildren) override;
+	virtual void SetOnRebuildChildren(const FSimpleDelegate InOnRegenerateChildren) override;
 	virtual void GenerateHeaderRowContent(FDetailWidgetRow& Row) override;
 	virtual void GenerateChildContent(IDetailChildrenBuilder& ChildrenBuilder) override;
 	virtual FName GetName() const override;

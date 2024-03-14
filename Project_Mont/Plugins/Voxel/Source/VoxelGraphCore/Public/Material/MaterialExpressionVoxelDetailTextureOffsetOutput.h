@@ -1,9 +1,8 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelMinimal.h"
-#include "MaterialValueType.h"
 #include "Materials/MaterialExpressionCustomOutput.h"
 #include "MaterialExpressionVoxelDetailTextureOffsetOutput.generated.h"
 

@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelMaterialDefinitionThumbnailRenderer.h"
 #include "Material/VoxelMaterialDefinitionInterface.h"

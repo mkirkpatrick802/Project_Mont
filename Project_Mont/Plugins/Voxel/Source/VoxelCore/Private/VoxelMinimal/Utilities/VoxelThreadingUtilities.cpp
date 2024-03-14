@@ -1,14 +1,6 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelMinimal.h"
-#include "VoxelThreadPool.h"
-#include "Async/Async.h"
-
-TQueue<TVoxelUniqueFunction<void()>, EQueueMode::Mpsc> GVoxelGameThreadTaskQueue;
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
 
 class FVoxelGameThreadTaskTicker : public FVoxelTicker
 {
@@ -16,24 +8,7 @@ public:
 	//~ Begin FVoxelTicker Interface
 	virtual void Tick() override
 	{
-		const double StartTime = FPlatformTime::Seconds();
-
-		while (true)
-		{
-			if (FPlatformTime::Seconds() - StartTime > 0.1)
-			{
-				LOG_VOXEL(Warning, "Spent more than 100ms processing game thread tasks - throttling");
-				return;
-			}
-
-			TVoxelUniqueFunction<void()> Lambda;
-			if (!GVoxelGameThreadTaskQueue.Dequeue(Lambda))
-			{
-				return;
-			}
-
-			Lambda();
-		}
+		FlushVoxelGameThreadTasks();
 	}
 	//~ End FVoxelTicker Interface
 };
@@ -52,6 +27,8 @@ VOXEL_RUN_ON_STARTUP_GAME(RegisterVoxelGameThreadTaskTicker)
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
+TQueue<TVoxelUniqueFunction<void()>, EQueueMode::Mpsc> GVoxelGameThreadTaskQueue;
+
 void FlushVoxelGameThreadTasks()
 {
 	VOXEL_FUNCTION_COUNTER();
@@ -68,12 +45,7 @@ void FlushVoxelGameThreadTasks()
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-void AsyncVoxelTaskImpl(TVoxelUniqueFunction<void()> Lambda)
-{
-	GVoxelThreadPool->AddTask(MoveTemp(Lambda));
-}
-
-void AsyncBackgroundTaskImpl(TVoxelUniqueFunction<void()> Lambda)
+void AsyncVoxelTask(TVoxelUniqueFunction<void()>&& Lambda)
 {
 	AsyncTask(ENamedThreads::AnyBackgroundHiPriTask, [Lambda = MoveTemp(Lambda)]
 	{
@@ -82,16 +54,11 @@ void AsyncBackgroundTaskImpl(TVoxelUniqueFunction<void()> Lambda)
 	});
 }
 
-void AsyncThreadPoolTaskImpl(TVoxelUniqueFunction<void()> Lambda)
-{
-	Async(EAsyncExecution::ThreadPool, [Lambda = MoveTemp(Lambda)]
-	{
-		VOXEL_FUNCTION_COUNTER();
-		Lambda();
-	});
-}
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
 
-void RunOnGameThread_Async(TVoxelUniqueFunction<void()> Lambda)
+void FVoxelUtilities::RunOnGameThread_Async(TVoxelUniqueFunction<void()>&& Lambda)
 {
 	GVoxelGameThreadTaskQueue.Enqueue(MoveTemp(Lambda));
 }

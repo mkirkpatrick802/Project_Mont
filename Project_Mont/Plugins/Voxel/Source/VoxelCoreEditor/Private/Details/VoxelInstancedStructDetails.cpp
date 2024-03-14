@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelInstancedStructDetails.h"
 #include "StructViewerFilter.h"
@@ -184,7 +184,7 @@ void FVoxelInstancedStructDataDetails::SyncEditableInstanceToSource(bool* OutStr
 	}
 }
 
-void FVoxelInstancedStructDataDetails::SetOnRebuildChildren(const FSimpleDelegate InOnRegenerateChildren)
+void FVoxelInstancedStructDataDetails::SetOnRebuildChildren(FSimpleDelegate InOnRegenerateChildren)
 {
 	OnRegenerateChildren = InOnRegenerateChildren;
 }
@@ -274,7 +274,7 @@ TSharedRef<IPropertyTypeCustomization> FVoxelInstancedStructDetails::MakeInstanc
 	return MakeVoxelShared<FVoxelInstancedStructDetails>();
 }
 
-void FVoxelInstancedStructDetails::CustomizeHeader(const TSharedRef<IPropertyHandle> StructPropertyHandle, FDetailWidgetRow& HeaderRow, IPropertyTypeCustomizationUtils& StructCustomizationUtils)
+void FVoxelInstancedStructDetails::CustomizeHeader(TSharedRef<IPropertyHandle> StructPropertyHandle, FDetailWidgetRow& HeaderRow, IPropertyTypeCustomizationUtils& StructCustomizationUtils)
 {
 	static const FName NAME_BaseStruct = "BaseStruct";
 	static const FName NAME_StructTypeConst = "StructTypeConst";

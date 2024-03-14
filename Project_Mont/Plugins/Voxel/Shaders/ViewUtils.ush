@@ -1,4 +1,4 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -283,28 +283,28 @@ float4x4 GetWorldToClip()
 	return View.RelativeWorldToClip;
 }
 
-float2 GetSceneBufferUVFromClipSpace(const float2 ClipSpacePosition)
+float2 GetSceneBufferUVFromClipSpace(float2 ClipSpacePosition)
 {
 	return ClipSpacePosition.xy * View.ScreenPositionScaleBias.xy + View.ScreenPositionScaleBias.wz;
 }
-float2 GetClipSpaceFromSceneBufferUV(const float2 UV)
+float2 GetClipSpaceFromSceneBufferUV(float2 UV)
 {
 	return (UV - View.ScreenPositionScaleBias.wz) / View.ScreenPositionScaleBias.xy;
 }
 
-float3 ClipSpaceToWorldSpace(const float2 UV, float Depth)
+float3 ClipSpaceToWorldSpace(float2 UV, float Depth)
 {
 	const float2 ClipSpacePosition = GetClipSpaceFromSceneBufferUV(UV);
 	return TransformPosition(float3(ClipSpacePosition, Depth), GetClipToWorld());
 }
 
 void GetRayParameters(
-	const float2 UV,
-	const float Depth,
+	float2 UV,
+	float Depth,
 	out float3 Origin,
 	out float3 Direction,
-	const float4x4 ClipToWorld,
-	const float4x4 ClipToTranslatedWorld)
+	float4x4 ClipToWorld,
+	float4x4 ClipToTranslatedWorld)
 {
 	const float2 ClipSpacePosition = GetClipSpaceFromSceneBufferUV(UV);
 
@@ -315,7 +315,7 @@ void GetRayParameters(
 
 	Direction = normalize(A.w * B.xyz - B.w * A.xyz);
 }
-void GetRayParameters(const float2 UV, const float Depth, out float3 Origin, out float3 Direction)
+void GetRayParameters(float2 UV, float Depth, out float3 Origin, out float3 Direction)
 {
 	GetRayParameters(UV, Depth, Origin, Direction, GetClipToWorld(), View.ClipToTranslatedWorld);
 }

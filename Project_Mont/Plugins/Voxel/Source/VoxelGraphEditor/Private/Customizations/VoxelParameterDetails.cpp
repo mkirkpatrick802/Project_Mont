@@ -1,31 +1,20 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "Customizations/VoxelParameterDetails.h"
 #include "Customizations/VoxelParameterChildBuilder.h"
+#include "Customizations/VoxelParameterContainerDetails.h"
 #include "Customizations/VoxelPinValueCustomizationHelper.h"
-#include "VoxelGraph.h"
-#include "VoxelParameterView.h"
-#include "VoxelParameterOverridesDetails.h"
-#include "VoxelGraphParametersViewContext.h"
+#include "VoxelParameterContainer.h"
 
 FVoxelParameterDetails::FVoxelParameterDetails(
-	FVoxelParameterOverridesDetails& ContainerDetail,
+	FVoxelParameterContainerDetails& ContainerDetail,
 	const FVoxelParameterPath& Path,
-	const TVoxelArray<FVoxelParameterView*>& ParameterViews)
-	: OverridesDetails(ContainerDetail)
+	const TVoxelArray<IVoxelParameterView*>& ParameterViews)
+	: ContainerDetails(ContainerDetail)
 	, Path(Path)
 	, ParameterViews(ParameterViews)
 {
 	StructOnScope->InitializeAs<FVoxelPinValue>();
-
-	for (const IVoxelParameterOverridesOwner* Owner : OverridesDetails.GetOwners())
-	{
-		bForceEnableOverride = Owner->ShouldForceEnableOverride(Path);
-	}
-	for (const IVoxelParameterOverridesOwner* Owner : OverridesDetails.GetOwners())
-	{
-		ensure(bForceEnableOverride == Owner->ShouldForceEnableOverride(Path));
-	}
 
 	if (!IsOrphan())
 	{
@@ -83,7 +72,7 @@ bool FVoxelParameterDetails::ShouldRebuildChildren() const
 
 	return
 		ChildBuilder->ParameterViewsCommonChildren !=
-		FVoxelParameterView::GetCommonChildren(ParameterViews);
+		IVoxelParameterViewBase::GetCommonChildren(ParameterViews);
 }
 
 void FVoxelParameterDetails::RebuildChildren() const
@@ -149,7 +138,7 @@ void FVoxelParameterDetails::MakeRow(const FVoxelDetailInterface& DetailInterfac
 
 	ensure(!bIsInlineGraph);
 
-	for (const FVoxelParameterView* ParameterView : ParameterViews)
+	for (const IVoxelParameterView* ParameterView : ParameterViews)
 	{
 		if (ParameterView->IsInlineGraph())
 		{
@@ -157,58 +146,29 @@ void FVoxelParameterDetails::MakeRow(const FVoxelDetailInterface& DetailInterfac
 		}
 	}
 
-	for (const FVoxelParameterView* ParameterView : ParameterViews)
+	for (const IVoxelParameterView* ParameterView : ParameterViews)
 	{
 		ensure(ParameterView->IsInlineGraph() == bIsInlineGraph);
 	}
 
 	if (bIsInlineGraph)
 	{
-		UVoxelGraph* BaseGraph = nullptr;
-		if (ParameterViews.Num() > 0)
-		{
-			const FString BaseGraphPath = ParameterViews[0]->GetParameter().MetaData.FindRef("BaseGraph");
-			for (const FVoxelParameterView* ParameterView : ParameterViews)
-			{
-				ensure(BaseGraphPath == ParameterView->GetParameter().MetaData.FindRef("BaseGraph"));
-			}
-
-			if (!BaseGraphPath.IsEmpty())
-			{
-				BaseGraph = LoadObject<UVoxelGraph>(nullptr, *BaseGraphPath);
-				ensureVoxelSlow(BaseGraph);
-			}
-		}
-
 		// InlineGraph Graph object
 		const TSharedRef<IPropertyHandle> ObjectHandle = PropertyHandle->GetChildHandleStatic(FVoxelPinValue, Object);
 
-		const TArray<const UClass*> AllowedClasses = { UVoxelGraph::StaticClass() };
-
-		const TSharedRef<SWidget> ValueWidget =
-			SNew(SObjectPropertyEntryBox)
-			.AllowedClass(UVoxelGraph::StaticClass())
-			.AllowClear(true)
-			.PropertyHandle(ObjectHandle)
-			.ThumbnailPool(FVoxelEditorUtilities::GetThumbnailPool())
-			.OnShouldFilterAsset_Lambda([BaseGraph](const FAssetData& AssetData)
-			{
-				if (!BaseGraph)
-				{
-					return false;
-				}
-
-				const UVoxelGraph* Graph = CastEnsured<UVoxelGraph>(AssetData.GetAsset());
-				if (!ensure(Graph))
-				{
-					return true;
-				}
-
-				return !Graph->GetBaseGraphs().Contains(BaseGraph);
-			});
+		ObjectHandle->GetProperty()->SetMetaData("AllowedClasses", UVoxelGraphInterface::StaticClass()->GetPathName());
+		const TSharedRef<SWidget> ValueWidget = ObjectHandle->CreatePropertyValueWidget();
+		ObjectHandle->GetProperty()->RemoveMetaData("AllowedClasses");
 
 		ensure(!ChildBuilder);
 		ChildBuilder = MakeVoxelShared<FVoxelParameterChildBuilder>(*this, ValueWidget);
+
+		// Rebuild children when changing graph
+		ObjectHandle->SetOnPropertyValueChanged(MakeWeakPtrDelegate(ChildBuilder, [&ChildBuilderRef = *ChildBuilder]
+		{
+			// TODO Fire generic OnChanged and diff layout + rebuild if needed
+			(void)ChildBuilderRef.OnRegenerateChildren.ExecuteIfBound();
+		}));
 
 		DetailInterface.AddCustomBuilder(ChildBuilder.ToSharedRef());
 		return;
@@ -216,9 +176,9 @@ void FVoxelParameterDetails::MakeRow(const FVoxelDetailInterface& DetailInterfac
 
 	bool bMetadataSet = false;
 	TMap<FName, FString> MetaData;
-	for (const FVoxelParameterView* ParameterView : ParameterViews)
+	for (const IVoxelParameterView* ParameterView : ParameterViews)
 	{
-		TMap<FName, FString> NewMetaData = ParameterView->GetParameter().MetaData;
+		TMap<FName, FString> NewMetaData = ParameterView->GetMetaData();
 		if (bMetadataSet)
 		{
 			ensure(MetaData.OrderIndependentCompareEqual(NewMetaData));
@@ -234,10 +194,6 @@ void FVoxelParameterDetails::MakeRow(const FVoxelDetailInterface& DetailInterfac
 	StructWrapper = FVoxelPinValueCustomizationHelper::CreatePinValueCustomization(
 		PropertyHandle.ToSharedRef(),
 		DetailInterface,
-		MakeWeakPtrDelegate(&OverridesDetails, [&OverridesDetails = OverridesDetails]
-		{
-			OverridesDetails.ForceRefresh();
-		}),
 		MetaData,
 		[&](FDetailWidgetRow& Row, const TSharedRef<SWidget>& ValueWidget)
 		{
@@ -248,7 +204,7 @@ void FVoxelParameterDetails::MakeRow(const FVoxelDetailInterface& DetailInterfac
 		MakeAttributeLambda(MakeWeakPtrLambda(this, [this]
 		{
 			return
-				bForceEnableOverride ||
+				ContainerDetails.AlwaysEnabled() ||
 				IsOrphan() ||
 				IsEnabled() == ECheckBoxState::Checked;
 		})));
@@ -264,7 +220,7 @@ void FVoxelParameterDetails::BuildRow(
 	if (ParameterViews.Num() > 0)
 	{
 		ExposedType = ParameterViews[0]->GetType().GetExposedType();
-		for (const FVoxelParameterView* ParameterView : ParameterViews)
+		for (const IVoxelParameterView* ParameterView : ParameterViews)
 		{
 			ensure(ExposedType == ParameterView->GetType().GetExposedType());
 		}
@@ -276,28 +232,25 @@ void FVoxelParameterDetails::BuildRow(
 
 	const float Width = FVoxelPinValueCustomizationHelper::GetValueWidgetWidthByType(PropertyHandle, ExposedType);
 
-	const auto GetRowName = MakeWeakPtrLambda(this, [this]
-	{
-		if (ParameterViews.Num() == 0)
-		{
-			return FText::FromName(OrphanName);
-		}
-
-		const FName Name = ParameterViews[0]->GetName();
-		for (const FVoxelParameterView* ParameterView : ParameterViews)
-		{
-			ensure(Name == ParameterView->GetName());
-		}
-		return FText::FromName(Name);
-	});
-
 	TSharedRef<SWidget> NameWidget =
 		SNew(SVoxelDetailText)
 		.ColorAndOpacity(IsOrphan() ? FLinearColor::Red : FSlateColor::UseForeground())
-		.Text_Lambda(GetRowName);
+		.Text_Lambda(MakeWeakPtrLambda(this, [this]
+		{
+			if (ParameterViews.Num() == 0)
+			{
+				return FText::FromName(OrphanName);
+			}
 
-	if (!bForceEnableOverride &&
-		!IsOrphan())
+			const FName Name = ParameterViews[0]->GetName();
+			for (const IVoxelParameterView* ParameterView : ParameterViews)
+			{
+				ensure(Name == ParameterView->GetName());
+			}
+			return FText::FromName(Name);
+		}));
+
+	if (!ContainerDetails.AlwaysEnabled())
 	{
 		const TAttribute<bool> EnabledAttribute = MakeAttributeLambda(MakeWeakPtrLambda(this, [this]
 		{
@@ -338,7 +291,6 @@ void FVoxelParameterDetails::BuildRow(
 	}
 
 	Row
-	.FilterString(GetRowName())
 	.NameContent()
 	[
 		NameWidget
@@ -387,14 +339,13 @@ void FVoxelParameterDetails::BuildRow(
 
 ECheckBoxState FVoxelParameterDetails::IsEnabled() const
 {
-	ensure(!bForceEnableOverride);
-	ensure(!IsOrphan());
+	ensure(!ContainerDetails.AlwaysEnabled());
 
 	bool bAnyEnabled = false;
 	bool bAnyDisabled = false;
-	for (const IVoxelParameterOverridesOwner* Owner : OverridesDetails.GetOwners())
+	for (const UVoxelParameterContainer* ParameterContainer : ContainerDetails.GetParameterContainers())
 	{
-		if (const FVoxelParameterValueOverride* ValueOverride = Owner->GetPathToValueOverride().Find(Path))
+		if (const FVoxelParameterValueOverride* ValueOverride = ParameterContainer->ValueOverrides.Find(Path))
 		{
 			if (ValueOverride->bEnable)
 			{
@@ -424,43 +375,45 @@ ECheckBoxState FVoxelParameterDetails::IsEnabled() const
 
 void FVoxelParameterDetails::SetEnabled(const bool bNewEnabled) const
 {
-	ensure(!bForceEnableOverride);
-	ensure(!IsOrphan());
+	ensure(!ContainerDetails.AlwaysEnabled());
 
-	const TVoxelArray<IVoxelParameterOverridesOwner*> Owners = OverridesDetails.GetOwners();
-	if (!ensure(Owners.Num() == ParameterViews.Num()))
+	const TVoxelArray<UVoxelParameterContainer*> ParameterContainers = ContainerDetails.GetParameterContainers();
+	if (!ensure(ParameterContainers.Num() == ParameterViews.Num()))
 	{
 		return;
 	}
 
-	for (int32 Index = 0; Index < Owners.Num(); Index++)
+	for (int32 Index = 0; Index < ParameterContainers.Num(); Index++)
 	{
-		IVoxelParameterOverridesOwner& Owner = *Owners[Index];
-		Owner.PreEditChangeOverrides();
+		UVoxelParameterContainer* ParameterContainer = ParameterContainers[Index];
+		ParameterContainer->PreEditChange(nullptr);
 
-		if (FVoxelParameterValueOverride* ExistingValueOverride = Owner.GetPathToValueOverride().Find(Path))
+		if (FVoxelParameterValueOverride* ExistingValueOverride = ParameterContainer->ValueOverrides.Find(Path))
 		{
 			ExistingValueOverride->bEnable = bNewEnabled;
 			ensure(ExistingValueOverride->Value.IsValid());
 		}
 		else
 		{
-			const FVoxelParameterView* ParameterView = ParameterViews[Index];
+			const IVoxelParameterView* ParameterView = ParameterViews[Index];
 			if (!ensure(ParameterView))
 			{
 				continue;
 			}
 
-			FVoxelParameterValueOverride ValueOverride;
-			ValueOverride.bEnable = true;
-			ValueOverride.Value = ParameterView->GetValue();
+			FVoxelParameterValueOverride NewValueOverride;
+			NewValueOverride.bEnable = true;
+			NewValueOverride.CachedName = ParameterView->GetName();
+			NewValueOverride.CachedCategory = FName(ParameterView->GetCategory());
+			NewValueOverride.Value = ParameterView->GetValue();
 
 			// Add AFTER doing GetValue so we don't query ourselves
-			Owner.GetPathToValueOverride().Add(Path, ValueOverride);
+			ParameterContainer->ValueOverrides.Add(Path, NewValueOverride);
 		}
 
-		Owner.FixupParameterOverrides();
-		Owner.PostEditChangeOverrides();
+		ParameterContainer->Fixup();
+		ParameterContainer->PostEditChange();
+		ParameterContainer->OnChanged.Broadcast();
 	}
 }
 
@@ -475,30 +428,30 @@ bool FVoxelParameterDetails::CanResetToDefault() const
 		return true;
 	}
 
-	const TVoxelArray<IVoxelParameterOverridesOwner*> Owners = OverridesDetails.GetOwners();
-	if (!ensure(Owners.Num() == ParameterViews.Num()))
+	const TVoxelArray<UVoxelParameterContainer*> ParameterContainers = ContainerDetails.GetParameterContainers();
+	if (!ensure(ParameterContainers.Num() == ParameterViews.Num()))
 	{
 		return false;
 	}
 
-	for (int32 Index = 0; Index < Owners.Num(); Index++)
+	for (int32 Index = 0; Index < ParameterContainers.Num(); Index++)
 	{
-		IVoxelParameterOverridesOwner& Owner = *Owners[Index];
-		const FVoxelParameterView* ParameterView = ParameterViews[Index];
+		UVoxelParameterContainer* ParameterContainer = ParameterContainers[Index];
+		const IVoxelParameterView* ParameterView = ParameterViews[Index];
 		if (!ensure(ParameterView))
 		{
 			continue;
 		}
 
-		const FVoxelParameterValueOverride* ValueOverride = Owner.GetPathToValueOverride().Find(Path);
+		const FVoxelParameterValueOverride* ValueOverride = ParameterContainer->ValueOverrides.Find(Path);
 		if (!ValueOverride)
 		{
 			continue;
 		}
 
-		ParameterView->Context.AddValueOverrideToIgnore(Path);
+		ParameterView->RootView.GetContext().AddValueOverrideToIgnore(FVoxelParameterContainerRef::MakeRoot(ParameterContainer), Path);
 		const FVoxelPinValue DefaultValue = ParameterView->GetValue();
-		ParameterView->Context.RemoveValueOverrideToIgnore();
+		ParameterView->RootView.GetContext().RemoveValueOverrideToIgnore(FVoxelParameterContainerRef::MakeRoot(ParameterContainer), Path);
 
 		if (ValueOverride->Value != DefaultValue)
 		{
@@ -512,52 +465,55 @@ void FVoxelParameterDetails::ResetToDefault()
 {
 	if (IsOrphan())
 	{
-		for (IVoxelParameterOverridesOwner* Owner : OverridesDetails.GetOwners())
+		for (UVoxelParameterContainer* ParameterContainer : ContainerDetails.GetParameterContainers())
 		{
-			Owner->PreEditChangeOverrides();
-			Owner->GetPathToValueOverride().Remove(Path);
-			Owner->FixupParameterOverrides();
-			Owner->PostEditChangeOverrides();
+			ParameterContainer->PreEditChange(nullptr);
+			ParameterContainer->ValueOverrides.Remove(Path);
+			ParameterContainer->Fixup();
+			ParameterContainer->PostEditChange();
 
 			// No need to broadcast OnChanged for orphans
 		}
 
 		// Force refresh to remove orphans rows that were removed
-		OverridesDetails.ForceRefresh();
+		ContainerDetails.ForceRefresh();
+
 		return;
 	}
 
-	const TVoxelArray<IVoxelParameterOverridesOwner*> Owners = OverridesDetails.GetOwners();
-	if (!ensure(Owners.Num() == ParameterViews.Num()))
+	const TVoxelArray<UVoxelParameterContainer*> ParameterContainers = ContainerDetails.GetParameterContainers();
+	if (!ensure(ParameterContainers.Num() == ParameterViews.Num()))
 	{
 		return;
 	}
 
-	for (int32 Index = 0; Index < Owners.Num(); Index++)
+	for (int32 Index = 0; Index < ParameterContainers.Num(); Index++)
 	{
-		IVoxelParameterOverridesOwner& Owner = *Owners[Index];
-		const FVoxelParameterView* ParameterView = ParameterViews[Index];
+		UVoxelParameterContainer* ParameterContainer = ParameterContainers[Index];
+		const IVoxelParameterView* ParameterView = ParameterViews[Index];
 		if (!ensure(ParameterView))
 		{
 			continue;
 		}
 
-		FVoxelParameterValueOverride* ValueOverride = Owner.GetPathToValueOverride().Find(Path);
+		FVoxelParameterValueOverride* ValueOverride = ParameterContainer->ValueOverrides.Find(Path);
 		if (!ValueOverride)
 		{
 			// We might be able to only reset to default one of the multi-selected objects
-			ensure(OverridesDetails.GetOwners().Num() > 1);
+			ensure(ContainerDetails.GetParameterContainers().Num() > 1);
 			continue;
 		}
 
-		ParameterView->Context.AddValueOverrideToIgnore(Path);
+		ParameterView->RootView.GetContext().AddValueOverrideToIgnore(FVoxelParameterContainerRef::MakeRoot(ParameterContainer), Path);
 		const FVoxelPinValue DefaultValue = ParameterView->GetValue();
-		ParameterView->Context.RemoveValueOverrideToIgnore();
+		ParameterView->RootView.GetContext().RemoveValueOverrideToIgnore(FVoxelParameterContainerRef::MakeRoot(ParameterContainer), Path);
 
-		Owner.PreEditChangeOverrides();
+		ParameterContainer->PreEditChange(nullptr);
 		ValueOverride->Value = DefaultValue;
-		Owner.FixupParameterOverrides();
-		Owner.PostEditChangeOverrides();
+		ParameterContainer->Fixup();
+		ParameterContainer->PostEditChange();
+
+		ParameterContainer->OnChanged.Broadcast();
 
 		// Do this now as caller will broadcast PostChangeDelegate
 		SyncFromViews();
@@ -570,18 +526,18 @@ void FVoxelParameterDetails::ResetToDefault()
 
 void FVoxelParameterDetails::PreEditChange() const
 {
-	for (IVoxelParameterOverridesOwner* Owner : OverridesDetails.GetOwners())
+	for (UVoxelParameterContainer* ParameterContainer : ContainerDetails.GetParameterContainers())
 	{
-		Owner->PreEditChangeOverrides();
+		ParameterContainer->PreEditChange(nullptr);
 	}
 }
 
 void FVoxelParameterDetails::PostEditChange() const
 {
-	for (IVoxelParameterOverridesOwner* Owner : OverridesDetails.GetOwners())
+	for (UVoxelParameterContainer* ParameterContainer : ContainerDetails.GetParameterContainers())
 	{
-		FVoxelParameterValueOverride& ValueOverride = Owner->GetPathToValueOverride().FindOrAdd(Path);
-		if (bForceEnableOverride)
+		FVoxelParameterValueOverride& ValueOverride = ParameterContainer->ValueOverrides.FindOrAdd(Path);
+		if (ParameterContainer->bAlwaysEnabled)
 		{
 			ValueOverride.bEnable = true;
 		}
@@ -591,14 +547,10 @@ void FVoxelParameterDetails::PostEditChange() const
 		}
 
 		ValueOverride.Value = GetValueRef();
-		Owner->FixupParameterOverrides();
-		Owner->PostEditChangeOverrides();
-	}
+		ParameterContainer->Fixup();
+		ParameterContainer->PostEditChange();
 
-	if (bIsInlineGraph)
-	{
-		// Inline graph: provider changed, force refresh children
-		(void)ChildBuilder->OnRegenerateChildren.ExecuteIfBound();
+		ParameterContainer->OnChanged.Broadcast();
 	}
 }
 
@@ -614,7 +566,7 @@ void FVoxelParameterDetails::SyncFromViews()
 
 	bool bValueIsSet = false;
 	FVoxelPinValue Value;
-	for (const FVoxelParameterView* ParameterView : ParameterViews)
+	for (const IVoxelParameterView* ParameterView : ParameterViews)
 	{
 		FVoxelPinValue NewValue = ParameterView->GetValue();
 		if (bValueIsSet)

@@ -1,7 +1,6 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelAABBTree.h"
-#include "VoxelWelfordVariance.h"
 
 void FVoxelAABBTree::Initialize(TVoxelArray<FElement>&& InElements)
 {
@@ -17,7 +16,7 @@ void FVoxelAABBTree::Initialize(TVoxelArray<FElement>&& InElements)
 #endif
 
 	const int32 NumElements = InElements.Num();
-	const int32 ExpectedNumLeaves = 2 * FVoxelUtilities::DivideCeil(NumElements, MaxChildrenInLeaf);
+	const int32 ExpectedNumLeaves = 2 * FMath::DivideAndRoundUp(NumElements, MaxChildrenInLeaf);
 	const int32 ExpectedNumNodes = 2 * ExpectedNumLeaves;
 
 	Nodes.Reserve(ExpectedNumNodes);
@@ -59,8 +58,6 @@ void FVoxelAABBTree::Initialize(TVoxelArray<FElement>&& InElements)
 		NodeToProcess->NodeLevel = 0;
 		NodeToProcess->NodeIndex = Nodes.Emplace();
 
-		RootBounds = NodeToProcess->Bounds;
-
 		NodesToProcess.Add(MoveTemp(NodeToProcess));
 	}
 
@@ -69,14 +66,14 @@ void FVoxelAABBTree::Initialize(TVoxelArray<FElement>&& InElements)
 	{
 		if (PooledNodesToProcess.Num() > 0)
 		{
-			return PooledNodesToProcess.Pop();
+			return PooledNodesToProcess.Pop(false);
 		}
 		return MakeVoxelUnique<FNodeToProcess>();
 	};
 
 	while (NodesToProcess.Num())
 	{
-		TVoxelUniquePtr<FNodeToProcess> NodeToProcess = NodesToProcess.Pop();
+		TVoxelUniquePtr<FNodeToProcess> NodeToProcess = NodesToProcess.Pop(false);
 		ON_SCOPE_EXIT
 		{
 			NodeToProcess->Reset();
@@ -237,7 +234,7 @@ void FVoxelAABBTree::BulkRaycast(
 	{
 		if (PooledCachedArrays.Num() > 0)
 		{
-			return PooledCachedArrays.Pop();
+			return PooledCachedArrays.Pop(false);
 		}
 		return MakeUnique<FCachedArray>();
 	};
@@ -253,7 +250,7 @@ void FVoxelAABBTree::BulkRaycast(
 		int32 NodeIndex = -1;
 		TUniquePtr<FCachedArray> CachedArray;
 	};
-	TVoxelInlineArray<FQueuedNode, 64> QueuedNodes;
+	TVoxelArray<FQueuedNode, TVoxelInlineAllocator<64>> QueuedNodes;
 
 	{
 		VOXEL_SCOPE_COUNTER("First copy");
@@ -271,7 +268,7 @@ void FVoxelAABBTree::BulkRaycast(
 
 	while (QueuedNodes.Num() > 0)
 	{
-		FQueuedNode QueuedNode = QueuedNodes.Pop();
+		FQueuedNode QueuedNode = QueuedNodes.Pop(false);
 		ON_SCOPE_EXIT
 		{
 			ReturnToPool(QueuedNode.CachedArray);

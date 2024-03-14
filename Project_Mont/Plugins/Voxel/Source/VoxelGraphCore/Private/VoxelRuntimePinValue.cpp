@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelRuntimePinValue.h"
 #include "VoxelBuffer.h"
@@ -15,7 +15,7 @@ FVoxelRuntimePinValue::FVoxelRuntimePinValue(const FVoxelPinType& Type)
 	{
 		TSharedRef<FVoxelBuffer> Buffer = FVoxelBuffer::Make(Type.GetInnerType());
 		SharedStructType = Buffer->GetStruct();
-		SharedStruct = MakeSharedVoidRef(MoveTemp(Buffer));
+		SharedStruct = ReinterpretCastRef<TSharedRef<const FVoxelSharedStructOpaque>>(MoveTemp(Buffer));
 	}
 	else if (Type.IsStruct())
 	{
@@ -46,7 +46,7 @@ FVoxelRuntimePinValue FVoxelRuntimePinValue::Make(
 	FVoxelRuntimePinValue Result;
 	Result.Type = BufferType;
 	Result.SharedStructType = Value->GetStruct();
-	Result.SharedStruct = MakeSharedVoidRef(Value);
+	Result.SharedStruct = ReinterpretCastRef<TSharedRef<const FVoxelSharedStructOpaque>>(Value);
 	return Result;
 }
 
@@ -68,10 +68,10 @@ bool FVoxelRuntimePinValue::IsValidValue_Slow() const
 		return false;
 	}
 
-	if (!Type.CanBeCastedTo<FVoxelBuffer>())
+	if (!Type.CanBeCastedTo<FVoxelBufferInterface>())
 	{
 		return true;
 	}
 
-	return Get<FVoxelBuffer>().IsValid_Slow();
+	return Get<FVoxelBufferInterface>().IsValid_Slow();
 }

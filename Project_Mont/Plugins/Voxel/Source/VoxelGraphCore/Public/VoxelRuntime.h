@@ -1,13 +1,14 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelMinimal.h"
 #include "VoxelQuery.h"
 
+class UVoxelGraphInterface;
+class UVoxelParameterContainer;
+class IVoxelExecNodeRuntimeInterface;
 struct FVoxelSubsystem;
-class FVoxelGraphExecutor;
-class FVoxelParameterOverridesOwnerPtr;
 
 class VOXELGRAPHCORE_API FVoxelRuntime
 	: public TSharedFromThis<FVoxelRuntime>
@@ -15,10 +16,10 @@ class VOXELGRAPHCORE_API FVoxelRuntime
 {
 public:
 	static TSharedRef<FVoxelRuntime> Create(
-		IVoxelRuntimeProvider& RuntimeProvider,
+		UObject& Instance,
 		USceneComponent& RootComponent,
 		const FVoxelRuntimeParameters& RuntimeParameters,
-		const FVoxelParameterOverridesOwnerPtr& OverridesOwner);
+		UVoxelParameterContainer& ParameterContainer);
 	~FVoxelRuntime();
 
 	VOXEL_COUNT_INSTANCES();
@@ -27,7 +28,7 @@ public:
 
 	void Destroy();
 	void Tick();
-	void AddReferencedObjects(FReferenceCollector& Collector) const;
+	void AddReferencedObjects(FReferenceCollector& Collector);
 	FVoxelOptionalBox GetBounds() const;
 
 public:
@@ -39,17 +40,21 @@ public:
 	{
 		return Components;
 	}
+	FORCEINLINE IVoxelExecNodeRuntimeInterface& GetNodeRuntime() const
+	{
+		return *NodeRuntime;
+	}
 
 public:
 	USceneComponent* CreateComponent(UClass* Class);
 	void DestroyComponent_ReturnToPoolCalled(USceneComponent& Component);
 
-	template<typename T, typename = std::enable_if_t<TIsDerivedFrom<T, USceneComponent>::Value>>
+	template<typename T, typename = typename TEnableIf<TIsDerivedFrom<T, USceneComponent>::Value>::Type>
 	T* CreateComponent()
 	{
 		return CastChecked<T>(this->CreateComponent(T::StaticClass()), ECastCheckedType::NullAllowed);
 	}
-	template<typename T, typename = std::enable_if_t<TIsDerivedFrom<T, USceneComponent>::Value && !std::is_same_v<T, USceneComponent>>>
+	template<typename T, typename = typename TEnableIf<TIsDerivedFrom<T, USceneComponent>::Value && !std::is_same_v<T, USceneComponent>>::Type>
 	void DestroyComponent(TWeakObjectPtr<T>& WeakComponent)
 	{
 		if (T* Component = WeakComponent.Get())
@@ -62,7 +67,7 @@ public:
 
 private:
 	TSharedPtr<FVoxelRuntimeInfo> RuntimeInfo;
-	TSharedPtr<FVoxelGraphExecutor> GraphExecutor;
+	TSharedPtr<IVoxelExecNodeRuntimeInterface> NodeRuntime;
 
 	TVoxelSet<TWeakObjectPtr<USceneComponent>> Components;
 	TVoxelMap<UClass*, TArray<TWeakObjectPtr<USceneComponent>>> ComponentPools;

@@ -1,8 +1,8 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelNodeStats.h"
 #include "VoxelNode.h"
-#include "VoxelCompilationGraph.h"
+#include "VoxelCompiledGraph.h"
 #include "EdGraph/EdGraphNode.h"
 
 #if WITH_EDITOR
@@ -61,19 +61,7 @@ public:
 	{
 		NodeToStats.Empty();
 	}
-	virtual bool IsEnabled(const UVoxelGraph& Graph) override
-	{
-		return GVoxelEnableNodeStats;
-	}
-	virtual FName GetIconStyleSetName() override
-	{
-		return STATIC_FNAME("EditorStyle");
-	}
-	virtual FName GetIconName() override
-	{
-		return STATIC_FNAME("GraphEditor.Timeline_16x");
-	}
-	virtual FText GetNodeToolTip(const UEdGraphNode& Node) override
+	virtual FText GetToolTip(const UEdGraphNode& Node) override
 	{
 		const FStats* Stats = NodeToStats.Find(&Node);
 		if (!Stats)
@@ -86,7 +74,7 @@ public:
 			FVoxelUtilities::ConvertToTimeText(Stats->Time),
 			FVoxelUtilities::ConvertToTimeText(Stats->Time / Stats->NumElements));
 	}
-	virtual FText GetNodeText(const UEdGraphNode& Node) override
+	virtual FText GetText(const UEdGraphNode& Node) override
 	{
 		const FStats* Stats = NodeToStats.Find(&Node);
 		if (!Stats)
@@ -101,7 +89,7 @@ public:
 	}
 	//~ End IVoxelNodeStatProvider Interface
 };
-FVoxelNodeStatManager* GVoxelNodeStatManager = new FVoxelNodeStatManager();
+FVoxelNodeStatManager* GVoxelNodeStatManager = MakeVoxelSingleton(FVoxelNodeStatManager);
 #endif
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -22,14 +22,15 @@ struct VOXELGRAPHCORE_API FVoxelPointAttributes
 	static const FName Normal;
 	static const FName CustomData;
 	static const FName ParentCustomData;
+	static const FName ActorClass;
 
 	static FName MakeActor(const FName Name)
 	{
-		return TEXTVIEW("Actor.") + Name;
+		return "Actor." + Name;
 	}
 	static FName MakeParent(const FName Name)
 	{
-		return TEXTVIEW("Parent.") + Name;
+		return "Parent." + Name;
 	}
 
 	static void AddDefaulted(
@@ -72,13 +73,13 @@ public:
 	TSharedRef<FVoxelPointSet> Gather(const FVoxelInt32Buffer& Indices) const;
 	TVoxelArray<FVoxelFloatBuffer> FindCustomDatas(const FVoxelGraphNodeRef& NodeRef) const;
 	int64 GetAllocatedSize() const;
-	const TVoxelSet<FVoxelPointId>& GetPointIdToIndex() const;
+	const TVoxelAddOnlySet<FVoxelPointId>& GetPointIdToIndex() const;
 
 public:
 	static TSharedRef<const FVoxelPointSet> Merge(TVoxelArray<TSharedRef<const FVoxelPointSet>> PointSets);
 
 public:
-	template<typename T, typename = std::enable_if_t<TIsDerivedFrom<T, FVoxelBuffer>::Value>>
+	template<typename T, typename = typename TEnableIf<TIsDerivedFrom<T, FVoxelBuffer>::Value>::Type>
 	void Add(const FName Name, const T& Buffer)
 	{
 		this->Add(Name, MakeSharedCopy(Buffer));
@@ -88,8 +89,8 @@ private:
 	int32 PrivateNum = 0;
 	TVoxelMap<FName, TSharedPtr<const FVoxelBuffer>> Attributes;
 
-	mutable FVoxelCriticalSection_NoPadding PointIdToIndexCriticalSection;
-	mutable TVoxelSet<FVoxelPointId> PointIdToIndex_RequiresLock;
+	mutable FVoxelFastCriticalSection_NoPadding PointIdToIndexCriticalSection;
+	mutable TVoxelAddOnlySet<FVoxelPointId> PointIdToIndex_RequiresLock;
 };
 
 USTRUCT()

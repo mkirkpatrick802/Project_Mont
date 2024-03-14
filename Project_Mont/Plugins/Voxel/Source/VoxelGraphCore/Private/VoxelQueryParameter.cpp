@@ -1,4 +1,4 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelQueryParameter.h"
 
@@ -11,7 +11,7 @@ void FVoxelQueryParameters::Add(const TSharedRef<const FVoxelQueryParameter>& Qu
 {
 	UScriptStruct* Struct = QueryParameter->GetStruct();
 	checkVoxelSlow(Struct->GetSuperStruct() == FVoxelQueryParameter::StaticStruct());
-	StructToQueryParameter.FindOrAdd(Struct) = QueryParameter;
+	StructToQueryParameter.Add(Struct, QueryParameter);
 }
 
 void FVoxelQueryParameters::Append(const FVoxelQueryParameters& Other)

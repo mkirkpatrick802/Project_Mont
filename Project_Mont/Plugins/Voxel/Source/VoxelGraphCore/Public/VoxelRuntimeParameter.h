@@ -1,4 +1,4 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -19,9 +19,10 @@ public:
 
 	void Add(const TSharedRef<const FVoxelRuntimeParameter>& RuntimeParameter)
 	{
-		StructToRuntimeParameter.Add_EnsureNew(RuntimeParameter->GetStruct(), RuntimeParameter);
+		ensure(!StructToRuntimeParameter.Contains(RuntimeParameter->GetStruct()));
+		StructToRuntimeParameter.Add(RuntimeParameter->GetStruct(), RuntimeParameter);
 	}
-	template<typename T, typename = std::enable_if_t<TIsDerivedFrom<T, FVoxelRuntimeParameter>::Value>>
+	template<typename T, typename = typename TEnableIf<TIsDerivedFrom<T, FVoxelRuntimeParameter>::Value>::Type>
 	T& Add()
 	{
 		const TSharedRef<T> Parameter = MakeVoxelShared<T>();
@@ -29,13 +30,13 @@ public:
 		return *Parameter;
 	}
 
-	template<typename T, typename = std::enable_if_t<TIsDerivedFrom<T, FVoxelRuntimeParameter>::Value>>
+	template<typename T, typename = typename TEnableIf<TIsDerivedFrom<T, FVoxelRuntimeParameter>::Value>::Type>
 	bool Remove()
 	{
 		return StructToRuntimeParameter.Remove(StaticStructFast<T>()) != 0;
 	}
 
-	template<typename T, typename = std::enable_if_t<TIsDerivedFrom<T, FVoxelRuntimeParameter>::Value>>
+	template<typename T, typename = typename TEnableIf<TIsDerivedFrom<T, FVoxelRuntimeParameter>::Value>::Type>
 	TSharedPtr<const T> Find() const
 	{
 		const TSharedPtr<const FVoxelRuntimeParameter> RuntimeParameter = StructToRuntimeParameter.FindRef(StaticStructFast<T>());

@@ -1,4 +1,4 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -11,6 +11,7 @@ struct VOXELGRAPHCORE_API FVoxelSubsystem
 	: public FVoxelVirtualStruct
 	, public TSharedFromThis<FVoxelSubsystem>
 	, public TVoxelRuntimeInfo<FVoxelSubsystem>
+
 {
 	GENERATED_BODY()
 	DECLARE_VIRTUAL_STRUCT_PARENT(FVoxelSubsystem, GENERATED_VOXEL_SUBSYSTEM_BODY)

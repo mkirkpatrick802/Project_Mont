@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -8,7 +8,7 @@
 class FVoxelBitReference
 {
 public:
-	FORCEINLINE FVoxelBitReference(uint32& Data, const uint32 Mask)
+	FORCEINLINE FVoxelBitReference(uint32& Data, uint32 Mask)
 		: Data(Data)
 		, Mask(Mask)
 	{
@@ -59,7 +59,7 @@ private:
 class FVoxelConstBitReference
 {
 public:
-	FORCEINLINE FVoxelConstBitReference(const uint32& Data, const uint32 Mask)
+	FORCEINLINE FVoxelConstBitReference(const uint32& Data, uint32 Mask)
 		: Data(Data)
 		, Mask(Mask)
 	{
@@ -188,7 +188,7 @@ public:
 	}
 
 	// No SetNumUninitialized: the last word must always be zero-padded
-	void SetNum(SizeType NewNumBits, const bool bValue)
+	void SetNum(SizeType NewNumBits, bool bValue)
 	{
 		// Has different behavior than TArray::SetNum
 		checkVoxelSlow(Num() == 0);
@@ -312,7 +312,7 @@ public:
 		return FVoxelConstBitReference(this->GetWord(Index / NumBitsPerWord), 1u << (Index % NumBitsPerWord));
 	}
 
-	FORCEINLINE void AtomicallySet(SizeType Index, const bool bValue)
+	FORCEINLINE void AtomicallySet(SizeType Index, bool bValue)
 	{
 		uint32& Word = this->GetWord(Index / NumBitsPerWord);
 		const uint32 Mask = 1u << (Index % NumBitsPerWord);
@@ -432,3 +432,39 @@ const uint32* RESTRICT GetData(const TVoxelBitArray<Allocator>& Array)
 
 using FVoxelBitArray32 = TVoxelBitArray<FVoxelAllocator>;
 using FVoxelBitArray64 = TVoxelBitArray<FVoxelAllocator64>;
+
+struct FVoxelBitArrayVisualizerEntry
+{
+	uint32 Bit0 : 1;
+	uint32 Bit1 : 1;
+	uint32 Bit2 : 1;
+	uint32 Bit3 : 1;
+	uint32 Bit4 : 1;
+	uint32 Bit5 : 1;
+	uint32 Bit6 : 1;
+	uint32 Bit7 : 1;
+	uint32 Bit8 : 1;
+	uint32 Bit9 : 1;
+	uint32 Bit10 : 1;
+	uint32 Bit11 : 1;
+	uint32 Bit12 : 1;
+	uint32 Bit13 : 1;
+	uint32 Bit14 : 1;
+	uint32 Bit15 : 1;
+	uint32 Bit16 : 1;
+	uint32 Bit17 : 1;
+	uint32 Bit18 : 1;
+	uint32 Bit19 : 1;
+	uint32 Bit20 : 1;
+	uint32 Bit21 : 1;
+	uint32 Bit22 : 1;
+	uint32 Bit23 : 1;
+	uint32 Bit24 : 1;
+	uint32 Bit25 : 1;
+	uint32 Bit26 : 1;
+	uint32 Bit27 : 1;
+	uint32 Bit28 : 1;
+	uint32 Bit29 : 1;
+	uint32 Bit30 : 1;
+	uint32 Bit31 : 1;
+};

@@ -1,12 +1,9 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "Customizations/VoxelParameterChildBuilder.h"
 #include "Customizations/VoxelParameterDetails.h"
-#include "VoxelParameterView.h"
-#include "VoxelCategoryBuilder.h"
-#include "VoxelParameterOverridesOwner.h"
-#include "VoxelParameterOverridesDetails.h"
-
+#include "Customizations/VoxelParameterContainerDetails.h"
+#include "VoxelParameterContainer.h"
 #define private public
 #include "Editor/PropertyEditor/Private/DetailItemNode.h"
 #undef private
@@ -106,9 +103,9 @@ void FVoxelParameterChildBuilder::GenerateChildContent(IDetailChildrenBuilder& C
 
 	const bool bHasAnyOverride = INLINE_LAMBDA
 	{
-		for (const IVoxelParameterOverridesOwner* Owner : ParameterDetails.OverridesDetails.GetOwners())
+		for (const UVoxelParameterContainer* ParameterContainer : ParameterDetails.ContainerDetails.GetParameterContainers())
 		{
-			for (const auto& It : Owner->GetPathToValueOverride())
+			for (const auto& It : ParameterContainer->ValueOverrides)
 			{
 				if (It.Key.StartsWith(ParameterDetails.Path))
 				{
@@ -131,28 +128,55 @@ void FVoxelParameterChildBuilder::GenerateChildContent(IDetailChildrenBuilder& C
 		return;
 	}
 
-	ParameterViewsCommonChildren = FVoxelParameterView::GetCommonChildren(ParameterDetails.ParameterViews);
+	ParameterViewsCommonChildren = IVoxelParameterViewBase::GetCommonChildren(ParameterDetails.ParameterViews);
 
-	FVoxelCategoryBuilder CategoryBuilder(GetName());
-
-	for (const TVoxelArray<FVoxelParameterView*>& ChildParameterViews : ParameterViewsCommonChildren)
+	TMap<FName, TVoxelArray<TVoxelArray<IVoxelParameterView*>>> CategoryToAllChildParameterViews;
+	for (const TVoxelArray<IVoxelParameterView*>& ChildParameterViews : ParameterViewsCommonChildren)
 	{
-		const FString Category = ChildParameterViews[0]->GetParameter().Category;
-		for (const FVoxelParameterView* ChildParameterView : ChildParameterViews)
+		const FString Category = ChildParameterViews[0]->GetCategory();
+		for (const IVoxelParameterView* ChildParameterView : ChildParameterViews)
 		{
-			ensure(ChildParameterView->GetParameter().Category == Category);
+			ensure(ChildParameterView->GetCategory() == Category);
 		}
 
-		CategoryBuilder.AddProperty(
-			Category,
-			MakeWeakPtrLambda(this, [=](const FVoxelDetailInterface& DetailInterface)
-			{
-				ParameterDetails.OverridesDetails.GenerateView(ChildParameterViews, DetailInterface);
-			}));
+		CategoryToAllChildParameterViews.FindOrAdd(FName(Category)).Add(ChildParameterViews);
 	}
 
-	ParameterDetails.OverridesDetails.AddOrphans(CategoryBuilder, ParameterDetails.Path);
-	CategoryBuilder.Apply(ChildrenBuilder);
+	for (UVoxelParameterContainer* ParameterContainer : ParameterDetails.ContainerDetails.GetParameterContainers())
+	{
+		for (const auto& It : ParameterContainer->ValueOverrides)
+		{
+			CategoryToAllChildParameterViews.FindOrAdd(It.Value.CachedCategory);
+		}
+	}
+
+	if (const FVoxelParameterCategories* Categories = ParameterDetails.ParameterViews[0]->GetCategories())
+	{
+		const TArray<FName> CategoryArray(Categories->Categories);
+		CategoryToAllChildParameterViews.KeySort([&](const FName CategoryA, const FName CategoryB)
+		{
+			return CategoryArray.IndexOfByKey(CategoryA) < CategoryArray.IndexOfByKey(CategoryB);
+		});
+	}
+
+	const FVoxelDetailCategoryInterface DetailCategoryInterface(ChildrenBuilder);
+	for (const auto& It : CategoryToAllChildParameterViews)
+	{
+		DetailCategoryInterface.EditCategory(It.Key, GetName().ToString() + "." + It.Key, MakeWeakPtrLambda(this,
+			[=](const FVoxelDetailInterface& DetailInterface)
+			{
+				for (const TVoxelArray<IVoxelParameterView*>& ChildParameterViews : It.Value)
+				{
+					ParameterDetails.ContainerDetails.GenerateView(ChildParameterViews, DetailInterface);
+				}
+
+				ParameterDetails.ContainerDetails.AddOrphans(
+					ParameterDetails.Path,
+					ParameterDetails.ParameterViews,
+					DetailInterface,
+					It.Key);
+			}));
+	}
 }
 
 FName FVoxelParameterChildBuilder::GetName() const

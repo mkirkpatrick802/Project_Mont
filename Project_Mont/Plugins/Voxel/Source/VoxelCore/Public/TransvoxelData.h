@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -63,7 +63,7 @@ struct FCellIndices
 	{
 		return int32(Data >> 60);
 	}
-	FORCEINLINE int32 GetIndex(const int32 Index) const
+	FORCEINLINE int32 GetIndex(int32 Index) const
 	{
 		checkVoxelSlow(0 <= Index && Index < 3 * NumTriangles());
 		return int32((Data >> (4 * Index)) & 0xF);
@@ -186,7 +186,7 @@ FORCEINLINE int32 GetCellClass(const int32 CellCode)
 {
 	checkVoxelSlow(0 <= CellCode && CellCode < 256);
 	const uint64 PackedCellClass = CellCodeToPackedCellClass[CellCode / 16];
-	return FVoxelUtilities::ReadBits(PackedCellClass, 4 * (CellCode % 16), 4);
+	return (PackedCellClass >> (4 * (CellCode & 15))) & 0xF;
 }
 
 checkStatic(sizeof(CellCodeToPackedCellClass) == 128);

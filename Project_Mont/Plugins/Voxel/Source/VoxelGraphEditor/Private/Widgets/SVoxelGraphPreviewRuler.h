@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -11,6 +11,7 @@ public:
 	{
 		SLATE_ATTRIBUTE(double, Value)
 		SLATE_ATTRIBUTE(int32, Resolution)
+		SLATE_ATTRIBUTE(TWeakPtr<SWidget>, SizeWidget)
 	};
 
 	void Construct(const FArguments& InArgs);
@@ -26,14 +27,10 @@ private:
 	double GetRulerDistance() const;
 	FString GetDistanceText() const;
 
-public:
-	TWeakPtr<SWidget> WeakSizeWidget;
-
 private:
 	TAttribute<double> Value;
 	TAttribute<int32> Resolution;
-
-private:
+	TAttribute<TWeakPtr<SWidget>> SizeWidget;
 
 	FVector2D StartPosition;
 	FVector2D EndPosition;

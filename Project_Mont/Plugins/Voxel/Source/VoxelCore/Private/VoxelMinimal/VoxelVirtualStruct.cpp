@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelMinimal.h"
 
@@ -9,11 +9,8 @@ VOXEL_RUN_ON_STARTUP_GAME(CheckVoxelVirtualStruct)
 {
 	for (UScriptStruct* Struct : GetDerivedStructs<FVoxelVirtualStruct>())
 	{
-		const TSharedRef<FVoxelVirtualStruct> Instance = MakeSharedStruct<FVoxelVirtualStruct>(Struct);
-
-		ensureAlwaysMsgf(Instance->GetStruct() == Struct, TEXT("Missing %s() in %s"),
-			*Instance->Internal_GetMacroName(),
-			*Struct->GetStructCPPName());
+		TVoxelInstancedStruct<FVoxelVirtualStruct> Instance(Struct);
+		ensureAlwaysMsgf(Instance->GetStruct() == Struct, TEXT("Missing %s() in %s"), *Instance->Internal_GetMacroName(), *Struct->GetStructCPPName());
 	}
 }
 #endif
@@ -22,6 +19,24 @@ FString FVoxelVirtualStruct::Internal_GetMacroName() const
 {
 	return "GENERATED_VIRTUAL_STRUCT_BODY";
 }
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+#if WITH_EDITOR
+void FVoxelVirtualStruct::SyncFromSource_EditorOnly(const FVoxelVirtualStruct& Source)
+{
+	check(GetStruct() == Source.GetStruct());
+	GetStruct()->CopyScriptStruct(this, &Source);
+}
+
+void FVoxelVirtualStruct::SyncToSource_EditorOnly(FVoxelVirtualStruct& Source) const
+{
+	check(GetStruct() == Source.GetStruct());
+	GetStruct()->CopyScriptStruct(&Source, this);
+}
+#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -40,7 +55,7 @@ TSharedRef<FVoxelVirtualStruct> FVoxelVirtualStruct::MakeSharedCopy() const
 
 void FVoxelVirtualStruct::AddStructReferencedObjects(FReferenceCollector& Collector)
 {
-	FVoxelUtilities::AddStructReferencedObjects(Collector, MakeVoxelStructView(*this));
+	FVoxelObjectUtilities::AddStructReferencedObjects(Collector, GetStruct(), this);
 }
 
 bool FVoxelVirtualStruct::Equals_UPropertyOnly(

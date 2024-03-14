@@ -1,11 +1,10 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelMinimal.h"
 #include "VoxelTask.h"
 #include "VoxelTaskGroup.h"
-#include "HAL/Runnable.h"
 
 class FVoxelTaskExecutor;
 
@@ -22,19 +21,15 @@ public:
 	// Called when we're done executing all groups
 	FSimpleMulticastDelegate OnEndProcessing;
 
-	FORCEINLINE int32 NumTasks() const
+	FORCEINLINE bool IsExiting() const
+	{
+		return bIsExiting.Load();
+	}
+
+	int32 NumTasks() const
 	{
 		return Groups.Num();
 	}
-	FORCEINLINE bool IsExiting() const
-	{
-		return bIsExiting.Get();
-	}
-	FORCEINLINE void AddGameThreadTask(TVoxelUniqueFunction<void()> Lambda)
-	{
-		GameThreadTaskQueue.Enqueue(MoveTemp(Lambda));
-	}
-
 	void LogAllTasks();
 	void AddGroup(const TSharedRef<FVoxelTaskGroup>& Group);
 
@@ -43,6 +38,8 @@ public:
 	virtual void Initialize() override;
 	virtual void Tick() override;
 	//~ End FVoxelSingleton Interface
+
+	void Tick_RenderThread(FRDGBuilder& GraphBuilder);
 
 private:
 	struct FTaskGroup
@@ -66,7 +63,7 @@ private:
 			Data->WeakGroup = Group;
 			Data->Priority = Group->Priority;
 
-			ReferenceController = GetWeakReferencerReferenceController(GetWeakPtrWeakReferencer(Data->WeakGroup));
+			ReferenceController = GetWeakPtrReferenceController(Data->WeakGroup);
 		}
 
 		FORCEINLINE bool operator<(const FTaskGroup& Other) const
@@ -84,7 +81,7 @@ private:
 
 		FORCEINLINE int32 Num() const
 		{
-			return NumGroups.Get();
+			return NumGroups.GetValue();
 		}
 
 		template<typename LambdaType>
@@ -139,7 +136,7 @@ private:
 		double LastPriorityComputeTime = 0;
 		TVoxelArray<FTaskGroup> Groups;
 		FVoxelBitArray32 ValidGroups;
-		FVoxelCounter32 NumGroups;
+		FThreadSafeCounter NumGroups;
 	};
 
 	class FThread : public FRunnable
@@ -161,11 +158,12 @@ private:
 	double LastNoTasksTime = 0;
 	bool bWasProcessingTaskLastFrame = false;
 
-	FVoxelCriticalSection ThreadsCriticalSection;
+	FVoxelFastCriticalSection ThreadsCriticalSection;
 	TVoxelArray<TUniquePtr<FThread>> Threads;
 
 	FTaskGroupArray Groups;
-	TQueue<TVoxelUniqueFunction<void()>, EQueueMode::Mpsc> GameThreadTaskQueue;
+
+	TQueue<TWeakPtr<FVoxelTaskGroup>, EQueueMode::Mpsc> GameGroupsQueue;
 
 	TSharedPtr<FVoxelTaskGroup> GetGroupToProcess(const FThread* Thread);
 };

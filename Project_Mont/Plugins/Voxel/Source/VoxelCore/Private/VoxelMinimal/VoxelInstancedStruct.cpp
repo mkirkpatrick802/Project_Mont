@@ -1,11 +1,36 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelMinimal.h"
 #include "UObject/UObjectThreadContext.h"
 
+void FVoxelInstancedStruct::Free()
+{
+	if (!ensure(ScriptStruct) ||
+		!ensure(StructMemory))
+	{
+		return;
+	}
+
+	FVoxelObjectUtilities::DestroyStruct_Safe(ScriptStruct, StructMemory);
+	FVoxelMemory::Free(StructMemory);
+
+	ScriptStruct = nullptr;
+	StructMemory = nullptr;
+}
+
+void* FVoxelInstancedStruct::Release()
+{
+	void* OutStructMemory = StructMemory;
+
+	ScriptStruct = nullptr;
+	StructMemory = nullptr;
+
+	return OutStructMemory;
+}
+
 void FVoxelInstancedStruct::InitializeAs(UScriptStruct* NewScriptStruct, const void* NewStructMemory)
 {
-	*this = {};
+	Reset();
 
 	if (!NewScriptStruct)
 	{
@@ -14,8 +39,17 @@ void FVoxelInstancedStruct::InitializeAs(UScriptStruct* NewScriptStruct, const v
 		return;
 	}
 
-	PrivateScriptStruct = NewScriptStruct;
-	PrivateStructMemory = MakeSharedStruct(NewScriptStruct, NewStructMemory);
+	ScriptStruct = NewScriptStruct;
+	StructMemory = FVoxelMemory::Malloc(
+		NewScriptStruct->GetStructureSize(),
+		NewScriptStruct->GetMinAlignment());
+
+	ScriptStruct->InitializeStruct(StructMemory);
+
+	if (NewStructMemory)
+	{
+		ScriptStruct->CopyScriptStruct(StructMemory, NewStructMemory);
+	}
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -31,9 +65,9 @@ uint64 FVoxelInstancedStruct::GetPropertyHash() const
 
 	uint64 Hash = FVoxelUtilities::MurmurHash(GetScriptStruct());
 	int32 Index = 0;
-	for (const FProperty& Property : GetStructProperties(GetScriptStruct()))
+	for (const FProperty& Property : GetStructProperties(StaticStruct()))
 	{
-		const uint32 PropertyHash = FVoxelUtilities::HashProperty(Property, Property.ContainerPtrToValuePtr<void>(this));
+		const uint32 PropertyHash = FVoxelObjectUtilities::HashProperty(Property, Property.ContainerPtrToValuePtr<void>(this));
 		Hash ^= FVoxelUtilities::MurmurHash(PropertyHash, Index++);
 	}
 	return Hash;
@@ -50,10 +84,10 @@ bool FVoxelInstancedStruct::NetSerialize(FArchive& Ar, UPackageMap& Map)
 			return true;
 		}
 
-		FString PathName = GetScriptStruct()->GetPathName();
+		FString PathName = ScriptStruct->GetPathName();
 		Ar << PathName;
 
-		GetScriptStruct()->SerializeItem(Ar, GetStructMemory(), nullptr);
+		ScriptStruct->SerializeItem(Ar, StructMemory, nullptr);
 		return true;
 	}
 	else if (Ar.IsLoading())
@@ -74,7 +108,7 @@ bool FVoxelInstancedStruct::NetSerialize(FArchive& Ar, UPackageMap& Map)
 		}
 
 		*this = FVoxelInstancedStruct(NewScriptStruct);
-		GetScriptStruct()->SerializeItem(Ar, GetStructMemory(), nullptr);
+		ScriptStruct->SerializeItem(Ar, StructMemory, nullptr);
 		return true;
 	}
 	else
@@ -126,17 +160,17 @@ bool FVoxelInstancedStruct::Serialize(FArchive& Ar)
 				Ar.Preload(NewScriptStruct);
 			}
 
-			if (NewScriptStruct != GetScriptStruct())
+			if (NewScriptStruct != ScriptStruct)
 			{
 				InitializeAs(NewScriptStruct);
 			}
-			ensure(GetScriptStruct() == NewScriptStruct);
+			ensure(ScriptStruct == NewScriptStruct);
 		}
 
 		int32 SerializedSize = 0;
 		Ar << SerializedSize;
 
-		if (!GetScriptStruct() && SerializedSize > 0)
+		if (!ScriptStruct && SerializedSize > 0)
 		{
 			// Struct not found
 
@@ -162,31 +196,33 @@ bool FVoxelInstancedStruct::Serialize(FArchive& Ar)
 			}
 			LOG_VOXEL(Warning, "Struct %s not found: %s", *StructName, *Name);
 
+			ensureVoxelSlow(false);
+
 			Ar.Seek(Ar.Tell() + SerializedSize);
 		}
-		else if (GetScriptStruct())
+		else if (ScriptStruct)
 		{
 			const int64 Start = Ar.Tell();
-			GetScriptStruct()->SerializeItem(Ar, GetStructMemory(), nullptr);
+			ScriptStruct->SerializeItem(Ar, StructMemory, nullptr);
 			ensure(Ar.Tell() - Start == SerializedSize);
 
-			if (GetScriptStruct()->IsChildOf(StaticStructFast<FVoxelVirtualStruct>()))
+			if (ScriptStruct->IsChildOf(FVoxelVirtualStruct::StaticStruct()))
 			{
-				static_cast<FVoxelVirtualStruct*>(GetStructMemory())->PostSerialize();
+				static_cast<FVoxelVirtualStruct*>(StructMemory)->PostSerialize();
 			}
 
-			if (GetScriptStruct() == StaticStructFast<FBodyInstance>())
+			if (ScriptStruct == FBodyInstance::StaticStruct())
 			{
-				static_cast<FBodyInstance*>(GetStructMemory())->LoadProfileData(false);
+				static_cast<FBodyInstance*>(StructMemory)->LoadProfileData(false);
 			}
 		}
 	}
 	else if (Ar.IsSaving())
 	{
 		FString StructName;
-		if (GetScriptStruct())
+		if (ScriptStruct)
 		{
-			StructName = GetScriptStruct()->GetName();
+			StructName = ScriptStruct->GetName();
 		}
 		else
 		{
@@ -194,7 +230,7 @@ bool FVoxelInstancedStruct::Serialize(FArchive& Ar)
 		}
 
 		Ar << StructName;
-		Ar << PrivateScriptStruct;
+		Ar << ScriptStruct;
 
 		const int64 SerializedSizePosition = Ar.Tell();
 		{
@@ -203,16 +239,16 @@ bool FVoxelInstancedStruct::Serialize(FArchive& Ar)
 		}
 
 		const int64 Start = Ar.Tell();
-		if (GetScriptStruct())
+		if (ScriptStruct)
 		{
-			check(GetStructMemory());
+			check(StructMemory);
 
-			if (GetScriptStruct()->IsChildOf(StaticStructFast<FVoxelVirtualStruct>()))
+			if (ScriptStruct->IsChildOf(FVoxelVirtualStruct::StaticStruct()))
 			{
-				static_cast<FVoxelVirtualStruct*>(GetStructMemory())->PreSerialize();
+				static_cast<FVoxelVirtualStruct*>(StructMemory)->PreSerialize();
 			}
 
-			GetScriptStruct()->SerializeItem(Ar, GetStructMemory(), nullptr);
+			ScriptStruct->SerializeItem(Ar, StructMemory, nullptr);
 		}
 		const int64 End = Ar.Tell();
 
@@ -227,33 +263,32 @@ bool FVoxelInstancedStruct::Serialize(FArchive& Ar)
 	return true;
 }
 
-bool FVoxelInstancedStruct::Identical(const FVoxelInstancedStruct* Other, const uint32 PortFlags) const
+bool FVoxelInstancedStruct::Identical(const FVoxelInstancedStruct* Other, uint32 PortFlags) const
 {
 	if (!ensure(Other))
 	{
 		return false;
 	}
 
-	if (!IsValid() &&
-		!Other->IsValid())
-	{
-		return true;
-	}
-
-	if (GetScriptStruct() != Other->GetScriptStruct())
+	if (ScriptStruct != Other->ScriptStruct)
 	{
 		return false;
 	}
 
-	VOXEL_SCOPE_COUNTER_FORMAT("CompareScriptStruct %s", *GetScriptStruct()->GetName());
-	return GetScriptStruct()->CompareScriptStruct(GetStructMemory(), Other->GetStructMemory(), PortFlags);
+	if (!ScriptStruct)
+	{
+		return true;
+	}
+
+	VOXEL_SCOPE_COUNTER_FORMAT("CompareScriptStruct %s", *ScriptStruct->GetName());
+	return ScriptStruct->CompareScriptStruct(StructMemory, Other->StructMemory, PortFlags);
 }
 
-bool FVoxelInstancedStruct::ExportTextItem(FString& ValueStr, const FVoxelInstancedStruct& DefaultValue, UObject* Parent, const int32 PortFlags, UObject* ExportRootScope) const
+bool FVoxelInstancedStruct::ExportTextItem(FString& ValueStr, const FVoxelInstancedStruct& DefaultValue, UObject* Parent, int32 PortFlags, UObject* ExportRootScope) const
 {
 	VOXEL_FUNCTION_COUNTER();
 
-	if (!IsValid())
+	if (!ScriptStruct)
 	{
 		ValueStr += "None";
 		return true;
@@ -261,13 +296,11 @@ bool FVoxelInstancedStruct::ExportTextItem(FString& ValueStr, const FVoxelInstan
 
 	const FVoxelInstancedStruct* DefaultValuePtr = &DefaultValue;
 
-	ValueStr += GetScriptStruct()->GetPathName();
-	GetScriptStruct()->ExportText(
+	ValueStr += ScriptStruct->GetPathName();
+	ScriptStruct->ExportText(
 		ValueStr,
-		GetStructMemory(),
-		DefaultValuePtr && GetScriptStruct() == DefaultValuePtr->GetScriptStruct()
-		? DefaultValuePtr->GetStructMemory()
-		: nullptr,
+		StructMemory,
+		DefaultValuePtr && ScriptStruct == DefaultValuePtr->GetScriptStruct() ? DefaultValuePtr->GetStructMemory() : nullptr,
 		Parent,
 		PortFlags,
 		ExportRootScope);
@@ -275,7 +308,7 @@ bool FVoxelInstancedStruct::ExportTextItem(FString& ValueStr, const FVoxelInstan
 	return true;
 }
 
-bool FVoxelInstancedStruct::ImportTextItem(const TCHAR*& Buffer, const int32 PortFlags, UObject* Parent, FOutputDevice* ErrorText, FArchive* InSerializingArchive)
+bool FVoxelInstancedStruct::ImportTextItem(const TCHAR*& Buffer, int32 PortFlags, UObject* Parent, FOutputDevice* ErrorText, FArchive* InSerializingArchive)
 {
 	VOXEL_FUNCTION_COUNTER();
 
@@ -292,7 +325,7 @@ bool FVoxelInstancedStruct::ImportTextItem(const TCHAR*& Buffer, const int32 Por
 	if (StructPathName.Len() == 0 ||
 		StructPathName == "None")
 	{
-		*this = {};
+		Reset();
 		return true;
 	}
 
@@ -302,7 +335,7 @@ bool FVoxelInstancedStruct::ImportTextItem(const TCHAR*& Buffer, const int32 Por
 		return false;
 	}
 
-	if (NewScriptStruct != GetScriptStruct())
+	if (NewScriptStruct != ScriptStruct)
 	{
 		InitializeAs(NewScriptStruct);
 	}
@@ -310,7 +343,7 @@ bool FVoxelInstancedStruct::ImportTextItem(const TCHAR*& Buffer, const int32 Por
 	{
 		const TCHAR* Result = NewScriptStruct->ImportText(
 			Buffer,
-			GetStructMemory(),
+			StructMemory,
 			Parent,
 			PortFlags,
 			ErrorText,
@@ -330,22 +363,21 @@ void FVoxelInstancedStruct::AddStructReferencedObjects(FReferenceCollector& Coll
 {
 	VOXEL_FUNCTION_COUNTER();
 
-	if (!GetScriptStruct())
+	if (!ScriptStruct)
 	{
 		return;
 	}
 
-	TObjectPtr<UScriptStruct> ScriptStructObject = GetScriptStruct();
-	Collector.AddReferencedObject(ScriptStructObject);
-	check(ScriptStructObject);
+	Collector.AddReferencedObject(ScriptStruct);
+	check(ScriptStruct);
 
-	FVoxelUtilities::AddStructReferencedObjects(Collector, *this);
+	FVoxelObjectUtilities::AddStructReferencedObjects(Collector, ScriptStruct, StructMemory);
 }
 
 void FVoxelInstancedStruct::GetPreloadDependencies(TArray<UObject*>& OutDependencies) const
 {
-	if (GetScriptStruct())
+	if (ScriptStruct)
 	{
-		OutDependencies.Add(GetScriptStruct());
+		OutDependencies.Add(ScriptStruct);
 	}
 }

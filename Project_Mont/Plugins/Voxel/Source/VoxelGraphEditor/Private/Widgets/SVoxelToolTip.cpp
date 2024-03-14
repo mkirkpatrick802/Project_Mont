@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "SVoxelToolTip.h"
 
@@ -17,9 +17,9 @@ VOXEL_INITIALIZE_STYLE(ToolTip)
 	Set("Tooltip.SubduedText", FTextBlockStyle(TooltipTextSubdued));
 
 	const FButtonStyle TooltipHyperlinkButton = FButtonStyle()
-		.SetNormal(CORE_BORDER_BRUSH("Old/HyperlinkDotted", FMargin(0.f, 0.f, 0.f, 3.f / 16.f)))
+		.SetNormal(BORDER_BRUSH("Old/HyperlinkDotted", FMargin(0.f, 0.f, 0.f, 3.f / 16.f)))
 		.SetPressed({})
-		.SetHovered(CORE_BORDER_BRUSH("Old/HyperlinkUnderline", FMargin(0.f, 0.f, 0.f, 3.f / 16.0f)));
+		.SetHovered(BORDER_BRUSH("Old/HyperlinkUnderline", FMargin(0.f, 0.f, 0.f, 3.f / 16.0f)));
 
 	const FTextBlockStyle TooltipHyperlinkText = FTextBlockStyle(NormalText)
 		.SetFont(DEFAULT_FONT("Regular", 9))

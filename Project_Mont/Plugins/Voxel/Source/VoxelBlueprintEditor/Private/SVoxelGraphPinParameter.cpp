@@ -1,8 +1,6 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "SVoxelGraphPinParameter.h"
-#include "VoxelParameterView.h"
-#include "VoxelGraphParametersView.h"
 #include "SVoxelGraphParameterComboBox.h"
 #include "K2Node_VoxelGraphParameterBase.h"
 
@@ -12,9 +10,9 @@ void SVoxelGraphPinParameter::Construct(const FArguments& InArgs, UEdGraphPin* I
 	{
 		if (UEdGraphPin* AssetPin = Node->FindPin(UK2Node_VoxelGraphParameterBase::AssetPinName))
 		{
-			ensure(!AssetPin->DefaultObject || AssetPin->DefaultObject->Implements<UVoxelParameterOverridesObjectOwner>());
+			ensure(!AssetPin->DefaultObject || AssetPin->DefaultObject->Implements<UVoxelParameterProvider>());
 
-			OverridesOwner = MakeWeakInterfacePtr<IVoxelParameterOverridesObjectOwner>(AssetPin->DefaultObject);
+			WeakParameterProvider = MakeWeakInterfacePtr<IVoxelParameterProvider>(AssetPin->DefaultObject);
 			AssetPinReference = AssetPin;
 		}
 	}
@@ -29,24 +27,24 @@ void SVoxelGraphPinParameter::Tick(const FGeometry& AllottedGeometry, const doub
 	if (bGraphDataInvalid)
 	{
 		AssetPinReference = {};
-		OverridesOwner = nullptr;
+		WeakParameterProvider = nullptr;
 		return;
 	}
 
 	if (const UEdGraphPin* Pin = AssetPinReference.Get())
 	{
-		if (OverridesOwner.GetObject() == Pin->DefaultObject)
+		if (WeakParameterProvider.GetObject() == Pin->DefaultObject)
 		{
 			return;
 		}
 
 		if (Pin->DefaultObject &&
-			!Pin->DefaultObject->Implements<UVoxelParameterOverridesObjectOwner>())
+			!Pin->DefaultObject->Implements<UVoxelParameterProvider>())
 		{
 			return;
 		}
 
-		OverridesOwner = TWeakInterfacePtr<IVoxelParameterOverridesObjectOwner>(Pin->DefaultObject);
+		UpdateParameterProvider(Pin->DefaultObject);
 	}
 }
 
@@ -63,7 +61,7 @@ TSharedRef<SWidget>	SVoxelGraphPinParameter::GetDefaultValueWidget()
 				SAssignNew(TextContainer, SBox)
 				.Visibility_Lambda([this]
 				{
-					if (!OverridesOwner.IsValid())
+					if (!WeakParameterProvider.IsValid())
 					{
 						return GetDefaultValueVisibility();
 					}
@@ -105,7 +103,7 @@ TSharedRef<SWidget>	SVoxelGraphPinParameter::GetDefaultValueWidget()
 				SAssignNew(ParameterSelectorContainer, SBox)
 				.Visibility_Lambda([this]
 				{
-					if (OverridesOwner.IsValid())
+					if (WeakParameterProvider.IsValid())
 					{
 						return GetDefaultValueVisibility();
 					}
@@ -113,38 +111,9 @@ TSharedRef<SWidget>	SVoxelGraphPinParameter::GetDefaultValueWidget()
 				})
 				[
 					SAssignNew(ParameterComboBox, SVoxelGraphParameterComboBox)
-					.Items_Lambda(MakeWeakPtrLambda(this, [this]() -> TArray<FVoxelSelectorItem>
-					{
-						if (!OverridesOwner.IsValid())
-						{
-							return {};
-						}
-
-						const TSharedPtr<FVoxelGraphParametersView> ParametersView = OverridesOwner->GetParametersView();
-						if (!ParametersView)
-						{
-							return {};
-						}
-
-						TArray<FVoxelSelectorItem> Items;
-						for (const FVoxelParameterView* ParameterView : ParametersView->GetChildren())
-						{
-							const FVoxelParameter Parameter = ParameterView->GetParameter();
-							Items.Add(FVoxelSelectorItem(ParameterView->GetGuid(), Parameter.Name, Parameter.Type, Parameter.Category));
-						}
-						return Items;
-					}))
-					.CurrentItem_Lambda(MakeWeakPtrLambda(this, [this]() -> FVoxelSelectorItem
-					{
-						const FVoxelGraphBlueprintParameter& CurrentParameter = Cast<UK2Node_VoxelGraphParameterBase>(GraphPinObj->GetOwningNode())->CachedParameter;
-						return FVoxelSelectorItem(CurrentParameter.Guid, CurrentParameter.Name, CurrentParameter.Type);
-					}))
-					.IsValidItem_Lambda(MakeWeakPtrLambda(this, [this]
-					{
-						const FVoxelGraphBlueprintParameter& CurrentParameter = Cast<UK2Node_VoxelGraphParameterBase>(GraphPinObj->GetOwningNode())->CachedParameter;
-						return CurrentParameter.bIsValid;
-					}))
-					.OnItemChanged(MakeWeakPtrDelegate(this, [this](const FVoxelSelectorItem& NewItem)
+					.ParameterProvider(WeakParameterProvider)
+					.CurrentParameter(GetCachedParameter())
+					.OnTypeChanged_Lambda([this](const FVoxelParameter NewParameter)
 					{
 						if (!ensure(!GraphPinObj->IsPendingKill()) ||
 							!GraphPinObj->GetOwningNode())
@@ -153,9 +122,29 @@ TSharedRef<SWidget>	SVoxelGraphPinParameter::GetDefaultValueWidget()
 						}
 
 						const FVoxelTransaction Transaction(GraphPinObj, "Change Parameter Pin Value");
-						GraphPinObj->GetSchema()->TrySetDefaultValue(*GraphPinObj, NewItem.Guid.ToString());
-					}))
+						GraphPinObj->GetSchema()->TrySetDefaultValue(*GraphPinObj, NewParameter.Guid.ToString());
+					})
 				]
 			]
 		];
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+void SVoxelGraphPinParameter::UpdateParameterProvider(const TWeakInterfacePtr<IVoxelParameterProvider>& NewParameterProvider)
+{
+	WeakParameterProvider = NewParameterProvider;
+
+	if (ParameterComboBox)
+	{
+		ParameterComboBox->UpdateParameterProvider(NewParameterProvider);
+		ParameterComboBox->UpdateParameter(GetCachedParameter());
+	}
+}
+
+FVoxelGraphBlueprintParameter SVoxelGraphPinParameter::GetCachedParameter() const
+{
+	return Cast<UK2Node_VoxelGraphParameterBase>(GraphPinObj->GetOwningNode())->CachedParameter;
 }

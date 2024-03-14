@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelMinimal.h"
 
@@ -7,7 +7,7 @@ DEFINE_VOXEL_INSTANCE_COUNTER(IVoxelWorldSubsystem);
 class FVoxelWorldSubsystemManager : public FVoxelSingleton
 {
 public:
-	FVoxelCriticalSection CriticalSection;
+	FVoxelFastCriticalSection CriticalSection;
 	TVoxelMap<FObjectKey, TVoxelMap<FName, TSharedPtr<IVoxelWorldSubsystem>>> WorldToNameToSubsystem_RequiresLock;
 
 	//~ Begin FVoxelSingleton Interface
@@ -75,7 +75,7 @@ public:
 	}
 	//~ End FVoxelSingleton Interface
 };
-FVoxelWorldSubsystemManager* GVoxelWorldSubsystemManager = new FVoxelWorldSubsystemManager();
+FVoxelWorldSubsystemManager* GVoxelWorldSubsystemManager = MakeVoxelSingleton(FVoxelWorldSubsystemManager);
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -87,7 +87,7 @@ TSharedRef<IVoxelWorldSubsystem> IVoxelWorldSubsystem::GetInternal(
 	TSharedRef<IVoxelWorldSubsystem>(*Constructor)())
 {
 	VOXEL_SCOPE_LOCK(GVoxelWorldSubsystemManager->CriticalSection);
-	ensure(!IsInGameThreadFast() || World.ResolveObjectPtr() || !GIsRunning || GIsGarbageCollecting);
+	ensure(!IsInGameThreadFast() || World.ResolveObjectPtr() || !GIsRunning);
 
 	TSharedPtr<IVoxelWorldSubsystem>& Subsystem = GVoxelWorldSubsystemManager->WorldToNameToSubsystem_RequiresLock.FindOrAdd(World).FindOrAdd(Name);
 	if (!Subsystem)

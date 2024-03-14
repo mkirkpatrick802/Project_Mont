@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -31,8 +31,8 @@ public:
 
 	VOXEL_COUNT_INSTANCES();
 
-	using FOnChanged = TDelegate<void(const TVoxelSet<FIntVector>&)>;
-	using FOnChangedMulticast = TMulticastDelegate<void(const TVoxelSet<FIntVector>&)>;
+	using FOnChanged = TDelegate<void(const TVoxelAddOnlySet<FIntVector>&)>;
+	using FOnChangedMulticast = TMulticastDelegate<void(const TVoxelAddOnlySet<FIntVector>&)>;
 
 	// OnAddChunk will be fired right away, might cause deadlock
 	void Bind(
@@ -46,12 +46,12 @@ public:
 
 	void Tick(
 		const UWorld* World,
-		const TVoxelSet<TObjectPtr<UVoxelInvokerComponent>>& InvokerComponents);
+		const TVoxelSet<UVoxelInvokerComponent*>& InvokerComponents);
 
 private:
 	bool bTaskInProgress = false;
-	FVoxelCriticalSection CriticalSection;
-	TVoxelSet<FIntVector> Chunks_RequiresLock;
+	FVoxelFastCriticalSection CriticalSection;
+	TVoxelAddOnlySet<FIntVector> Chunks_RequiresLock;
 	FOnChangedMulticast OnAddChunkMulticast_RequiresLock;
 	FOnChangedMulticast OnRemoveChunkMulticast_RequiresLock;
 
@@ -83,7 +83,7 @@ public:
 
 private:
 	double LastTickTime = 0;
-	TVoxelSet<TObjectPtr<UVoxelInvokerComponent>> InvokerComponents;
+	TVoxelSet<UVoxelInvokerComponent*> InvokerComponents;
 
 	struct FViewKey
 	{
@@ -109,7 +109,7 @@ private:
 				GetTypeHash(Key.LocalToWorld);
 		}
 	};
-	FVoxelCriticalSection CriticalSection;
+	FVoxelFastCriticalSection CriticalSection;
 	TVoxelMap<FViewKey, TSharedPtr<FVoxelInvokerView>> KeyToView_RequiresLock;
 
 	friend UVoxelInvokerComponent;

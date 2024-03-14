@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "SVoxelEditCondition.h"
 
@@ -91,7 +91,7 @@ void SVoxelEditCondition::Tick(const FGeometry& AllottedGeometry, const double I
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-void SVoxelEditCondition::OnChangeState(const ECheckBoxState NewState)
+void SVoxelEditCondition::OnChangeState(ECheckBoxState NewState)
 {
 	OnEditConditionChanged.ExecuteIfBound(NewState);
 	CachedState = CanEdit.Get();

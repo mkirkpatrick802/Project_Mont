@@ -1,37 +1,51 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelEditorMinimal.h"
-#include "SVoxelGraphParameterSelector.h"
+#include "VoxelGraph.h"
+#include "VoxelParameter.h"
+#include "K2Node_VoxelGraphParameterBase.h"
 
 class SVoxelGraphParameterSelector;
 
 class SVoxelGraphParameterComboBox : public SCompoundWidget
 {
 public:
+	DECLARE_DELEGATE_OneParam(FOnParameterChanged, FVoxelParameter)
+
+public:
 	VOXEL_SLATE_ARGS()
 	{
-		SLATE_ATTRIBUTE(TArray<FVoxelSelectorItem>, Items)
-		SLATE_ATTRIBUTE(FVoxelSelectorItem, CurrentItem)
-		SLATE_ATTRIBUTE(bool, IsValidItem)
-		SLATE_EVENT(TDelegate<void(const FVoxelSelectorItem&)>, OnItemChanged)
+		SLATE_ARGUMENT(TWeakInterfacePtr<IVoxelParameterProvider>, ParameterProvider)
+		SLATE_ARGUMENT(FVoxelGraphBlueprintParameter, CurrentParameter)
+		SLATE_EVENT(FOnParameterChanged, OnTypeChanged)
 	};
 
 	void Construct(const FArguments& InArgs);
+
+public:
+	void UpdateParameter(const FVoxelGraphBlueprintParameter& NewParameter);
+	void UpdateParameterProvider(const TWeakInterfacePtr<IVoxelParameterProvider>& NewParameterProvider);
 
 private:
 	TSharedRef<SWidget> GetMenuContent();
 
 private:
+	const FSlateBrush* GetIcon(const FVoxelPinType& PinType) const;
+	FLinearColor GetColor(const FVoxelPinType& PinType) const;
+
+private:
 	TSharedPtr<SComboButton> TypeComboButton;
+	TSharedPtr<SImage> MainIcon;
+	TSharedPtr<STextBlock> MainTextBlock;
 
 	TSharedPtr<SMenuOwner> MenuContent;
 	TSharedPtr<SVoxelGraphParameterSelector> ParameterSelector;
 
 private:
-	TDelegate<void(const FVoxelSelectorItem&)> OnItemChanged;
-	TAttribute<TArray<FVoxelSelectorItem>> Items;
-	TAttribute<FVoxelSelectorItem> CurrentItem;
-	TAttribute<bool> bIsValidItem;
+	TWeakInterfacePtr<IVoxelParameterProvider> CachedParameterProvider;
+	bool bIsValidParameter = false;
+
+	FOnParameterChanged OnParameterChanged;
 };

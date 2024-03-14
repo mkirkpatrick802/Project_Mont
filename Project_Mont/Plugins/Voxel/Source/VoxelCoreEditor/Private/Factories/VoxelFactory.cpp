@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "Factories/VoxelFactory.h"
 #include "Factories/VoxelAssetClassParentFilter.h"
@@ -16,7 +16,7 @@ bool UVoxelFactory::ShouldShowInNewMenu() const
 	return bShouldShowInNewMenu && Super::ShouldShowInNewMenu();
 }
 
-UObject* UVoxelFactory::FactoryCreateNew(UClass* Class, UObject* InParent, const FName Name, const EObjectFlags Flags, UObject* Context, FFeedbackContext* Warn)
+UObject* UVoxelFactory::FactoryCreateNew(UClass* Class, UObject* InParent, FName Name, EObjectFlags Flags, UObject* Context, FFeedbackContext* Warn)
 {
 	UObject* Object = NewObject<UObject>(InParent, Class, Name, Flags);
 	if (Object)
@@ -60,7 +60,7 @@ bool UVoxelBlueprintFactoryBase::ConfigureProperties()
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-UObject* UVoxelBlueprintFactory::FactoryCreateNew(UClass* Class, UObject* InParent, const FName Name, const EObjectFlags Flags, UObject* Context, FFeedbackContext* Warn)
+UObject* UVoxelBlueprintFactory::FactoryCreateNew(UClass* Class, UObject* InParent, FName Name, EObjectFlags Flags, UObject* Context, FFeedbackContext* Warn)
 {
 	if (!ParentClass)
 	{
@@ -80,7 +80,7 @@ UObject* UVoxelBlueprintFactory::FactoryCreateNew(UClass* Class, UObject* InPare
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-UObject* UVoxelBlueprintClassFactory::FactoryCreateNew(UClass* Class, UObject* InParent, const FName Name, EObjectFlags Flags, UObject* Context, FFeedbackContext* Warn)
+UObject* UVoxelBlueprintClassFactory::FactoryCreateNew(UClass* Class, UObject* InParent, FName Name, EObjectFlags Flags, UObject* Context, FFeedbackContext* Warn)
 {
 	if (!ParentClass)
 	{

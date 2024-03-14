@@ -1,125 +1,135 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelMinimal.h"
-#include "VoxelBuffer.h"
-#include "VoxelQueryParameter.h"
-#include "Buffer/VoxelBaseBuffers.h"
+#include "VoxelBounds.h"
+#include "VoxelTransformRef.h"
+#include "VoxelFunctionLibrary.h"
+#include "Buffer/VoxelFloatBuffers.h"
+#include "Material/VoxelMaterialDefinition.h"
 #include "VoxelSurface.generated.h"
 
-struct VOXELGRAPHCORE_API FVoxelSurfaceAttributes
-{
-	static const FName Height;
-	static const FName Distance;
-	static const FName Material;
+class FVoxelDetailTexturePool;
 
-	static TSharedRef<const FVoxelBuffer> MakeDefault(
-		const FVoxelPinType& InnerType,
-		FName Attribute);
-};
+namespace ispc
+{
+	struct FVoxelSurfaceLayer
+	{
+		bool bConstantMaterials = false;
+		const uint16* Materials = nullptr;
+		bool bConstantStrengths = false;
+		const uint8* Strengths = nullptr;
+	};
+}
+#define __ISPC_STRUCT_FVoxelSurfaceLayer__
 
 USTRUCT()
-struct VOXELGRAPHCORE_API FVoxelSurfaceQueryParameter : public FVoxelQueryParameter
-{
-	GENERATED_BODY()
-	GENERATED_VOXEL_QUERY_PARAMETER_BODY()
-
-public:
-	TVoxelSet<FName> AttributesToCompute;
-
-public:
-	FORCEINLINE void Compute(const FName Attribute)
-	{
-		AttributesToCompute.Add(Attribute);
-	}
-	FORCEINLINE bool ShouldCompute(const FName Attribute) const
-	{
-		return AttributesToCompute.Contains(Attribute);
-	}
-
-public:
-	FORCEINLINE void ComputeDistance()
-	{
-		Compute(FVoxelSurfaceAttributes::Distance);
-	}
-	FORCEINLINE bool ShouldComputeDistance() const
-	{
-		return ShouldCompute(FVoxelSurfaceAttributes::Distance);
-	}
-};
-
-USTRUCT()
-struct FVoxelSurfaceAttributeInfo
-{
-	GENERATED_BODY()
-
-	UPROPERTY(EditAnywhere, Category = "Config")
-	FName Name = "Distance";
-
-	UPROPERTY(EditAnywhere, Category = "Config", meta = (FilterTypes = AllBuffers))
-	FVoxelPinType Type = FVoxelPinType::Make<float>().GetBufferType();
-};
-
-USTRUCT(meta = (NoBufferType))
-struct VOXELGRAPHCORE_API FVoxelSurface : public FVoxelVirtualStruct
+struct VOXELGRAPHCORE_API FVoxelSurfaceMaterial : public FVoxelBufferInterface
 {
 	GENERATED_BODY()
 	GENERATED_VIRTUAL_STRUCT_BODY()
 
-public:
-	FORCEINLINE const FVoxelBox& GetBounds() const
+	struct FLayer
 	{
-		return Bounds;
-	}
-	FORCEINLINE const TVoxelMap<FName, TSharedPtr<const FVoxelBuffer>>& GetNameToAttribute() const
-	{
-		return NameToAttribute;
-	}
+		FVoxelMaterialDefinitionBuffer Material;
+		FVoxelByteBuffer Strength;
+	};
+	TVoxelArray<FLayer> Layers;
 
-	FORCEINLINE bool HasAttribute(const FName Attribute) const
-	{
-		return AttributesToCompute.Contains(Attribute);
-	}
-	FORCEINLINE bool HasDistance() const
-	{
-		return HasAttribute(FVoxelSurfaceAttributes::Distance);
-	}
+	int32 Num() const;
+	virtual int32 Num_Slow() const final override;
+	virtual bool IsValid_Slow() const final override;
+
+	void GetLayers(
+		const FVoxelBufferIterator& Iterator,
+		TVoxelArray<ispc::FVoxelSurfaceLayer>& OutLayers) const;
+};
+
+USTRUCT()
+struct VOXELGRAPHCORE_API FVoxelSurface
+{
+	GENERATED_BODY()
 
 public:
-	TSharedRef<const FVoxelBuffer> Get(
+	bool bIsValid = false;
+	FVoxelGraphNodeRef Node;
+	FVoxelBounds Bounds;
+
+	TSharedPtr<const TVoxelComputeValue<FVoxelFloatBuffer>> ComputeDistance;
+	TSharedPtr<const TVoxelComputeValue<FVoxelSurfaceMaterial>> ComputeMaterial;
+
+	struct FAttribute
+	{
+		FVoxelPinType InnerType;
+		TWeakPtr<FVoxelDetailTexturePool> DetailTexturePool;
+		TSharedPtr<const TVoxelComputeValue<FVoxelBuffer>> Compute;
+	};
+	TVoxelMap<FName, FAttribute> NameToAttribute;
+
+public:
+	FVoxelSurface() = default;
+
+	static FVoxelSurface Make(
+		const FVoxelGraphNodeRef& Node,
+		const FVoxelBounds& Bounds);
+
+	static FVoxelSurface MakeInfinite(const FVoxelGraphNodeRef& Node);
+
+	static FVoxelSurface MakeWithLocalBounds(
+		const FVoxelGraphNodeRef& Node,
+		const FVoxelQuery& Query,
+		const FVoxelBox& Bounds);
+
+public:
+	void CopyMaterialAttributes(const FVoxelSurface& Other);
+
+	void LerpMaterialAttributes(
+		const FVoxelQuery& InQuery,
+		const FVoxelGraphNodeRef& NodeRef,
+		const FVoxelSurface& A,
+		const FVoxelSurface& B,
+		const TSharedRef<const TVoxelComputeValue<FVoxelFloatBuffer>>& ComputeAlpha);
+
+public:
+	TVoxelFutureValue<FVoxelFloatBuffer> GetDistance(const FVoxelQuery& Query) const;
+	TVoxelFutureValue<FVoxelSurfaceMaterial> GetMaterial(const FVoxelQuery& Query) const;
+
+public:
+	void SetDistance(
+		const FVoxelQuery& Query,
+		const FVoxelGraphNodeRef& NodeRef,
+		TVoxelComputeValue<FVoxelFloatBuffer>&& Lambda);
+
+	void SetMaterial(
+		const FVoxelQuery& Query,
+		const FVoxelGraphNodeRef& NodeRef,
+		TVoxelComputeValue<FVoxelSurfaceMaterial>&& Lambda);
+
+	void SetAttribute(
+		FName Name,
 		const FVoxelPinType& InnerType,
-		FName Attribute) const;
-
-	template<typename InnerType, typename BufferType = typename TVoxelBufferType<InnerType>::Type>
-	FORCEINLINE BufferType Get(const FName Attribute) const
-	{
-		return this->Get(FVoxelPinType::Make<InnerType>(), Attribute)->template AsChecked<BufferType>();
-	}
-	FORCEINLINE FVoxelFloatBuffer GetDistance() const
-	{
-		return Get<float>(FVoxelSurfaceAttributes::Distance);
-	}
+		const TWeakPtr<FVoxelDetailTexturePool>& DetailTexturePool,
+		const FVoxelQuery& Query,
+		const FVoxelGraphNodeRef& NodeRef,
+		TVoxelComputeValue<FVoxelBuffer>&& Lambda);
 
 public:
-	FORCEINLINE void SetBounds(const FVoxelBox& NewBounds)
-	{
-		Bounds = NewBounds;
-	}
-	FORCEINLINE void Set(const FName Attribute, const TSharedRef<const FVoxelBuffer>& Buffer)
-	{
-		NameToAttribute.FindOrAdd(Attribute) = Buffer;
-	}
-	FORCEINLINE void SetDistance(const FVoxelFloatBuffer& Buffer)
-	{
-		Set(FVoxelSurfaceAttributes::Distance, Buffer.MakeSharedCopy());
-	}
+	void SetLocalDistance(
+		const FVoxelQuery& Query,
+		const FVoxelGraphNodeRef& NodeRef,
+		TVoxelComputeValue<FVoxelFloatBuffer>&& Lambda);
 
-private:
-	FVoxelBox Bounds;
-	TVoxelSet<FName> AttributesToCompute;
-	TVoxelMap<FName, TSharedPtr<const FVoxelBuffer>> NameToAttribute;
+	void SetLocalMaterial(
+		const FVoxelQuery& Query,
+		const FVoxelGraphNodeRef& NodeRef,
+		TVoxelComputeValue<FVoxelSurfaceMaterial>&& Lambda);
 
-	friend struct FVoxelNode_MakeSurface;
-	friend struct FVoxelNode_GetSurfaceAttributes;
+	void SetLocalAttribute(
+		FName Name,
+		const FVoxelPinType& InnerType,
+		const TWeakPtr<FVoxelDetailTexturePool>& DetailTexturePool,
+		const FVoxelQuery& Query,
+		const FVoxelGraphNodeRef& NodeRef,
+		TVoxelComputeValue<FVoxelBuffer>&& Lambda);
 };

@@ -1,6 +1,5 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
-using System.IO;
 using UnrealBuildTool;
 
 public class VoxelGraphCore : ModuleRules_Voxel
@@ -11,10 +10,8 @@ public class VoxelGraphCore : ModuleRules_Voxel
 			new string[]
 			{
 				"TraceLog",
-			    "Chaos",
 				"Slate",
 				"SlateCore",
-			    "PhysicsCore",
 			}
 		);
 

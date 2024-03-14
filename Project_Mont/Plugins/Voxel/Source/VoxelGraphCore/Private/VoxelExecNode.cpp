@@ -1,10 +1,23 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelExecNode.h"
 #include "VoxelRuntime.h"
-#include "VoxelTerminalGraphInstance.h"
+#include "VoxelExecNodeRuntimeWrapper.h"
 
 DEFINE_VOXEL_INSTANCE_COUNTER(FVoxelExecNodeRuntime);
+
+DEFINE_VOXEL_NODE_COMPUTE(FVoxelExecNode, Exec)
+{
+	const TSharedRef<FVoxelQueryContext> Context = Query.GetSharedContext();
+	const TSharedRef<FVoxelExecNode> Node = SharedNode<FVoxelExecNode>();
+
+	FVoxelExec Exec;
+	Exec.MakeRuntime = [=]
+	{
+		return Context->FindOrAddExecNodeRuntimeWrapper(Node);
+	};
+	return Exec;
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -25,7 +38,7 @@ TSharedPtr<FVoxelExecNodeRuntime> FVoxelExecNode::CreateSharedExecRuntime(const 
 			return;
 		}
 
-		RunOnGameThread([Runtime]
+		FVoxelUtilities::RunOnGameThread([Runtime]
 		{
 			if (Runtime->bIsCreated)
 			{
@@ -47,7 +60,7 @@ FVoxelExecNodeRuntime::~FVoxelExecNodeRuntime()
 
 TSharedPtr<FVoxelRuntime> FVoxelExecNodeRuntime::GetRuntime() const
 {
-	const TSharedPtr<FVoxelRuntime> Runtime = PrivateTerminalGraphInstance->RuntimeInfo->GetRuntime();
+	const TSharedPtr<FVoxelRuntime> Runtime = PrivateContext->RuntimeInfo->GetRuntime();
 	ensure(Runtime || IsDestroyed());
 	return Runtime;
 }
@@ -55,14 +68,9 @@ TSharedPtr<FVoxelRuntime> FVoxelExecNodeRuntime::GetRuntime() const
 USceneComponent* FVoxelExecNodeRuntime::GetRootComponent() const
 {
 	ensure(IsInGameThread());
-	USceneComponent* RootComponent = PrivateTerminalGraphInstance->RuntimeInfo->GetRootComponent();
+	USceneComponent* RootComponent = PrivateContext->RuntimeInfo->GetRootComponent();
 	ensure(RootComponent);
 	return RootComponent;
-}
-
-const TSharedRef<const FVoxelRuntimeInfo>& FVoxelExecNodeRuntime::GetRuntimeInfo() const
-{
-	return PrivateTerminalGraphInstance->RuntimeInfo;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -70,18 +78,18 @@ const TSharedRef<const FVoxelRuntimeInfo>& FVoxelExecNodeRuntime::GetRuntimeInfo
 ///////////////////////////////////////////////////////////////////////////////
 
 void FVoxelExecNodeRuntime::CallCreate(
-	const TSharedRef<FVoxelTerminalGraphInstance>& TerminalGraphInstance,
-	TVoxelMap<FName, TVoxelArray<FVoxelRuntimePinValue>>&& ConstantValues)
+	const TSharedRef<FVoxelQueryContext>& Context,
+	TVoxelMap<FName, FVoxelRuntimePinValue>&& ConstantValues)
 {
 	VOXEL_FUNCTION_COUNTER();
 
 	ensure(!bIsCreated);
 	bIsCreated = true;
 
-	PrivateTerminalGraphInstance = TerminalGraphInstance;
+	PrivateContext = Context;
 	PrivateConstantValues = MoveTemp(ConstantValues);
 
-	const FVoxelQueryScope Scope(nullptr, &GetTerminalGraphInstance().Get());
+	const FVoxelQueryScope Scope(nullptr, &GetContext().Get());
 
 	PreCreate();
 	Create();
@@ -95,7 +103,7 @@ void FVoxelExecNodeRuntime::CallDestroy()
 	ensure(!bIsDestroyed);
 	bIsDestroyed = true;
 
-	const FVoxelQueryScope Scope(nullptr, &GetTerminalGraphInstance().Get());
+	const FVoxelQueryScope Scope(nullptr, &GetContext().Get());
 
 	Destroy();
 }

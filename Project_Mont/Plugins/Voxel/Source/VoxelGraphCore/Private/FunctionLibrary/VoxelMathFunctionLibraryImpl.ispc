@@ -1,4 +1,4 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelMinimal.isph"
 
@@ -19,7 +19,7 @@ export void VoxelMathFunctionLibrary_SmoothMin(
 		const varying float DistanceB = bConstDistanceB ? DistancesB[0] : DistancesB[Index];
 		const varying float Smoothness = bConstSmoothness ? Smoothnesses[0] : Smoothnesses[Index];
 
-		const varying float OneMinusAlpha = clamp(0.5f + 0.5f * SmoothHelper(DistanceB - DistanceA, Smoothness), 0.f, 1.f);
+		const varying float OneMinusAlpha = clamp(0.5f + 0.5f * SmoothHelper(DistanceB - DistanceA, Smoothness), 0.0f, 1.0f);
 		const varying float Alpha = 1.f - OneMinusAlpha;
 
 		OutAlpha[Index] = Alpha;
@@ -44,7 +44,7 @@ export void VoxelMathFunctionLibrary_SmoothMax(
 		const varying float DistanceB = bConstDistanceB ? DistancesB[0] : DistancesB[Index];
 		const varying float Smoothness = bConstSmoothness ? Smoothnesses[0] : Smoothnesses[Index];
 
-		const varying float OneMinusAlpha = clamp(0.5f - 0.5f * SmoothHelper(DistanceB - DistanceA, Smoothness), 0.f, 1.f);
+		const varying float OneMinusAlpha = clamp(0.5f - 0.5f * SmoothHelper(DistanceB - DistanceA, Smoothness), 0.0f, 1.0f);
 		const varying float Alpha = 1.f - OneMinusAlpha;
 
 		OutAlpha[Index] = Alpha;

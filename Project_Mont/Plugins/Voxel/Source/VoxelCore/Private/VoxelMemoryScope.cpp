@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelMemoryScope.h"
 #include "HAL/PlatformStackWalk.h"
@@ -9,9 +9,6 @@ extern thread_local bool GVoxelMallocIsAllowed;
 extern thread_local bool GVoxelReallocIsAllowed;
 #endif
 
-DECLARE_VOXEL_COUNTER_WITH_CATEGORY(VOXELCORE_API, STATGROUP_VoxelMemory, STAT_VoxelMemoryAllocationCount, "Allocation Count");
-DEFINE_VOXEL_COUNTER(STAT_VoxelMemoryAllocationCount);
-
 DECLARE_VOXEL_MEMORY_STAT(VOXELCORE_API, STAT_VoxelMemoryWaste, "Memory Allocator Waste");
 DEFINE_VOXEL_MEMORY_STAT(STAT_VoxelMemoryWaste);
 
@@ -21,7 +18,7 @@ DEFINE_VOXEL_MEMORY_STAT(STAT_VoxelMemoryTotal);
 #if VOXEL_DEBUG
 VOXEL_RUN_ON_STARTUP_GAME(TestVoxelMemory)
 {
-	for (int32 AlignmentLog2 = 0; AlignmentLog2 < 15; AlignmentLog2++)
+	for (int32 AlignmentLog2 = 0; AlignmentLog2 < 16; AlignmentLog2++)
 	{
 		const int32 Alignment = 1 << AlignmentLog2;
 		void* Ptr = FVoxelMemory::Malloc(18, Alignment);
@@ -102,11 +99,6 @@ void FVoxelMemoryScope::Clear()
 		{
 			for (void* Allocation : Pool.Allocations)
 			{
-#if VOXEL_DEBUG
-				checkVoxelSlow(!GetBlock(Allocation).IsValid);
-				GetBlock(Allocation).IsValid = true;
-#endif
-
 				StaticFree(Allocation);
 			}
 			Pool.Allocations.Reset();
@@ -120,8 +112,8 @@ void FVoxelMemoryScope::Clear()
 
 #if VOXEL_DEBUG
 using FVoxelMemoryStackFrames = TVoxelStaticArray_ForceInit<void*, 14>;
-FVoxelCriticalSection GVoxelValidAllocationsCriticalSection;
-TVoxelMap<void*, FVoxelMemoryStackFrames, TVoxelMapArrayType<FDefaultAllocator>> GVoxelValidAllocations;
+FVoxelFastCriticalSection GVoxelValidAllocationsCriticalSection;
+TVoxelMap<void*, FVoxelMemoryStackFrames, FDefaultSetAllocator> GVoxelValidAllocations;
 bool GVoxelCheckValidAllocations = true;
 
 VOXEL_RUN_ON_STARTUP_GAME(InitializeCheckValidAllocations)
@@ -158,7 +150,7 @@ void UpdateVoxelAllocationStackFrames(void* Result, const bool bIsAdd)
 
 	constexpr int32 NumFramesToIgnore = 3;
 
-	TVoxelStaticArray<void*, NumFramesToIgnore + FVoxelMemoryStackFrames::Num()> TmpStackFrames(NoInit);
+	TVoxelStaticArray<void*, FVoxelMemoryStackFrames::Num() + NumFramesToIgnore> TmpStackFrames(NoInit);
 	TmpStackFrames.Memzero();
 
 	FPlatformStackWalk::CaptureStackBackTrace(
@@ -167,7 +159,7 @@ void UpdateVoxelAllocationStackFrames(void* Result, const bool bIsAdd)
 
 	FVoxelUtilities::Memcpy(
 		MakeVoxelArrayView(StackFrames),
-		MakeVoxelArrayView(TmpStackFrames).RightOf(NumFramesToIgnore));
+		MakeVoxelArrayView(TmpStackFrames).RightChop(NumFramesToIgnore));
 }
 
 VOXEL_RUN_ON_STARTUP_GAME(CheckVoxelAllocations)
@@ -180,7 +172,7 @@ VOXEL_RUN_ON_STARTUP_GAME(CheckVoxelAllocations)
 }
 #endif
 
-FVoxelMemoryScope::FBlock& FVoxelMemoryScope::GetBlock(void* Original)
+FORCEINLINE FVoxelMemoryScope::FBlock& FVoxelMemoryScope::GetBlock(void* Original)
 {
 #if VOXEL_DEBUG
 	if (!GVoxelAllowLeak &&
@@ -205,7 +197,6 @@ uint64 FVoxelMemoryScope::StaticGetAllocSize(void* Original)
 void* FVoxelMemoryScope::StaticMalloc(const uint64 Count, uint32 Alignment)
 {
 	VOXEL_SCOPE_COUNTER_FORMAT_COND(Count > 1024, "StaticMalloc %lldB", Count);
-	checkVoxelSlow(Alignment < (1 << 15));
 
 	if (Alignment < 16)
 	{
@@ -221,7 +212,6 @@ void* FVoxelMemoryScope::StaticMalloc(const uint64 Count, uint32 Alignment)
 	// NEVER pass custom alignment to Malloc, as anything other than 16B will
 	// force BinnedMalloc2 to allocate 4096B
 	void* UnalignedPtr = FMemory::Malloc(Padding + AllocationSize);
-	INC_VOXEL_COUNTER(STAT_VoxelMemoryAllocationCount);
 	INC_VOXEL_MEMORY_STAT_BY(STAT_VoxelMemoryWaste, Padding);
 	INC_VOXEL_MEMORY_STAT_BY(STAT_VoxelMemoryTotal, Padding + AllocationSize);
 
@@ -243,9 +233,6 @@ void* FVoxelMemoryScope::StaticMalloc(const uint64 Count, uint32 Alignment)
 	FBlock& Block = GetBlock(Result);
 	Block.Size = AllocationSize;
 	Block.Alignment = Alignment;
-#if VOXEL_DEBUG
-	Block.IsValid = true;
-#endif
 	Block.UnalignedPtr = UnalignedPtr;
 
 	checkVoxelSlow(IsAligned(Result, Alignment));
@@ -278,13 +265,7 @@ void* FVoxelMemoryScope::StaticRealloc(void* Original, const uint64 OriginalCoun
 
 void FVoxelMemoryScope::StaticFree(void* Original)
 {
-	FBlock& Block = GetBlock(Original);
-
-#if VOXEL_DEBUG
-	checkVoxelSlow(Block.IsValid);
-	Block.IsValid = false;
-#endif
-
+	const FBlock& Block = GetBlock(Original);
 	checkVoxelSlow(IsAligned(Original, Block.Alignment));
 	const int32 Padding = sizeof(FBlock) + Block.Alignment;
 	const uint64 AllocationSize = Block.Size;
@@ -294,14 +275,13 @@ void FVoxelMemoryScope::StaticFree(void* Original)
 		GVoxelCheckValidAllocations)
 	{
 		GVoxelValidAllocationsCriticalSection.Lock();
-		GVoxelValidAllocations.RemoveChecked(Original);
+		verify(GVoxelValidAllocations.Remove(Original));
 		GVoxelValidAllocationsCriticalSection.Unlock();
 	}
 #endif
 
 	FMemory::Free(Block.UnalignedPtr);
 
-	DEC_VOXEL_COUNTER(STAT_VoxelMemoryAllocationCount);
 	DEC_VOXEL_MEMORY_STAT_BY(STAT_VoxelMemoryWaste, Padding);
 	DEC_VOXEL_MEMORY_STAT_BY(STAT_VoxelMemoryTotal, Padding + AllocationSize);
 }
@@ -333,12 +313,8 @@ void* FVoxelMemoryScope::Malloc(const uint64 Count, const uint32 Alignment)
 		FPool& Pool = AlignmentToPools[AlignmentIndex][PoolIndex];
 		if (Pool.Allocations.Num() > 0)
 		{
-			void* Result = Pool.Allocations.Pop();
-
+			void* Result = Pool.Allocations.Pop(false);
 #if VOXEL_DEBUG
-			checkVoxelSlow(!GetBlock(Result).IsValid);
-			GetBlock(Result).IsValid = true;
-
 			FMemory::Memset(Result, 0xDE, PoolSize);
 			UpdateVoxelAllocationStackFrames(Result, false);
 #endif
@@ -390,8 +366,7 @@ void FVoxelMemoryScope::Free(void* Original)
 		return;
 	}
 
-	FBlock& Block = GetBlock(Original);
-	checkVoxelSlow(Block.IsValid);
+	const FBlock& Block = GetBlock(Original);
 	checkVoxelSlow(IsAligned(Original, Block.Alignment));
 
 #if VOXEL_DEBUG
@@ -408,7 +383,6 @@ void FVoxelMemoryScope::Free(void* Original)
 	const uint64 PoolSize = GetPoolSize(PoolIndex);
 
 #if VOXEL_DEBUG
-	Block.IsValid = false;
 	FMemory::Memset(Original, 0xDE, PoolSize);
 #endif
 

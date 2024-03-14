@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelInvoker.h"
 #include "SceneManagement.h"
@@ -48,13 +48,10 @@ void FVoxelInvokerView::Bind_Async(
 	VOXEL_FUNCTION_COUNTER();
 	VOXEL_SCOPE_LOCK(CriticalSection);
 
-	if (Chunks_RequiresLock.Num() > 0)
+	AsyncVoxelTask([OnAddChunk, Chunks = Chunks_RequiresLock]
 	{
-		AsyncBackgroundTask([OnAddChunk, Chunks = Chunks_RequiresLock]
-		{
-			(void)OnAddChunk.ExecuteIfBound(Chunks);
-		});
-	}
+		(void)OnAddChunk.ExecuteIfBound(Chunks);
+	});
 
 	OnAddChunkMulticast_RequiresLock.Add(OnAddChunk);
 	OnRemoveChunkMulticast_RequiresLock.Add(OnRemoveChunk);
@@ -62,7 +59,7 @@ void FVoxelInvokerView::Bind_Async(
 
 void FVoxelInvokerView::Tick(
 	const UWorld* World,
-	const TVoxelSet<TObjectPtr<UVoxelInvokerComponent>>& InvokerComponents)
+	const TVoxelSet<UVoxelInvokerComponent*>& InvokerComponents)
 {
 	VOXEL_SCOPE_COUNTER_FORMAT("FVoxelInvokerView::Tick Channel=%s NumInvokers=%d", *Channel.ToString(), InvokerComponents.Num());
 
@@ -88,7 +85,7 @@ void FVoxelInvokerView::Tick(
 	if (Channel == STATIC_FNAME("Camera"))
 	{
 		FVector Position = FVector::ZeroVector;
-		if (FVoxelUtilities::GetCameraView(World, Position))
+		if (FVoxelGameUtilities::GetCameraView(World, Position))
 		{
 			Invokers.Add(FInvoker
 			{
@@ -111,7 +108,7 @@ void FVoxelInvokerView::Tick(
 	ensure(!bTaskInProgress);
 	bTaskInProgress = true;
 
-	AsyncBackgroundTask(MakeWeakPtrLambda(this, [this, Invokers = MoveTemp(Invokers)]
+	AsyncVoxelTask(MakeWeakPtrLambda(this, [this, Invokers = MoveTemp(Invokers)]
 	{
 		Tick_Async(Invokers);
 	}));
@@ -188,7 +185,7 @@ void FVoxelInvokerView::Tick_Async(TVoxelArray<FInvoker> Invokers)
 		MaxNumChunks += FMath::Cube(2 * Invoker.RadiusInChunks + 1);
 	}
 
-	TVoxelSet<FIntVector> Chunks;
+	TVoxelAddOnlySet<FIntVector> Chunks;
 	Chunks.Reserve(FMath::Min(MaxNumChunks, 32768));
 
 	for (const FChunkedInvoker& Invoker : ChunkedInvokers)
@@ -235,8 +232,8 @@ void FVoxelInvokerView::Tick_Async(TVoxelArray<FInvoker> Invokers)
 		}
 	}
 
-	TVoxelSet<FIntVector> ChunksToAdd;
-	TVoxelSet<FIntVector> ChunksToRemove;
+	TVoxelAddOnlySet<FIntVector> ChunksToAdd;
+	TVoxelAddOnlySet<FIntVector> ChunksToRemove;
 	ChunksToAdd.Reserve(Chunks.Num());
 	ChunksToRemove.Reserve(Chunks_RequiresLock.Num()); // Not thread safe but fine for just Num
 
@@ -292,7 +289,7 @@ void FVoxelInvokerManager::LogInvokers()
 	VOXEL_FUNCTION_COUNTER();
 	checkVoxelSlow(IsInGameThread());
 
-	TVoxelMap<FName, TVoxelArray<const UVoxelInvokerComponent*>> ChannelToInvokers;
+	TVoxelAddOnlyMap<FName, TVoxelArray<const UVoxelInvokerComponent*>> ChannelToInvokers;
 	for (const UVoxelInvokerComponent* InvokerComponent : InvokerComponents)
 	{
 		for (const FName Channel : InvokerComponent->NewChannels)
@@ -375,7 +372,7 @@ void FVoxelInvokerManager::AddReferencedObjects(FReferenceCollector& Collector)
 
 	for (auto It = InvokerComponents.CreateIterator(); It; ++It)
 	{
-		TObjectPtr<UVoxelInvokerComponent> InvokerComponent = *It;
+		UVoxelInvokerComponent* InvokerComponent = *It;
 		Collector.AddReferencedObject(InvokerComponent);
 
 		if (!ensure(InvokerComponent))
@@ -437,7 +434,7 @@ FPrimitiveSceneProxy* UVoxelInvokerComponent::CreateSceneProxy()
 		{
 		}
 
-		virtual void GetDynamicMeshElements(const TArray<const FSceneView*>& Views, const FSceneViewFamily& ViewFamily, const uint32 VisibilityMap, FMeshElementCollector& Collector) const override
+		virtual void GetDynamicMeshElements(const TArray<const FSceneView*>& Views, const FSceneViewFamily& ViewFamily, uint32 VisibilityMap, FMeshElementCollector& Collector) const override
 		{
 			VOXEL_FUNCTION_COUNTER();
 

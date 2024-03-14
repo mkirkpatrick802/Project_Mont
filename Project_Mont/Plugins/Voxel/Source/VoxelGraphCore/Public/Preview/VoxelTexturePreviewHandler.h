@@ -1,4 +1,4 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -66,6 +66,6 @@ private:
 	TOptional<FVector2D> QueuedMousePosition;
 	FString CurrentValue;
 
-	FVoxelCriticalSection CriticalSection;
+	FVoxelFastCriticalSection CriticalSection;
 	FVoxelRuntimePinValue LastValue_RequiresLock;
 };

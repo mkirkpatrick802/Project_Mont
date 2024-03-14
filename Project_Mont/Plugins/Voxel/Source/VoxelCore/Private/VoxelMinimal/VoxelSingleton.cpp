@@ -1,27 +1,16 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelMinimal.h"
-#include "UObject/GCObject.h"
 
 class FVoxelSingletonManager
 	: public FVoxelTicker
 	, public FGCObject
 {
 public:
-	FGraphEventRef GraphEvent;
 	TVoxelArray<FVoxelSingleton*> Singletons;
 
-	FVoxelSingletonManager() = default;
 	virtual ~FVoxelSingletonManager() override
 	{
-		VOXEL_FUNCTION_COUNTER();
-
-		if (GraphEvent.IsValid())
-		{
-			VOXEL_SCOPE_COUNTER("Wait");
-			GraphEvent->Wait();
-		}
-
 		for (const FVoxelSingleton* Singleton : Singletons)
 		{
 			delete Singleton;
@@ -29,18 +18,6 @@ public:
 		Singletons.Empty();
 	}
 
-public:
-	void Tick_Async() const
-	{
-		VOXEL_FUNCTION_COUNTER();
-
-		for (FVoxelSingleton* Singleton : Singletons)
-		{
-			Singleton->Tick_Async();
-		}
-	}
-
-public:
 	//~ Begin FVoxelTicker Interface
 	virtual void Tick() override
 	{
@@ -50,20 +27,9 @@ public:
 		{
 			Singleton->Tick();
 		}
-
-		if (GraphEvent.IsValid())
-		{
-			VOXEL_SCOPE_COUNTER("Waiting for Tick_Async");
-			GraphEvent->Wait();
-		}
-		GraphEvent = TGraphTask<TVoxelGraphTask<ENamedThreads::AnyBackgroundThreadNormalTask>>::CreateTask().ConstructAndDispatchWhenReady([this]
-		{
-			Tick_Async();
-		});
 	}
 	//~ End FVoxelTicker Interface
 
-public:
 	//~ Begin FGCObject Interface
 	virtual FString GetReferencerName() const override
 	{

@@ -1,7 +1,10 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "Point/VoxelPointStorageData.h"
 #include "VoxelDependency.h"
+#include "Serialization/LargeMemoryWriter.h"
+#include "Serialization/LargeMemoryReader.h"
+#include "Compression/OodleDataCompressionUtil.h"
 
 FVoxelPointStorageData::FVoxelPointStorageData(const FName AssetName)
 	: AssetName(AssetName)
@@ -34,14 +37,26 @@ void FVoxelPointStorageData::Serialize(FArchive& Ar)
 
 	if (Ar.IsSaving())
 	{
-		FVoxelWriter Writer;
+		FLargeMemoryWriter Writer;
 		{
 			VOXEL_SCOPE_LOCK(CriticalSection);
 
 			// TODO
 		}
 
-		TVoxelArray64<uint8> CompressedData = FVoxelUtilities::Compress(Writer);
+		TArray64<uint8> CompressedData;
+
+		if (Writer.TotalSize() > 0)
+		{
+			VOXEL_SCOPE_COUNTER("Compress");
+			ensure(FOodleCompressedArray::CompressData64(
+				CompressedData,
+				Writer.GetData(),
+				Writer.TotalSize(),
+				FOodleDataCompression::ECompressor::Kraken,
+				FOodleDataCompression::ECompressionLevel::Normal));
+		}
+
 		CompressedData.BulkSerialize(Ar);
 	}
 	else
@@ -54,10 +69,15 @@ void FVoxelPointStorageData::Serialize(FArchive& Ar)
 		TArray64<uint8> CompressedData;
 		CompressedData.BulkSerialize(Ar);
 
-		TVoxelArray64<uint8> Data;
-		if (!ensure(FVoxelUtilities::Decompress(CompressedData, Data)))
+		TArray64<uint8> Data;
+
+		if (CompressedData.Num() > 0)
 		{
-			return;
+			VOXEL_SCOPE_COUNTER("Decompress");
+			if (!ensure(FOodleCompressedArray::DecompressToTArray64(Data, CompressedData)))
+			{
+				return;
+			}
 		}
 
 		if (Data.Num() == 0)
@@ -66,7 +86,7 @@ void FVoxelPointStorageData::Serialize(FArchive& Ar)
 			return;
 		}
 
-		FVoxelReader Reader(Data);
+		FLargeMemoryReader Reader(Data.GetData(), Data.Num());
 
 		VOXEL_SCOPE_LOCK(CriticalSection);
 
@@ -86,7 +106,7 @@ TSharedRef<FVoxelPointStorageChunkData> FVoxelPointStorageData::FindOrAddChunkDa
 		ChunkData = MakeVoxelShared<FVoxelPointStorageChunkData>(FVoxelDependency::Create(
 			STATIC_FNAME("PointStorage.SpawnableData"),
 			FName(FString::Printf(TEXT("%s %s"),
-				*ChunkRef.ChunkProviderRef.ToDebugString(),
+				*ChunkRef.ChunkProviderRef.NodePath.ToDebugString(),
 				*ChunkRef.ChunkMin.ToString()))));
 	}
 	return ChunkData.ToSharedRef();

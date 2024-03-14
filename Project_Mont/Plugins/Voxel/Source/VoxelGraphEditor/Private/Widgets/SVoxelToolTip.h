@@ -1,11 +1,11 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelEditorMinimal.h"
 #include "VoxelPinType.h"
 
-class SVoxelToolTip : public SToolTip
+class VOXELGRAPHEDITOR_API SVoxelToolTip : public SToolTip
 {
 public:
 	VOXEL_SLATE_ARGS()

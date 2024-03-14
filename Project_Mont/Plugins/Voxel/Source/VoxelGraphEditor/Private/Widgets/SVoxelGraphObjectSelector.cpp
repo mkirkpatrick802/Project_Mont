@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "SVoxelGraphObjectSelector.h"
 #include "SAssetDropTarget.h"
@@ -147,7 +147,7 @@ void SVoxelGraphObjectSelector::Construct(const FArguments& InArgs)
 	}
 }
 
-bool SVoxelGraphObjectSelector::OnAssetDraggedOver(const TArrayView<FAssetData> InAssets, FText& OutReason) const
+bool SVoxelGraphObjectSelector::OnAssetDraggedOver(TArrayView<FAssetData> InAssets, FText& OutReason) const
 {
 	const UObject* AssetObject = InAssets[0].GetAsset();
 	if (!AssetObject ||
@@ -161,7 +161,7 @@ bool SVoxelGraphObjectSelector::OnAssetDraggedOver(const TArrayView<FAssetData> 
 		CanSetBasedOnAssetReferenceFilter(CachedAssetData, OutReason);
 }
 
-void SVoxelGraphObjectSelector::OnAssetDropped(const FDragDropEvent&, const TArrayView<FAssetData> InAssets) const
+void SVoxelGraphObjectSelector::OnAssetDropped(const FDragDropEvent&, TArrayView<FAssetData> InAssets) const
 {
 	SetValue(InAssets[0].GetAsset());
 }
@@ -197,7 +197,7 @@ TSharedRef<SWidget> SVoxelGraphObjectSelector::OnGetMenuContent() const
 		OwnerAssetDataArray);
 }
 
-void SVoxelGraphObjectSelector::OnMenuOpenChanged(const bool bOpen) const
+void SVoxelGraphObjectSelector::OnMenuOpenChanged(bool bOpen) const
 {
 	if (bOpen)
 	{

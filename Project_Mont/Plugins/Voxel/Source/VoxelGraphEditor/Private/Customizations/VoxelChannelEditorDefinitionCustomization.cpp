@@ -1,8 +1,7 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelChannelEditorDefinitionCustomization.h"
 #include "VoxelSettings.h"
-#include "Channel/VoxelChannelManager.h"
 #include "Widgets/SVoxelChannelEditor.h"
 
 void FVoxelChannelEditorDefinitionCustomization::CustomizeDetails(IDetailLayoutBuilder& DetailLayout)
@@ -21,7 +20,7 @@ void FVoxelChannelEditorDefinitionCustomization::CustomizeDetails(IDetailLayoutB
 
 	DetailLayout.AddPropertyToCategory(NameHandle).EditCondition(EditConditionLambda, nullptr);
 
-	DetailLayout.AddPropertyToCategory(TypeHandle).IsEnabled(!ChannelType.IsValid() || ChannelType.IsWildcard());
+	DetailLayout.AddPropertyToCategory(TypeHandle);
 	DetailLayout.AddPropertyToCategory(DefaultValueHandle);
 	DetailLayout.HideProperty(EditChannelHandle);
 
@@ -43,7 +42,7 @@ void FVoxelChannelEditorDefinitionCustomization::CustomizeDetails(IDetailLayoutB
 		.MinDesiredWidth(125.f)
 		[
 			SNew(SVoxelDetailComboBox<TWeakObjectPtr<const UObject>>)
-			.RefreshDelegate(this, DetailLayout)
+			.RefreshDelegate(SaveLocationHandle, DetailLayout)
 			.Options_Lambda([]
 			{
 				TArray<TWeakObjectPtr<const UObject>> Result;

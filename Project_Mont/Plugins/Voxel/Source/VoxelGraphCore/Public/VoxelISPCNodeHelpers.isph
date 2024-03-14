@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -41,7 +41,7 @@ FORCEINLINE int32 LoadInt32(const uniform FVoxelBuffer Buffer, const int32 Index
 FORCEINLINE void StoreBool(const uniform FVoxelBuffer Buffer, const int32 Index, const bool bValue)
 {
 	uint8* uniform BufferPtr = (uint8*)Buffer.Data;
-	BufferPtr[Index] = select(bValue, 1, 0);
+	BufferPtr[Index] = bValue ? 1 : 0;
 }
 FORCEINLINE void StoreByte(const uniform FVoxelBuffer Buffer, const int32 Index, const uint8 Value)
 {

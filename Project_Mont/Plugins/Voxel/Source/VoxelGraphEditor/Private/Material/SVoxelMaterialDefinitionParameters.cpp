@@ -1,569 +1,213 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
-#include "Material/SVoxelMaterialDefinitionParameters.h"
-#include "Material/VoxelMaterialDefinitionToolkit.h"
-#include "Material/VoxelMaterialDefinitionParameterSchemaAction.h"
-#include "Material/VoxelMaterialDefinitionParameterDragDropAction.h"
-#include "SGraphActionMenu.h"
+#include "SVoxelMaterialDefinitionParameters.h"
+#include "VoxelMaterialDefinitionToolkit.h"
+#include "VoxelMaterialDefinitionParameterSchemaAction.h"
 
-#if VOXEL_ENGINE_VERSION >= 503
-#include "GraphActionNode.h"
-#else
-#include "GraphEditor/Private/GraphActionNode.h"
-#endif
+static constexpr int32 ParametersSectionId = 1;
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
 
 void SVoxelMaterialDefinitionParameters::Construct(const FArguments& Args)
 {
-	check(Args._Toolkit.IsValid());
-	WeakToolkit = Args._Toolkit;
+	check(Args._Definition);
 
-	Args._Toolkit->Asset->OnParametersChanged.Add(MakeWeakPtrDelegate(this, [=]
-	{
-		bRefreshQueued = true;
-	}));
+	SVoxelMembers::Construct(
+		SVoxelMembers::FArguments()
+		.Object(Args._Definition)
+		.Toolkit(Args._Toolkit));
 
-	CommandList->MapAction(FGenericCommands::Get().Delete, MakeWeakPtrDelegate(this, [this]
-	{
-		const TSharedPtr<FVoxelMaterialDefinitionToolkit> Toolkit = GetToolkit();
-		if (!ensure(Toolkit))
-		{
-			return;
-		}
-		UVoxelMaterialDefinition* MaterialDefinition = Toolkit->Asset;
-
-		const TSharedPtr<FVoxelMaterialDefinitionParameterSchemaAction> Action = GetSelectedAction();
-		if (!Action)
-		{
-			return;
-		}
-
-		{
-			const FVoxelTransaction Transaction(MaterialDefinition, "Delete parameter");
-			ensure(MaterialDefinition->GuidToMaterialParameter.Remove(Action->Guid));
-		}
-
-		Toolkit->SelectParameter({}, false, true);
-	}));
-
-	CommandList->MapAction(FGenericCommands::Get().Duplicate, MakeWeakPtrDelegate(this, [this]
-	{
-		const TSharedPtr<FVoxelMaterialDefinitionToolkit> Toolkit = GetToolkit();
-		if (!ensure(Toolkit))
-		{
-			return;
-		}
-		UVoxelMaterialDefinition* MaterialDefinition = Toolkit->Asset;
-
-		const TSharedPtr<FVoxelMaterialDefinitionParameterSchemaAction> Action = GetSelectedAction();
-		if (!Action)
-		{
-			return;
-		}
-
-		const FVoxelMaterialDefinitionParameter* Parameter = MaterialDefinition->GuidToMaterialParameter.Find(Action->Guid);
-		if (!ensure(Parameter))
-		{
-			return;
-		}
-
-		const FGuid NewGuid = FGuid::NewGuid();
-
-		{
-			const FVoxelTransaction Transaction(MaterialDefinition, "Duplicate parameter");
-			MaterialDefinition->GuidToMaterialParameter.Add(NewGuid, *Parameter);
-		}
-
-		Toolkit->SelectParameter(NewGuid, true, true);
-	}));
-
-	CommandList->MapAction(FGenericCommands::Get().Rename, MakeWeakPtrDelegate(this, [this]
-	{
-		MembersMenu->OnRequestRenameOnActionNode();
-	}),
-	MakeWeakPtrDelegate(this, [this]
-	{
-		const TSharedPtr<FVoxelMaterialDefinitionParameterSchemaAction> Action = GetSelectedAction();
-		if (!Action)
-		{
-			return false;
-		}
-
-		return MembersMenu->CanRequestRenameOnActionNode();
-	}));
-
-	CommandList->MapAction(FGenericCommands::Get().Copy, MakeWeakPtrDelegate(this, [this]
-	{
-		const TSharedPtr<FVoxelMaterialDefinitionToolkit> Toolkit = GetToolkit();
-		if (!ensure(Toolkit))
-		{
-			return;
-		}
-		UVoxelMaterialDefinition* MaterialDefinition = Toolkit->Asset;
-
-		const TSharedPtr<FVoxelMaterialDefinitionParameterSchemaAction> Action = GetSelectedAction();
-		if (!Action)
-		{
-			return;
-		}
-
-		const FVoxelMaterialDefinitionParameter* Parameter = Toolkit->Asset->GuidToMaterialParameter.Find(Action->Guid);
-		if (!ensure(Parameter))
-		{
-			return;
-		}
-
-		FString Text;
-		FVoxelMaterialDefinitionParameter::StaticStruct()->ExportText(
-			Text,
-			Parameter,
-			Parameter,
-			nullptr,
-			0,
-			nullptr);
-
-		Text = "SVoxelMaterialDefinitionParameters" + Text;
-		FPlatformApplicationMisc::ClipboardCopy(*Text);
-	}));
-
-	CommandList->MapAction(FGenericCommands::Get().Cut, MakeWeakPtrDelegate(this, [this]
-	{
-		const TSharedPtr<FVoxelMaterialDefinitionToolkit> Toolkit = GetToolkit();
-		if (!ensure(Toolkit))
-		{
-			return;
-		}
-		UVoxelMaterialDefinition* MaterialDefinition = Toolkit->Asset;
-
-		const TSharedPtr<FVoxelMaterialDefinitionParameterSchemaAction> Action = GetSelectedAction();
-		if (!Action)
-		{
-			return;
-		}
-
-		const FVoxelMaterialDefinitionParameter* Parameter = MaterialDefinition->GuidToMaterialParameter.Find(Action->Guid);
-		if (!ensure(Parameter))
-		{
-			return;
-		}
-
-		FString Text;
-		FVoxelMaterialDefinitionParameter::StaticStruct()->ExportText(
-			Text,
-			Parameter,
-			Parameter,
-			nullptr,
-			0,
-			nullptr);
-
-		Text = "SVoxelMaterialDefinitionParameters" + Text;
-		FPlatformApplicationMisc::ClipboardCopy(*Text);
-
-		{
-			const FVoxelTransaction Transaction(MaterialDefinition, "Cut parameter");
-			ensure(MaterialDefinition->GuidToMaterialParameter.Remove(Action->Guid));
-		}
-
-		Toolkit->SelectParameter({}, false, true);
-	}));
-
-	CommandList->MapAction(FGenericCommands::Get().Paste, MakeWeakPtrDelegate(this, [this]
-	{
-		const TSharedPtr<FVoxelMaterialDefinitionToolkit> Toolkit = GetToolkit();
-		if (!ensure(Toolkit))
-		{
-			return;
-		}
-		UVoxelMaterialDefinition* MaterialDefinition = Toolkit->Asset;
-
-		FString ClipboardText;
-		FPlatformApplicationMisc::ClipboardPaste(ClipboardText);
-
-		if (!ClipboardText.RemoveFromStart("SVoxelMaterialDefinitionParameters"))
-		{
-			return;
-		}
-
-		FVoxelMaterialDefinitionParameter NewParameter;
-		if (!FVoxelUtilities::TryImportText(ClipboardText, NewParameter))
-		{
-			return;
-		}
-
-		NewParameter.Category = GetPasteCategory();
-		const FGuid Guid = FGuid::NewGuid();
-
-		{
-			const FVoxelTransaction Transaction(MaterialDefinition, "Paste parameter");
-			MaterialDefinition->GuidToMaterialParameter.Add(Guid, NewParameter);
-		}
-
-		Toolkit->SelectParameter(Guid, true, true);
-	}),
-	MakeWeakPtrDelegate(this, [this]
-	{
-		FString ClipboardText;
-		FPlatformApplicationMisc::ClipboardPaste(ClipboardText);
-
-		return ClipboardText.StartsWith("SVoxelMaterialDefinitionParameters");
-	}));
-
-	SAssignNew(FilterBox, SSearchBox)
-	.OnTextChanged_Lambda([this](const FText&)
-	{
-		MembersMenu->GenerateFilteredItems(false);
-	});
-
-	ChildSlot
-	[
-		SNew(SVerticalBox)
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		[
-			SNew(SBorder)
-			.Padding(4.0f)
-			.BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
-			[
-				FilterBox.ToSharedRef()
-			]
-		]
-		+ SVerticalBox::Slot()
-		.FillHeight(1.f)
-		[
-			SAssignNew(MembersMenu, SGraphActionMenu, false)
-			.AlphaSortItems(false)
-			.UseSectionStyling(true)
-			.AutoExpandActionMenu(true)
-			.OnCollectStaticSections_Lambda([=](TArray<int32>& StaticSectionIds)
-			{
-				StaticSectionIds.Add(1);
-			})
-			.OnGetSectionTitle_Lambda([](const int32)
-			{
-				return INVTEXT("Parameters");
-			})
-			.OnGetSectionWidget_Lambda([=](TSharedRef<SWidget> RowWidget, const int32 SectionId)
-			{
-				return
-					SNew(SButton)
-					.ButtonStyle(FAppStyle::Get(), "SimpleButton")
-					.OnClicked_Lambda([this]
-					{
-						OnAddNewMember();
-						return FReply::Handled();
-					})
-					.ContentPadding(FMargin(1, 0))
-					.ToolTipText(INVTEXT("Add parameter"))
-					[
-						SNew(SImage)
-						.Image(FAppStyle::Get().GetBrush("Icons.PlusCircle"))
-						.ColorAndOpacity(FSlateColor::UseForeground())
-					];
-			})
-			.OnContextMenuOpening(this, &SVoxelMaterialDefinitionParameters::OnContextMenuOpening)
-			.OnCollectAllActions_Lambda([=](FGraphActionListBuilderBase& OutAllActions)
-			{
-				const TSharedPtr<FVoxelMaterialDefinitionToolkit> Toolkit = GetToolkit();
-				if (!ensure(Toolkit))
-				{
-					return;
-				}
-				UVoxelMaterialDefinition* MaterialDefinition = Toolkit->Asset;
-
-				for (const auto& It : MaterialDefinition->GuidToMaterialParameter)
-				{
-					const FVoxelMaterialDefinitionParameter& Parameter = It.Value;
-
-					const TSharedRef<FVoxelMaterialDefinitionParameterSchemaAction> NewParameterAction = MakeVoxelShared<FVoxelMaterialDefinitionParameterSchemaAction>(
-						FText::FromString(Parameter.Category),
-						FText::FromName(Parameter.Name),
-						FText::FromString(Parameter.Description),
-						1,
-						FText::FromString(Parameter.Type.ToString()),
-						1);
-
-					NewParameterAction->Guid = It.Key;
-					NewParameterAction->MaterialDefinition = MaterialDefinition;
-
-					OutAllActions.AddAction(NewParameterAction);
-				}
-			})
-			.OnCreateWidgetForAction_Lambda([=](FCreateWidgetForActionData* CreateData)
-			{
-				return
-					SNew(SVoxelMaterialDefinitionParameterPaletteItem, CreateData)
-					.Parameters(SharedThis(this));
-			})
-			.OnCanRenameSelectedAction_Lambda([](TWeakPtr<FGraphActionNode>)
-			{
-				return true;
-			})
-			.OnActionSelected_Lambda([this](const TArray<TSharedPtr<FEdGraphSchemaAction>>& Actions, const ESelectInfo::Type SelectionType)
-			{
-				const TSharedPtr<FVoxelMaterialDefinitionToolkit> Toolkit = GetToolkit();
-				if (!ensure(Toolkit))
-				{
-					return;
-				}
-
-				if (Actions.Num() == 0)
-				{
-					if (!bIsRefreshing &&
-						SelectionType != ESelectInfo::Direct)
-					{
-						Toolkit->SelectParameter({}, false, false);
-					}
-					return;
-				}
-
-				if (SelectionType != ESelectInfo::OnMouseClick &&
-					SelectionType != ESelectInfo::OnKeyPress &&
-					SelectionType != ESelectInfo::OnNavigation)
-				{
-					return;
-				}
-
-				if (!ensure(Actions.Num() == 1))
-				{
-					return;
-				}
-
-				const TSharedPtr<FEdGraphSchemaAction> Action = Actions[0];
-				const FGuid Guid = static_cast<FVoxelMaterialDefinitionParameterSchemaAction&>(*Action).Guid;
-
-				Toolkit->SelectParameter(Guid, false, false);
-			})
-			.OnActionMatchesName_Lambda([](FEdGraphSchemaAction* InAction, const FName& InName)
-			{
-				if (!ensure(InAction->GetTypeId() == FVoxelMaterialDefinitionParameterSchemaAction::StaticGetTypeId()))
-				{
-					return false;
-				}
-
-				return static_cast<FVoxelMaterialDefinitionParameterSchemaAction&>(*InAction).Guid.ToString() == InName.ToString();
-			})
-			.OnActionDragged_Lambda([this](const TArray<TSharedPtr<FEdGraphSchemaAction>>& Actions, const FPointerEvent& MouseEvent)
-			{
-				if (!ensure(Actions.Num() == 1))
-				{
-					return FReply::Unhandled();
-				}
-
-				const TSharedRef<FEdGraphSchemaAction> Action = Actions[0].ToSharedRef();
-
-				return FReply::Handled().BeginDragDrop(FVoxelMaterialDefinitionParameterDragDropAction::New(
-					SharedThis(this),
-					StaticCastSharedRef<FVoxelMaterialDefinitionParameterSchemaAction>(Action)));
-			})
-			.OnCategoryTextCommitted_Lambda([this](const FText& InNewText, ETextCommit::Type, const TWeakPtr<FGraphActionNode> InAction)
-			{
-				const TSharedPtr<FVoxelMaterialDefinitionToolkit> Toolkit = GetToolkit();
-				if (!ensure(Toolkit))
-				{
-					return;
-				}
-				UVoxelMaterialDefinition* MaterialDefinition = Toolkit->Asset;
-
-				const TSharedPtr<FGraphActionNode> CategoryAction = InAction.Pin();
-				if (!ensure(CategoryAction))
-				{
-					return;
-				}
-
-				const FString NewCategory = InNewText.ToString().TrimStartAndEnd();
-
-				TArray<TSharedPtr<FEdGraphSchemaAction>> Actions;
-				MembersMenu->GetCategorySubActions(InAction, Actions);
-
-				if (Actions.Num() > 0)
-				{
-					const FVoxelTransaction Transaction(Toolkit->GetAsset(), "Rename Category");
-
-					for (const TSharedPtr<FEdGraphSchemaAction>& Action : Actions)
-					{
-						const FGuid Guid = static_cast<FVoxelMaterialDefinitionParameterSchemaAction&>(*Action).Guid;
-
-						FVoxelMaterialDefinitionParameter* Parameter = MaterialDefinition->GuidToMaterialParameter.Find(Guid);
-						if (!ensure(Parameter))
-						{
-							continue;
-						}
-
-						Parameter->Category = NewCategory;
-					}
-				}
-
-				bRefreshQueued = true;
-				MembersMenu->SelectItemByName(FName(NewCategory), ESelectInfo::OnMouseClick, CategoryAction->SectionID, true);
-			})
-			.OnGetFilterText_Lambda([this]
-			{
-				return FilterBox->GetText();
-			})
-		]
-	];
+	OnParametersChangedHandle = Args._Definition->OnParametersChanged.AddSP(this, &SVoxelMaterialDefinitionParameters::RequestRefresh);
 }
+
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-void SVoxelMaterialDefinitionParameters::SelectMember(const FGuid& Guid, const int32 SectionId, const bool bRequestRename, const bool bRefresh)
+void SVoxelMaterialDefinitionParameters::CollectStaticSections(TArray<int32>& StaticSectionIds)
 {
-	if (bRefresh)
+	StaticSectionIds.Add(ParametersSectionId);
+}
+
+FText SVoxelMaterialDefinitionParameters::OnGetSectionTitle(const int32 SectionId)
+{
+	static const TArray<FText> NodeSectionNames
 	{
-		Refresh();
+		INVTEXT(""),
+		INVTEXT("Parameters"),
+	};
+
+	if (!ensure(NodeSectionNames.IsValidIndex(SectionId)))
+	{
+		return {};
 	}
 
-	MembersMenu->SelectItemByName(*Guid.ToString(), ESelectInfo::Direct, SectionId);
+	return NodeSectionNames[SectionId];
+}
 
-	if (bRequestRename)
+TSharedRef<SWidget> SVoxelMaterialDefinitionParameters::OnGetMenuSectionWidget(TSharedRef<SWidget> RowWidget, const int32 SectionId)
+{
+	switch (SectionId)
 	{
-		MembersMenu->OnRequestRenameOnActionNode();
+	default: check(false);
+	case ParametersSectionId: return CreateAddButton(SectionId, INVTEXT("Parameter"), "AddNewParameter");
 	}
 }
 
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-void SVoxelMaterialDefinitionParameters::Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime)
+void SVoxelMaterialDefinitionParameters::CollectSortedActions(FVoxelMembersActionsSortHelper& OutActionsList)
 {
-	SCompoundWidget::Tick(AllottedGeometry, InCurrentTime, InDeltaTime);
-
-	if (bRefreshQueued)
-	{
-		Refresh();
-	}
-}
-
-FReply SVoxelMaterialDefinitionParameters::OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent)
-{
-	if (CommandList->ProcessCommandBindings(InKeyEvent))
-	{
-		return FReply::Handled();
-	}
-
-	return FReply::Unhandled();
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-void SVoxelMaterialDefinitionParameters::PostUndo(bool bSuccess)
-{
-	Refresh();
-}
-
-void SVoxelMaterialDefinitionParameters::PostRedo(bool bSuccess)
-{
-	Refresh();
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-void SVoxelMaterialDefinitionParameters::Refresh()
-{
-	bRefreshQueued = false;
-
-	TGuardValue<bool> Guard(bIsRefreshing, true);
-	MembersMenu->RefreshAllActions(true);
-}
-
-FString SVoxelMaterialDefinitionParameters::GetPasteCategory() const
-{
-	TArray<TSharedPtr<FEdGraphSchemaAction>> SelectedActions;
-	MembersMenu->GetSelectedActions(SelectedActions);
-
-	if (SelectedActions.Num() != 0 ||
-		!MembersMenu.IsValid())
-	{
-		return "";
-	}
-
-	return MembersMenu->GetSelectedCategoryName();
-}
-
-void SVoxelMaterialDefinitionParameters::OnAddNewMember() const
-{
-	const TSharedPtr<FVoxelMaterialDefinitionToolkit> Toolkit = GetToolkit();
-	if (!ensure(Toolkit))
+	const TSharedPtr<FVoxelMaterialDefinitionToolkit> Toolkit = GetToolkit<FVoxelMaterialDefinitionToolkit>();
+	UVoxelMaterialDefinition* Definition = GetObject<UVoxelMaterialDefinition>();
+	if (!ensure(Toolkit) ||
+		!ensure(Definition))
 	{
 		return;
 	}
-	UVoxelMaterialDefinition* MaterialDefinition = Toolkit->Asset;
+
+	OutActionsList.AddCategoriesSortList(ParametersSectionId, Definition->Categories.Categories);
+
+	for (const FVoxelParameter& Parameter : Definition->Parameters)
+	{
+		const TSharedRef<FVoxelMaterialDefinitionParameterSchemaAction> NewParameterAction = MakeVoxelShared<FVoxelMaterialDefinitionParameterSchemaAction>(
+			FText::FromString(Parameter.Category),
+			FText::FromName(Parameter.Name),
+			FText::FromString(Parameter.Description),
+			1,
+			FText::FromString(Parameter.Type.ToString()),
+			ParametersSectionId);
+
+		NewParameterAction->WeakToolkit = Toolkit;
+		NewParameterAction->WeakMembersWidget = SharedThis(this);
+		NewParameterAction->ParameterGuid = Parameter.Guid;
+
+		OutActionsList.AddAction(NewParameterAction, Parameter.Category);
+	}
+}
+
+void SVoxelMaterialDefinitionParameters::SelectBaseObject()
+{
+	if (const TSharedPtr<FVoxelMaterialDefinitionToolkit> Toolkit = GetToolkit<FVoxelMaterialDefinitionToolkit>())
+	{
+		Toolkit->SelectParameter({}, false, false);
+	}
+}
+
+void SVoxelMaterialDefinitionParameters::GetContextMenuAddOptions(FMenuBuilder& MenuBuilder)
+{
+	MenuBuilder.AddMenuEntry(
+		INVTEXT("Add new Parameter"),
+		FText(),
+		FSlateIcon(FAppStyle::GetAppStyleSetName(), "BlueprintEditor.AddNewVariable"),
+		FUIAction{
+			FExecuteAction::CreateSP(this, &SVoxelMaterialDefinitionParameters::OnAddNewMember, ParametersSectionId)
+		});
+}
+
+void SVoxelMaterialDefinitionParameters::OnPasteItem(const FString& ImportText, const int32 SectionId)
+{
+	UVoxelMaterialDefinition* Definition = GetObject<UVoxelMaterialDefinition>();
+	const TSharedPtr<FVoxelMaterialDefinitionToolkit> Toolkit = GetToolkit<FVoxelMaterialDefinitionToolkit>();
+	if (!ensure(Definition) ||
+		!ensure(Toolkit) ||
+		!ensure(SectionId == ParametersSectionId))
+	{
+		return;
+	}
+
+	FStringOutputDevice Errors;
+
+	FVoxelParameter NewParameter;
+	FVoxelParameter::StaticStruct()->ImportText(
+		ImportText.GetCharArray().GetData(),
+		&NewParameter,
+		nullptr,
+		0,
+		&Errors,
+		FVoxelParameter::StaticStruct()->GetName());
+
+	if (!Errors.IsEmpty())
+	{
+		return;
+	}
+
+	NewParameter.Guid = FGuid::NewGuid();
+	NewParameter.Category = GetPasteCategory();
+
+	{
+		const FVoxelTransaction Transaction(Definition, "Paste parameter");
+		Definition->Parameters.Add(NewParameter);
+	}
+
+	Toolkit->SelectParameter(NewParameter.Guid, true, true);
+}
+
+bool SVoxelMaterialDefinitionParameters::CanPasteItem(const FString& ImportText, const int32 SectionId)
+{
+	if (!ensure(SectionId == ParametersSectionId))
+	{
+		return false;
+	}
+
+	FStringOutputDevice Errors;
+
+	FVoxelParameter Parameter;
+	FVoxelParameter::StaticStruct()->ImportText(
+		ImportText.GetCharArray().GetData(),
+		&Parameter,
+		nullptr,
+		0,
+		&Errors,
+		FVoxelParameter::StaticStruct()->GetName());
+
+	return Errors.IsEmpty();
+}
+
+void SVoxelMaterialDefinitionParameters::OnAddNewMember(int32 SectionId)
+{
+	const TSharedPtr<FVoxelMaterialDefinitionToolkit> Toolkit = GetToolkit<FVoxelMaterialDefinitionToolkit>();
+	UVoxelMaterialDefinition* Definition = GetObject<UVoxelMaterialDefinition>();
+	if (!ensure(Toolkit) ||
+		!ensure(Definition))
+	{
+		return;
+	}
 
 	const FGuid Guid = FGuid::NewGuid();
 	{
-		const FVoxelTransaction Transaction(MaterialDefinition, "Create new parameter");
+		const FVoxelTransaction Transaction(Definition, "Create new parameter");
 
-		FVoxelMaterialDefinitionParameter NewParameter;
+		FVoxelParameter NewParameter;
 		NewParameter.Name = "NewParameter";
+		NewParameter.Guid = Guid;
 		NewParameter.Category = GetPasteCategory();
 		NewParameter.Type = FVoxelPinType::Make<float>();
-		MaterialDefinition->GuidToMaterialParameter.Add(Guid, NewParameter);
+		Definition->Parameters.Add(NewParameter);
 	}
 
 	Toolkit->SelectParameter(Guid, true, true);
 }
 
-TSharedPtr<SWidget> SVoxelMaterialDefinitionParameters::OnContextMenuOpening()
+const TArray<FString>& SVoxelMaterialDefinitionParameters::GetCopyPrefixes() const
 {
-	FMenuBuilder MenuBuilder(true, CommandList);
-
-	if (const TSharedPtr<FVoxelMaterialDefinitionParameterSchemaAction> Action = GetSelectedAction())
+	static const TArray<FString> CopyPrefixes
 	{
-		MenuBuilder.BeginSection("BasicOperations");
-		{
-			MenuBuilder.AddMenuEntry(FGenericCommands::Get().Rename, NAME_None, INVTEXT("Rename"), INVTEXT("Renames this"));
-			MenuBuilder.AddMenuEntry(FGraphEditorCommands::Get().FindReferences);
-			MenuBuilder.AddMenuEntry(FGenericCommands::Get().Cut);
-			MenuBuilder.AddMenuEntry(FGenericCommands::Get().Copy);
-			MenuBuilder.AddMenuEntry(FGenericCommands::Get().Duplicate);
-			MenuBuilder.AddMenuEntry(FGenericCommands::Get().Delete);
-		}
-		MenuBuilder.EndSection();
-		return MenuBuilder.MakeWidget();
-	}
+		"INVALID:",
+		"MaterialLayerParameter:",
+	};
 
-	MenuBuilder.BeginSection("BasicOperations");
-	{
-		MenuBuilder.AddMenuEntry(FGenericCommands::Get().Paste);
-	}
-	MenuBuilder.EndSection();
-
-	MenuBuilder.BeginSection("AddNewItem", INVTEXT("Add New"));
-	{
-		MenuBuilder.AddMenuEntry(
-			INVTEXT("Add new Parameter"),
-			FText(),
-			FSlateIcon(FAppStyle::GetAppStyleSetName(), "BlueprintEditor.AddNewVariable"),
-			FUIAction
-			{
-				FExecuteAction::CreateSP(this, &SVoxelMaterialDefinitionParameters::OnAddNewMember)
-			});
-	}
-	MenuBuilder.EndSection();
-
-	return MenuBuilder.MakeWidget();
+	return CopyPrefixes;
 }
 
-TSharedPtr<FVoxelMaterialDefinitionParameterSchemaAction> SVoxelMaterialDefinitionParameters::GetSelectedAction() const
+TArray<FString>& SVoxelMaterialDefinitionParameters::GetEditableCategories(int32 SectionId)
 {
-	TArray<TSharedPtr<FEdGraphSchemaAction>> SelectedActions;
-	MembersMenu->GetSelectedActions(SelectedActions);
-
-	if (SelectedActions.Num() == 0)
+	UVoxelMaterialDefinition* Definition = GetObject<UVoxelMaterialDefinition>();
+	if (!ensure(Definition))
 	{
-		return nullptr;
+		static TArray<FString> CategoriesList;
+		return CategoriesList;
 	}
 
-	const TSharedPtr<FEdGraphSchemaAction> Action = SelectedActions[0];
-	if (!ensure(Action->GetTypeId() == FVoxelMaterialDefinitionParameterSchemaAction::StaticGetTypeId()))
-	{
-		return nullptr;
-	}
-
-	return StaticCastSharedPtr<FVoxelMaterialDefinitionParameterSchemaAction>(Action);
+	return Definition->Categories.Categories;
 }

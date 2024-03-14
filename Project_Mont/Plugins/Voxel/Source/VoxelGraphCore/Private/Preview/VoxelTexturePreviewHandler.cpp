@@ -1,7 +1,7 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "Preview/VoxelTexturePreviewHandler.h"
-#include "VoxelGraphEvaluator.h"
+#include "VoxelGraphExecutor.h"
 #include "VoxelPositionQueryParameter.h"
 #include "Engine/Texture2D.h"
 #include "Slate/DeferredCleanupSlateBrush.h"
@@ -18,13 +18,10 @@ void FVoxelTexturePreviewHandler::Create(const FVoxelPinType& Type)
 		return;
 	}
 
-	const TSharedRef<FVoxelGraphEvaluatorRef> EvaluatorRef = GVoxelGraphEvaluatorManager->MakeEvaluatorRef_GameThread(PinRef);
+	const TSharedRef<const FVoxelComputeValue> Compute = GVoxelGraphExecutorManager->MakeCompute_GameThread(Type, PinRef);
 
 	DynamicValue = FVoxelDynamicValueFactory(
-		MakeVoxelShared<FVoxelComputeValue>([
-			EvaluatorRef,
-			PreviewSize = PreviewSize,
-			FinalType = GetFinalValueType(Type), WeakThis = MakeWeakPtr(this)](const FVoxelQuery& Query) -> FVoxelFutureValue
+		MakeVoxelShared<FVoxelComputeValue>([Compute, PreviewSize = PreviewSize, FinalType = GetFinalValueType(Type), WeakThis = MakeWeakPtr(this)](const FVoxelQuery& Query)
 		{
 			VOXEL_SCOPE_COUNTER("Write preview positions");
 
@@ -58,12 +55,7 @@ void FVoxelTexturePreviewHandler::Create(const FVoxelPinType& Type)
 			Parameters->Add<FVoxelGradientStepQueryParameter>().Step = LocalToWorld.GetScaleVector().GetAbsMax();
 
 			const FVoxelQuery NewQuery = Query.MakeNewQuery(Parameters);
-			const FVoxelFutureValue Value = EvaluatorRef->Compute(NewQuery);
-			if (!Value.IsValid())
-			{
-				return {};
-			}
-
+			const FVoxelFutureValue Value = (*Compute)(NewQuery);
 			return
 				MakeVoxelTask()
 				.Dependency(Value)
@@ -79,7 +71,7 @@ void FVoxelTexturePreviewHandler::Create(const FVoxelPinType& Type)
 		}),
 		GetFinalValueType(Type),
 		GetStruct()->GetFName())
-		.Compute(TerminalGraphInstance.ToSharedRef());
+		.Compute(QueryContext.ToSharedRef());
 
 	DynamicValue.OnChanged(MakeWeakPtrLambda(this, [this](const FVoxelRuntimePinValue& NewValue)
 	{
@@ -115,7 +107,7 @@ void FVoxelTexturePreviewHandler::Create(const FVoxelPinType& Type)
 			});
 		}
 
-		RunOnGameThread(MakeWeakPtrLambda(this, [=]
+		FVoxelUtilities::RunOnGameThread(MakeWeakPtrLambda(this, [=]
 		{
 			if (!Texture)
 			{

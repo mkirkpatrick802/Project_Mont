@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "SVoxelNewAssetInstancePickerList.h"
 
@@ -11,7 +11,6 @@ void SVoxelNewAssetInstancePickerList::Construct(const FArguments& InArgs, UClas
 	OnTemplateAssetActivatedDelegate = InArgs._OnTemplateAssetActivated;
 	OnGetAssetCategoryDelegate = InArgs._OnGetAssetCategory;
 	OnGetAssetDescriptionDelegate = InArgs._OnGetAssetDescription;
-	ShowAssetDelegate = InArgs._ShowAsset;
 
 	ChildSlot
 	[
@@ -74,11 +73,11 @@ void SVoxelNewAssetInstancePickerList::Construct(const FArguments& InArgs, UClas
 			.OnGenerateWidgetForCategory(this, &SVoxelNewAssetInstancePickerList::OnGenerateWidgetForCategory)
 			.OnGenerateWidgetForSection(this, &SVoxelNewAssetInstancePickerList::OnGenerateWidgetForSection)
 			.OnGenerateWidgetForItem(this, &SVoxelNewAssetInstancePickerList::OnGenerateWidgetForItem)
-			.OnItemActivated_Lambda([=](const FAssetData& Item)
+			.OnItemActivated_Lambda([&](const FAssetData& Item)
 			{
 				OnTemplateAssetActivatedDelegate.ExecuteIfBound(Item);
 			})
-			.OnDoesItemPassCustomFilter_Lambda([=](const FAssetData& Item)
+			.OnDoesItemPassCustomFilter_Lambda([&](const FAssetData& Item)
 			{
 				return FilterBox->IsSourceFilterActive(Item);
 			})
@@ -109,26 +108,33 @@ TArray<FAssetData> SVoxelNewAssetInstancePickerList::GetSelectedAssets() const
 
 TArray<FText> SVoxelNewAssetInstancePickerList::OnGetCategoriesForItem(const FAssetData& Item) const
 {
-	if (!OnGetAssetCategoryDelegate.IsBound())
+	TArray<FText> Categories;
+
+	if (OnGetAssetCategoryDelegate.IsBound())
 	{
-		return {};
+		const FString CategoriesString = OnGetAssetCategoryDelegate.Execute(Item).ToString();
+
+		TArray<FString> CategoriesList;
+		CategoriesString.ParseIntoArray(CategoriesList, TEXT("|"));
+
+		for (int32 Index = 0; Index < CategoriesList.Num(); Index++)
+		{
+			if (Index == 0 &&
+				CategoriesList[0] == "Default")
+			{
+				continue;
+			}
+
+			if (CategoriesList[Index].IsEmpty())
+			{
+				continue;
+			}
+
+			Categories.Add(FText::FromString(FName::NameToDisplayString(CategoriesList[Index], false)));
+		}
 	}
 
-	const FString Category = OnGetAssetCategoryDelegate.Execute(Item);
-
-	TArray<FString> Categories = FVoxelUtilities::ParseCategory(Category);
-	if (Categories.Num() > 0 &&
-		Categories[0] == "Default")
-	{
-		Categories.RemoveAt(0);
-	}
-
-	TArray<FText> TextCategories;
-	for (const FString& SubCategory : Categories)
-	{
-		TextCategories.Add(FText::FromString(SubCategory));
-	}
-	return TextCategories;
+	return Categories;
 }
 
 TArray<FText> SVoxelNewAssetInstancePickerList::OnGetSectionsForItem(const FAssetData& Item) const
@@ -205,7 +211,7 @@ TSharedRef<SWidget> SVoxelNewAssetInstancePickerList::OnGenerateWidgetForItem(co
 	FAssetThumbnailConfig ThumbnailConfig;
 	ThumbnailConfig.bAllowFadeIn = false;
 
-	FString AssetDescription;
+	FText AssetDescription;
 	if (OnGetAssetDescriptionDelegate.IsBound())
 	{
 		AssetDescription = OnGetAssetDescriptionDelegate.Execute(Item);
@@ -235,7 +241,7 @@ TSharedRef<SWidget> SVoxelNewAssetInstancePickerList::OnGenerateWidgetForItem(co
 				SNew(STextBlock)
 				.TextStyle(FVoxelEditorStyle::Get(), "Graph.NewAssetDialog.AssetPickerBoldAssetNameText")
 				.Text(FText::FromString(FName::NameToDisplayString(GetAssetName(Item), false)))
-				.HighlightText_Lambda([=]
+				.HighlightText_Lambda([&]
 				{
 					return ItemSelector->GetFilterText();
 				})
@@ -243,7 +249,7 @@ TSharedRef<SWidget> SVoxelNewAssetInstancePickerList::OnGenerateWidgetForItem(co
 			+ SVerticalBox::Slot()
 			[
 				SNew(STextBlock)
-				.Text(FText::FromString(AssetDescription))
+				.Text(AssetDescription)
 				.TextStyle(FVoxelEditorStyle::Get(), "Graph.NewAssetDialog.AssetPickerAssetNameText")
 				.AutoWrapText(true)
 			]
@@ -254,24 +260,13 @@ TSharedRef<SWidget> SVoxelNewAssetInstancePickerList::OnGenerateWidgetForItem(co
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-TArray<FAssetData> SVoxelNewAssetInstancePickerList::GetAssetDataForSelector(const UClass* AssetClass) const
+TArray<FAssetData> SVoxelNewAssetInstancePickerList::GetAssetDataForSelector(const UClass* AssetClass)
 {
 	const FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
 
 	TArray<FAssetData> Assets;
+	
 	AssetRegistryModule.Get().GetAssetsByClass(AssetClass->GetClassPathName(), Assets);
-
-	if (ShowAssetDelegate.IsBound())
-	{
-		for (auto It = Assets.CreateIterator(); It; ++It)
-		{
-			if (!ShowAssetDelegate.Execute(*It))
-			{
-				It.RemoveCurrent();
-			}
-		}
-	}
-
 	return Assets;
 }
 

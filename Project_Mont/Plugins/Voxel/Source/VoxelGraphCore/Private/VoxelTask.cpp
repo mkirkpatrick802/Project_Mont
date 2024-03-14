@@ -1,11 +1,9 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelTask.h"
-#include "VoxelNode.h"
+#include "VoxelBuffer.h"
 #include "VoxelTaskGroup.h"
-#include "VoxelTaskExecutor.h"
-#include "VoxelGraphEvaluator.h"
-#include "VoxelFutureValueState.h"
+#include "VoxelGraphExecutor.h"
 
 VOXEL_CONSOLE_VARIABLE(
 	VOXELGRAPHCORE_API, bool, GVoxelBypassTaskQueue, false,
@@ -51,7 +49,7 @@ bool ShouldRunVoxelTaskInParallel()
 class FVoxelTaskPriorityTicker : public FVoxelSingleton
 {
 public:
-	FVoxelCriticalSection CriticalSection;
+	FVoxelFastCriticalSection CriticalSection;
 	TVoxelMap<FObjectKey, TVoxelMap<FVoxelTransformRef, TWeakPtr<FVector>>> WorldToLocalToWorldToPosition;
 
 	//~ Begin FVoxelSingleton Interface
@@ -70,7 +68,7 @@ public:
 			}
 
 			FVector CameraPosition = FVector::ZeroVector;
-			FVoxelUtilities::GetCameraView(World, CameraPosition);
+			FVoxelGameUtilities::GetCameraView(World, CameraPosition);
 
 			for (auto It = WorldIt.Value().CreateIterator(); It; ++It)
 			{
@@ -88,7 +86,7 @@ public:
 	}
 	//~ End FVoxelSingleton Interface
 };
-FVoxelTaskPriorityTicker* GVoxelTaskPriorityTicker = new FVoxelTaskPriorityTicker();
+FVoxelTaskPriorityTicker* GVoxelTaskPriorityTicker = MakeVoxelSingleton(FVoxelTaskPriorityTicker);
 
 TSharedRef<const FVector> FVoxelTaskPriority::GetPosition(
 	const FObjectKey World,
@@ -117,53 +115,56 @@ DEFINE_VOXEL_INSTANCE_COUNTER(FVoxelTaskReferencer);
 FVoxelTaskReferencer::FVoxelTaskReferencer(const FName Name)
 	: Name(Name)
 {
-	VOXEL_FUNCTION_COUNTER();
-	Objects_RequiresLock.Reserve(16);
-	GraphEvaluators_RequiresLock.Reserve(16);
+	Objects.Reserve(4);
+	GraphExecutors.Reserve(4);
 }
 
-void FVoxelTaskReferencer::AddRef(const TSharedRef<const FVoxelVirtualStruct>& Object)
-{
-	VOXEL_SCOPE_LOCK(CriticalSection);
-	Objects_RequiresLock.Add(Object);
-}
-
-void FVoxelTaskReferencer::AddEvaluator(const TSharedRef<const FVoxelGraphEvaluator>& GraphEvaluator)
-{
-	VOXEL_SCOPE_LOCK(CriticalSection);
-	GraphEvaluators_RequiresLock.Add(GraphEvaluator);
-}
-
-bool FVoxelTaskReferencer::IsReferenced(const FVoxelVirtualStruct* Object) const
+void FVoxelTaskReferencer::AddRef(const TSharedRef<const FVirtualDestructor>& Object)
 {
 	VOXEL_FUNCTION_COUNTER();
 	VOXEL_SCOPE_LOCK(CriticalSection);
+	Objects.Add(Object);
+}
 
-	if (Objects_RequiresLock.Contains(GetTypeHash(Object), [&](const TSharedPtr<const FVoxelVirtualStruct>& SharedObject)
+void FVoxelTaskReferencer::AddExecutor(const TSharedRef<const FVoxelGraphExecutor>& GraphExecutor)
+{
+	VOXEL_FUNCTION_COUNTER();
+	VOXEL_SCOPE_LOCK(CriticalSection);
+	GraphExecutors.Add(GraphExecutor);
+}
+
+bool FVoxelTaskReferencer::IsReferenced(const FVirtualDestructor* Object) const
+{
+	VOXEL_FUNCTION_COUNTER();
+	VOXEL_SCOPE_LOCK(CriticalSection);
+
+	if (Objects.Contains(GetTypeHash(Object), [&](const TSharedPtr<const FVirtualDestructor>& OtherObject)
 		{
-			return SharedObject.Get() == Object;
+			return OtherObject.Get() == Object;
 		}))
 	{
 		return true;
 	}
 
-	if (const FVoxelNode* Node = Cast<FVoxelNode>(Object))
+	for (const TSharedPtr<const FVoxelGraphExecutor>& GraphExecutor : GraphExecutors)
 	{
-		if (Node->GetNodeRuntime().IsCallNode())
+		if (GraphExecutor->Nodes.Contains(GetTypeHash(Object), [&](const TSharedPtr<const FVoxelNode>& Node)
+			{
+				return Node.Get() == Object;
+			}))
 		{
 			return true;
-		}
-
-		for (const TSharedPtr<const FVoxelGraphEvaluator>& GraphEvaluator : GraphEvaluators_RequiresLock)
-		{
-			if (GraphEvaluator->HasNode(*Node))
-			{
-				return true;
-			}
 		}
 	}
 
 	return false;
+}
+
+bool FVoxelTaskReferencer::IsReferenced(const FVoxelNode* Node) const
+{
+	return
+		Node->GetNodeRuntime().IsCallNode() ||
+		IsReferenced(static_cast<const FVirtualDestructor*>(Node));
 }
 
 FVoxelTaskReferencer& FVoxelTaskReferencer::Get()
@@ -177,257 +178,139 @@ FVoxelTaskReferencer& FVoxelTaskReferencer::Get()
 
 DEFINE_VOXEL_INSTANCE_COUNTER(FVoxelTask);
 
-#if VOXEL_DEBUG
-void FVoxelTask::CheckIsSafeToExecute() const
+void FVoxelTask::Execute() const
 {
-	check(NumDependencies.Get() == 0);
-	check(Group.RuntimeInfo->NumActiveTasks.Get() > 0);
+	checkVoxelSlow(Thread != EVoxelTaskThread::GameThread || IsInGameThread());
+	checkVoxelSlow(Thread != EVoxelTaskThread::RenderThread || IsInRenderingThread());
+	checkVoxelSlow(NumDependencies.GetValue() == 0);
+	checkVoxelSlow(Group.RuntimeInfo->NumActiveTasks.GetValue() > 0);
+
+	if (Name.IsNone())
+	{
+		Lambda();
+	}
+	else
+	{
+		VOXEL_SCOPE_COUNTER_FNAME(Name);
+		Lambda();
+	}
 }
-#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-void FVoxelTaskFactory::Execute(TVoxelUniqueFunction<void()> Lambda)
+void FVoxelTaskFactory::Execute(TVoxelUniqueFunction<void()>&& Lambda)
 {
-	ensureVoxelSlow(!PrivateName.IsNone());
-
-	if (bPrivateRunOnGameThread)
-	{
-		Lambda = MakeGameThreadLambda(MoveTemp(Lambda));
-	}
-	if (AreVoxelStatsEnabled())
-	{
-		Lambda = MakeStatsLambda(MoveTemp(Lambda));
-	}
-
-	FVoxelTaskGroup& Group = FVoxelTaskGroup::Get();
-
 	TVoxelUniquePtr<FVoxelTask> TaskPtr = MakeVoxelUnique<FVoxelTask>(
-		Group,
+		FVoxelTaskGroup::Get(),
 		PrivateName,
+		PrivateThread,
 		MoveTemp(Lambda));
-
-	if (DependenciesView.Num() == 0)
-	{
-		Group.QueueTask(MoveTemp(TaskPtr));
-		return;
-	}
 
 	FVoxelTask& Task = *TaskPtr;
 
-	// Initialize to 1000 to avoid having a parallel task setting NumDependencies to 0 & queuing the task
-	Task.NumDependencies.Set(1000);
-
+	TVoxelArray<const FVoxelFutureValue*, TVoxelInlineAllocator<32>> DependenciesToProcess;
 	for (const FVoxelFutureValue& Dependency : DependenciesView)
 	{
-		if (!ensureMsgfVoxelSlow(Dependency.IsValid(), TEXT("Invalid dependency passed to %s"), *PrivateName.ToString()) ||
-			Dependency.State->IsComplete(std::memory_order_relaxed))
+		if (!ensureMsgf(Dependency.IsValid(), TEXT("Invalid dependency passed to %s"), *PrivateName.ToString()))
 		{
 			continue;
 		}
 
-		if (!Dependency.State->GetStateImpl().TryAddDependentTask(Task))
+		if (!Dependency.IsComplete())
 		{
-			// Completed
-			continue;
+			DependenciesToProcess.Add(&Dependency);
+		}
+	}
+
+	if (DependenciesToProcess.Num() > 0)
+	{
+		Task.NumDependencies.Add(DependenciesToProcess.Num());
+		Task.Group.AddPendingTask(MoveTemp(TaskPtr));
+
+		for (const FVoxelFutureValue* Dependency : DependenciesToProcess)
+		{
+			Dependency->State->GetStateImpl().AddDependentTask(Task);
 		}
 
-		Task.NumDependencies.Increment();
-	}
-
-	if (Task.NumDependencies.Get() == 1000)
-	{
-		// No dependencies
-		Task.NumDependencies.Set(0);
-		Group.QueueTask(MoveTemp(TaskPtr));
 		return;
 	}
 
-	Group.AddPendingTask(MoveTemp(TaskPtr));
-
-	const int32 NumDependenciesLeft = Task.NumDependencies.Subtract_ReturnNew(1000);
-	checkVoxelSlow(NumDependenciesLeft >= 0);
-
-	if (NumDependenciesLeft > 0)
+	if (GVoxelBypassTaskQueue &&
+		!bPrivateNeverBypassQueue)
 	{
-		// Queued, can't execute
-		return;
+		const bool bCanExecute = INLINE_LAMBDA
+		{
+			switch (Task.Thread)
+			{
+			default: VOXEL_ASSUME(false);
+			case EVoxelTaskThread::GameThread: return IsInGameThreadFast();
+			case EVoxelTaskThread::RenderThread: return IsInRenderingThread();
+			case EVoxelTaskThread::AsyncThread: return true;
+			}
+		};
+
+		if (bCanExecute)
+		{
+			FVoxelTaskGroupScope Scope;
+			if (!Scope.Initialize(Task.Group))
+			{
+				// Exiting
+				return;
+			}
+
+			Task.Execute();
+			return;
+		}
 	}
 
-	// Dependencies are already completed, execute
-	TaskPtr = Group.RemovePendingTask(Task);
-	Group.QueueTask(MoveTemp(TaskPtr));
+	Task.Group.ProcessTask(MoveTemp(TaskPtr));
 }
 
 FVoxelFutureValue FVoxelTaskFactory::Execute(const FVoxelPinType& Type, TVoxelUniqueFunction<FVoxelFutureValue()>&& Lambda)
 {
-	checkVoxelSlow(Type.IsValid());
-	checkVoxelSlow(!Type.IsWildcard());
+	check(Type.IsValid());
+	ensure(!Type.IsWildcard());
 
-	const TSharedRef<FVoxelFutureValueStateImpl> State = MakeVoxelShared<FVoxelFutureValueStateImpl>(Type, PrivateName);
+	const TSharedRef<FVoxelFutureValueStateImpl> State = MakeVoxelShared<FVoxelFutureValueStateImpl>(Type);
 
-	Execute([State, Name = PrivateName, Lambda = MoveTemp(Lambda)]
+	Execute([State, Type, Name = PrivateName, Lambda = MoveTemp(Lambda)]
 	{
 		const FVoxelFutureValue Value = Lambda();
 
 		if (!Value.IsValid())
 		{
-			State->SetValue(FVoxelRuntimePinValue(State->Type));
+			State->SetValue(FVoxelRuntimePinValue(Type));
 			return;
 		}
-
-#if WITH_EDITOR
-		if (!ensure(Value.GetParentType().CanBeCastedTo(State->Type)))
-		{
-			State->SetValue(FVoxelRuntimePinValue(State->Type));
-			return;
-		}
-#endif
 
 		if (!Value.IsComplete())
 		{
-			if (Value.State->GetStateImpl().TryAddLinkedState(State))
+			if (!ensureVoxelSlow(Value.State->Type.CanBeCastedTo(Type)))
 			{
+				State->SetValue(FVoxelRuntimePinValue(Type));
 				return;
 			}
-		}
-		checkVoxelSlow(Value.IsComplete());
 
-		const FVoxelRuntimePinValue& FinalValue = Value.GetValue_CheckCompleted();
-
-#if WITH_EDITOR
-		if (!ensureMsgf(FinalValue.IsValidValue_Slow(), TEXT("Invalid value produced by %s"), *Name.ToString()))
-		{
-			State->SetValue(FVoxelRuntimePinValue(State->Type));
+			Value.State->GetStateImpl().AddLinkedState(State);
 			return;
 		}
-#endif
+
+		FVoxelRuntimePinValue FinalValue = Value.GetValue_CheckCompleted();
+
+		if (!ensureVoxelSlow(FinalValue.CanBeCastedTo(Type)))
+		{
+			FinalValue = FVoxelRuntimePinValue(Type);
+		}
+
+		if (!ensureMsgf(FinalValue.IsValidValue_Slow(), TEXT("Invalid value produced by %s"), *Name.ToString()))
+		{
+			FinalValue = FVoxelRuntimePinValue(Type);
+		}
 
 		State->SetValue(FinalValue);
 	});
 
 	return FVoxelFutureValue(State);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-TVoxelUniqueFunction<void()> FVoxelTaskFactory::MakeStatsLambda(TVoxelUniqueFunction<void()> Lambda) const
-{
-	if (GVoxelBypassTaskQueue)
-	{
-		return [
-			Name = PrivateName,
-			Lambda = MoveTemp(Lambda)]
-		{
-			VOXEL_SCOPE_COUNTER_FNAME(Name);
-			Lambda();
-		};
-	}
-
-	TVoxelArray<FName> TagNames;
-	if (const FVoxelTaskTagScope* Scope = FVoxelTaskTagScope::Get())
-	{
-		TagNames = Scope->GetTagNames();
-	}
-
-	return [
-		Name = PrivateName,
-		Lambda = MoveTemp(Lambda),
-		TagNames = MoveTemp(TagNames)]
-	{
-		ensure(!FVoxelTaskTagScope::Get());
-
-		FVoxelTaskTagScope Scope;
-		Scope.TagNameOverrides = TagNames;
-		FVoxelTaskGroup::Get().SetTagNames(TagNames);
-
-		VOXEL_SCOPE_COUNTER_FNAME(Name);
-		Lambda();
-	};
-}
-
-TVoxelUniqueFunction<void()> FVoxelTaskFactory::MakeGameThreadLambda(TVoxelUniqueFunction<void()> Lambda)
-{
-	return [Lambda = MoveTemp(Lambda)]
-	{
-		if (IsInGameThreadFast())
-		{
-			Lambda();
-			return;
-		}
-
-		GVoxelTaskExecutor->AddGameThreadTask(MoveTemp(ConstCast(Lambda)));
-	};
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-const uint32 GVoxelTaskTagTLS = FPlatformTLS::AllocTlsSlot();
-
-TVoxelUniquePtr<FVoxelTaskTagScope> FVoxelTaskTagScope::CreateImpl(const FName TagName)
-{
-	FVoxelTaskTagScope* Scope = new (GVoxelMemory) FVoxelTaskTagScope();
-	Scope->TagName = TagName;
-	return TVoxelUniquePtr<FVoxelTaskTagScope>(Scope);
-}
-
-FVoxelTaskTagScope::FVoxelTaskTagScope()
-{
-	ensureVoxelSlow(AreVoxelStatsEnabled());
-
-	ParentScope = static_cast<FVoxelTaskTagScope*>(FPlatformTLS::GetTlsValue(GVoxelTaskTagTLS));
-	FPlatformTLS::SetTlsValue(GVoxelTaskTagTLS, this);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-FString GetVoxelTaskName(
-	const FString& FunctionName,
-	const int32 Line,
-	const FString& Context)
-{
-	FString Result = "Task: ";
-	if (!Context.IsEmpty())
-	{
-		Result += Context + " ";
-	}
-	Result += VoxelStats_CleanupFunctionName(FunctionName);
-	Result += ":";
-	Result += FString::FromInt(Line);
-	return Result;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-FVoxelTaskTagScope::~FVoxelTaskTagScope()
-{
-	checkVoxelSlow(FPlatformTLS::GetTlsValue(GVoxelTaskTagTLS) == this);
-	FPlatformTLS::SetTlsValue(GVoxelTaskTagTLS, ParentScope);
-}
-
-TVoxelArray<FName> FVoxelTaskTagScope::GetTagNames() const
-{
-	TVoxelArray<FName> TagNames;
-	for (const FVoxelTaskTagScope* Scope = this; Scope; Scope = Scope->ParentScope)
-	{
-		if (Scope->TagNameOverrides.IsSet())
-		{
-			ensure(!Scope->ParentScope);
-			TagNames.Append(Scope->TagNameOverrides.GetValue());
-			break;
-		}
-
-		TagNames.Add(Scope->TagName);
-	}
-	return TagNames;
 }

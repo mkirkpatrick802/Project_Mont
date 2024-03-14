@@ -1,10 +1,10 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelMinimal.h"
 #include "VoxelPointSet.h"
-#include "VoxelNodeInterface.h"
+#include "VoxelNodeHelpers.h"
 #include "VoxelPointSpawner.generated.h"
 
 USTRUCT()
@@ -16,12 +16,12 @@ struct VOXELGRAPHCORE_API FVoxelPointSpawner
 	GENERATED_VIRTUAL_STRUCT_BODY()
 
 public:
-	FVoxelGraphNodeRef NodeRef;
+	FVoxelGraphNodeRef Node;
 
 	//~ Begin IVoxelNodeInterface Interface
 	virtual const FVoxelGraphNodeRef& GetNodeRef() const override
 	{
-		return NodeRef;
+		return Node;
 	}
 	//~ End IVoxelNodeInterface Interface
 

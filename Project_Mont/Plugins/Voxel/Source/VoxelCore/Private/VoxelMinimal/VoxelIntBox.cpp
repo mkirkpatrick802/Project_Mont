@@ -1,18 +1,11 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelMinimal.h"
 
 // +/- 1024: prevents integers overflow
 const FVoxelIntBox FVoxelIntBox::Infinite = FVoxelIntBox(FIntVector(MIN_int32 + 1024), FIntVector(MAX_int32 - 1024));
-const FVoxelIntBox FVoxelIntBox::InvertedInfinite = []
-{
-	FVoxelIntBox Box;
-	Box.Min = Infinite.Max;
-	Box.Max = Infinite.Min;
-	return Box;
-}();
 
-FVoxelIntBox FVoxelIntBox::FromPositions(const TVoxelArrayView<const FIntVector> Positions)
+FVoxelIntBox FVoxelIntBox::FromPositions(TVoxelArrayView<const FIntVector> Positions)
 {
     VOXEL_FUNCTION_COUNTER();
 

@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -12,8 +12,8 @@ struct FVoxelMemory;
 
 constexpr const FVoxelMemory* GVoxelMemory = nullptr;
 
-void* operator new(size_t Size, const FVoxelMemory*);
-void* operator new(size_t Size, std::align_val_t Alignment, const FVoxelMemory*);
+void* operator new(const size_t Size, const FVoxelMemory*);
+void* operator new(const size_t Size, std::align_val_t Alignment, const FVoxelMemory*);
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -93,7 +93,7 @@ struct TVoxelMemoryDeleter
 {
 	TVoxelMemoryDeleter() = default;
 
-	template<typename OtherType, typename = std::enable_if_t<TIsDerivedFrom<OtherType, T>::Value>>
+	template<typename OtherType, typename = typename TEnableIf<TIsDerivedFrom<OtherType, T>::Value>::Type>
 	TVoxelMemoryDeleter(const TVoxelMemoryDeleter<OtherType>&)
 	{
 	}
@@ -163,11 +163,11 @@ public:
 		{
 			return Data;
 		}
-		FORCEINLINE void ResizeAllocation(const SizeType PreviousNumElements, const SizeType NumElements, const SIZE_T NumBytesPerElement)
+		FORCEINLINE void ResizeAllocation(SizeType PreviousNumElements, SizeType NumElements, SIZE_T NumBytesPerElement)
 		{
 			this->ResizeAllocation(PreviousNumElements, NumElements, NumBytesPerElement, DEFAULT_ALIGNMENT);
 		}
-		FORCEINLINE void ResizeAllocation(const SizeType PreviousNumElements, const SizeType NumElements, const SIZE_T NumBytesPerElement, const uint32 AlignmentOfElement)
+		FORCEINLINE void ResizeAllocation(SizeType PreviousNumElements, SizeType NumElements, SIZE_T NumBytesPerElement, uint32 AlignmentOfElement)
 		{
 			if (PreviousNumElements == 0)
 			{
@@ -287,6 +287,20 @@ struct FVoxelSparseArrayAllocator
 	using BitArrayAllocator = FVoxelAllocator;
 };
 
+struct FVoxelSetAllocator
+{
+	using SparseArrayAllocator = FVoxelSparseArrayAllocator;
+	using HashAllocator = TVoxelInlineAllocator<1>;
+
+	FORCEINLINE static uint32 GetNumberOfHashBuckets(uint32 NumHashedElements)
+	{
+		return TSetAllocator<>::GetNumberOfHashBuckets(NumHashedElements);
+	}
+};
+
+template<typename T, typename KeyFuncs = DefaultKeyFuncs<T>>
+using TVoxelSet = TSet<T, KeyFuncs, FVoxelSetAllocator>;
+
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -297,26 +311,26 @@ FORCEINLINE TSharedRef<T> MakeVoxelShareable(T* Object)
 	FVoxelMemory::CheckIsVoxelAlloc(Object);
 	return TSharedRef<T>(Object, TVoxelMemoryDeleter<T>());
 }
-template<typename T, typename... ArgTypes, typename = std::enable_if_t<std::is_constructible_v<T, ArgTypes...>>>
-FORCEINLINE TSharedRef<T> MakeVoxelShared(ArgTypes&&... Args)
+template<typename T, typename... ArgsTypes, typename = std::enable_if_t<std::is_constructible_v<T, ArgsTypes...>>>
+FORCEINLINE TSharedRef<T> MakeVoxelShared(ArgsTypes&&... Args)
 {
-	return MakeVoxelShareable(new (GVoxelMemory) T(Forward<ArgTypes>(Args)...));
+	return MakeVoxelShareable(new (GVoxelMemory) T(Forward<ArgsTypes>(Args)...));
 }
 
-template<typename T, typename... ArgTypes, typename = std::enable_if_t<std::is_constructible_v<T, ArgTypes...>>>
-FORCEINLINE TVoxelUniquePtr<T> MakeVoxelUnique(ArgTypes&&... Args)
+template<typename T, typename... ArgsTypes, typename = std::enable_if_t<std::is_constructible_v<T, ArgsTypes...>>>
+FORCEINLINE TVoxelUniquePtr<T> MakeVoxelUnique(ArgsTypes&&... Args)
 {
-	return TVoxelUniquePtr<T>(new (GVoxelMemory) T(Forward<ArgTypes>(Args)...));
+	return TVoxelUniquePtr<T>(new (GVoxelMemory) T(Forward<ArgsTypes>(Args)...));
 }
 
 // Need TEnableIf as &&& is equivalent to &, so T could get matched with Smthg&
 template<typename T>
-FORCEINLINE std::enable_if_t<!TIsReferenceType<T>::Value, TSharedRef<T>> MakeSharedCopy(T&& Data)
+FORCEINLINE typename TEnableIf<!TIsReferenceType<T>::Value, TSharedRef<T>>::Type MakeSharedCopy(T&& Data)
 {
 	return MakeVoxelShared<T>(MoveTemp(Data));
 }
 template<typename T>
-FORCEINLINE std::enable_if_t<!TIsReferenceType<T>::Value, TVoxelUniquePtr<T>> MakeUniqueCopy(T&& Data)
+FORCEINLINE typename TEnableIf<!TIsReferenceType<T>::Value, TVoxelUniquePtr<T>>::Type MakeUniqueCopy(T&& Data)
 {
 	return MakeVoxelUnique<T>(MoveTemp(Data));
 }

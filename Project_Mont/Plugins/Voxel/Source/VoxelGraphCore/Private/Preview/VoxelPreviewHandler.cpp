@@ -1,39 +1,33 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "Preview/VoxelPreviewHandler.h"
 #include "VoxelQuery.h"
-#include "VoxelTerminalGraphInstance.h"
 
-TVoxelArray<TSharedRef<const FVoxelPreviewHandler>> GVoxelPreviewHandlers;
+TArray<const FVoxelPreviewHandler*> GVoxelPreviewHandlers;
 
 VOXEL_RUN_ON_STARTUP_GAME(RegisterVoxelPreviewHandlersCleanup)
 {
 	GOnVoxelModuleUnloaded_DoCleanup.AddLambda([]
 	{
+		for (const FVoxelPreviewHandler* PreviewHandler : GVoxelPreviewHandlers)
+		{
+			FVoxelMemory::Delete(PreviewHandler);
+		}
 		GVoxelPreviewHandlers.Empty();
 	});
 }
 
-TConstVoxelArrayView<TSharedRef<const FVoxelPreviewHandler>> FVoxelPreviewHandler::GetHandlers()
+const TArray<const FVoxelPreviewHandler*>& FVoxelPreviewHandler::GetHandlers()
 {
 	if (GVoxelPreviewHandlers.Num() == 0)
 	{
-		for (const UScriptStruct* Struct : GetDerivedStructs<FVoxelPreviewHandler>())
+		for (UScriptStruct* Struct : GetDerivedStructs<FVoxelPreviewHandler>())
 		{
-			GVoxelPreviewHandlers.Add(MakeSharedStruct<FVoxelPreviewHandler>(Struct));
+			GVoxelPreviewHandlers.Add(TVoxelInstancedStruct<FVoxelPreviewHandler>(Struct).Release());
 		}
 	}
 
 	return GVoxelPreviewHandlers;
-}
-
-FVoxelPreviewHandler::~FVoxelPreviewHandler()
-{
-	if (RuntimeInfo)
-	{
-		// Requires manual destroy
-		RuntimeInfo->Destroy();
-	}
 }
 
 void FVoxelPreviewHandler::BuildStats(const FAddStat& AddStat)
@@ -49,6 +43,6 @@ void FVoxelPreviewHandler::BuildStats(const FAddStat& AddStat)
 
 void FVoxelPreviewHandler::UpdateStats(const FVector2D& MousePosition)
 {
-	const FMatrix PixelToWorld = TerminalGraphInstance->RuntimeInfo->GetLocalToWorld().Get_NoDependency();
+	const FMatrix PixelToWorld = QueryContext->RuntimeInfo->GetLocalToWorld().Get_NoDependency();
 	CurrentPosition = PixelToWorld.TransformPosition(FVector(MousePosition.X, MousePosition.Y, 0.f));
 }

@@ -12,11 +12,11 @@ struct FVoxelGraphListNode
 	const FString LookupName;
 	const TWeakObjectPtr<const UVoxelGraph> WeakGraph;
 
-	explicit FVoxelGraphListNode(const UVoxelGraph& Graph)
-		: Asset(FAssetData(&Graph))
+	explicit FVoxelGraphListNode(const FAssetData& Asset, const UVoxelGraph* Graph)
+		: Asset(Asset)
 		, AssetThumbnail(MakeVoxelShared<FAssetThumbnail>(Asset, 36, 36, FVoxelEditorUtilities::GetThumbnailPool()))
-		, LookupName(Graph.GetName().ToLower())
-		, WeakGraph(&Graph)
+		, LookupName(Graph->GetGraphName().ToLower())
+		, WeakGraph(Graph)
 	{
 	}
 
@@ -24,7 +24,7 @@ struct FVoxelGraphListNode
 	{
 		if (const UVoxelGraph* Graph = WeakGraph.Get())
 		{
-			return FText::FromString(Graph->GetName());
+			return FText::FromString(Graph->GetGraphName());
 		}
 
 		return INVTEXT("None");
@@ -33,34 +33,32 @@ struct FVoxelGraphListNode
 	{
 		if (const UVoxelGraph* Graph = WeakGraph.Get())
 		{
-			return FText::FromString(Graph->GetName());
+			return FText::FromString(Graph->Description);
 		}
 
 		return INVTEXT("");
 	}
 };
 
-class SVoxelGraphSelector : public SCompoundWidget
+class VOXELGRAPHEDITOR_API SVoxelGraphSelector : public SCompoundWidget
 {
 public:
-	DECLARE_DELEGATE_RetVal_OneParam(bool, FIsGraphValid, const UVoxelGraph&);
+	DECLARE_DELEGATE_RetVal_OneParam(bool, FIsGraphValid, const UVoxelGraph*);
 	DECLARE_DELEGATE_OneParam(FOnGraphSelected, UVoxelGraph*);
 
 	VOXEL_SLATE_ARGS()
 	{
 		SLATE_EVENT(FIsGraphValid, IsGraphValid);
 		SLATE_EVENT(FOnGraphSelected, OnGraphSelected);
-		SLATE_ARGUMENT(UVoxelGraph*, SelectedGraph);
 	};
 
 	void Construct(const FArguments& InArgs);
-
-	void SetSelectedGraph(const UVoxelGraph* Graph);
 
 private:
 	void OnSearchChanged(const FText& Text);
 
 	TSharedRef<ITableRow> OnGenerateRow(TSharedPtr<FVoxelGraphListNode> Node, const TSharedRef<STableViewBase>& OwningTable);
+	void OnSelectionChanged(TSharedPtr<FVoxelGraphListNode> Node, ESelectInfo::Type SelectType);
 
 	void FindAllGraphs();
 	void FilterGraphs();

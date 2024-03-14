@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelNodeHelpers.h"
 #include "VoxelNode.h"
@@ -18,11 +18,18 @@ FString FVoxelNodeDefaultValueHelper::MakeObject(const FVoxelPinType& RuntimeTyp
 #endif
 	return Path;
 }
-
-FString FVoxelNodeDefaultValueHelper::MakeBodyInstance(const ECollisionEnabled::Type CollisionEnabled)
-{
-	FBodyInstance BodyInstance;
-	BodyInstance.SetCollisionEnabled(CollisionEnabled);
-	return FVoxelPinValue::Make(BodyInstance).ExportToString();
-}
 #endif
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+void FVoxelNodeHelpers::RaiseQueryError(const FVoxelGraphNodeRef& Node, const UScriptStruct* QueryType)
+{
+	VOXEL_MESSAGE(Error, "{0}: {1} is required but not provided by callee", Node, QueryType->GetName());
+}
+
+void FVoxelNodeHelpers::RaiseBufferError(const FVoxelGraphNodeRef& Node)
+{
+	VOXEL_MESSAGE(Error, "{0}: Inputs have different buffer sizes", Node);
+}

@@ -1,7 +1,10 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "Sculpt/VoxelSculptStorageData.h"
 #include "VoxelDependency.h"
+#include "Serialization/LargeMemoryWriter.h"
+#include "Serialization/LargeMemoryReader.h"
+#include "Compression/OodleDataCompressionUtil.h"
 
 FVoxelSculptStorageData::FVoxelSculptStorageData(const FName Name)
 	: Name(Name)
@@ -113,7 +116,7 @@ void FVoxelSculptStorageData::Serialize(FArchive& Ar)
 
 	if (Ar.IsSaving())
 	{
-		FVoxelWriter Writer;
+		FLargeMemoryWriter Writer;
 		{
 			FVoxelScopeLock_Read Lock(CriticalSection);
 
@@ -134,7 +137,17 @@ void FVoxelSculptStorageData::Serialize(FArchive& Ar)
 			}
 		}
 
-		TVoxelArray64<uint8> CompressedData = FVoxelUtilities::Compress(Writer);
+		TArray64<uint8> CompressedData;
+		{
+			VOXEL_SCOPE_COUNTER("Compress");
+			ensure(FOodleCompressedArray::CompressData64(
+				CompressedData,
+				Writer.GetData(),
+				Writer.TotalSize(),
+				FOodleDataCompression::ECompressor::Kraken,
+				FOodleDataCompression::ECompressionLevel::Normal));
+		}
+
 		CompressedData.BulkSerialize(Ar);
 	}
 	else
@@ -147,16 +160,19 @@ void FVoxelSculptStorageData::Serialize(FArchive& Ar)
 		Octree = MakeVoxelShared<FOctree>();
 		Chunks.Empty();
 
-		TVoxelArray64<uint8> CompressedData;
+		TArray64<uint8> CompressedData;
 		CompressedData.BulkSerialize(Ar);
 
-		TVoxelArray64<uint8> Data;
-		if (!ensure(FVoxelUtilities::Decompress(CompressedData, Data)))
+		TArray64<uint8> Data;
 		{
-			return;
+			VOXEL_SCOPE_COUNTER("Decompress");
+			if (!ensure(FOodleCompressedArray::DecompressToTArray64(Data, CompressedData)))
+			{
+				return;
+			}
 		}
 
-		FVoxelReader Reader(Data);
+		FLargeMemoryReader Reader(Data.GetData(), Data.Num());
 
 		FVoxelScopeLock_Write Lock(CriticalSection);
 

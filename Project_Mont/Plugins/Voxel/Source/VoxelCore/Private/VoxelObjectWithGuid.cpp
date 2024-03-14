@@ -1,15 +1,6 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelObjectWithGuid.h"
-
-FGuid UVoxelObjectWithGuid::GetGuid() const
-{
-	if (!PrivateGuid.IsValid())
-	{
-		ConstCast(this)->UpdateGuid();
-	}
-	return PrivateGuid;
-}
 
 void UVoxelObjectWithGuid::PostLoad()
 {
@@ -20,31 +11,30 @@ void UVoxelObjectWithGuid::PostLoad()
 		return;
 	}
 
-	UpdateGuid();
+	if (!Guid.IsValid())
+	{
+		Guid = FGuid::NewGuid();
+	}
+}
+
+void UVoxelObjectWithGuid::PostInitProperties()
+{
+	Super::PostInitProperties();
+
+	if (IsTemplate())
+	{
+		return;
+	}
+
+	if (!Guid.IsValid())
+	{
+		Guid = FGuid::NewGuid();
+	}
 }
 
 void UVoxelObjectWithGuid::PostDuplicate(const EDuplicateMode::Type DuplicateMode)
 {
 	Super::PostDuplicate(DuplicateMode);
 
-	PrivateGuid = FGuid::NewGuid();
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-void UVoxelObjectWithGuid::UpdateGuid()
-{
-	if (PrivateGuid.IsValid())
-	{
-		return;
-	}
-	PrivateGuid = FGuid::NewGuid();
-
-	FVoxelUtilities::DelayedCall(MakeWeakObjectPtrLambda(this, [=]
-	{
-		LOG_VOXEL(Warning, "Marking %s as dirty", *GetPathName());
-		(void)MarkPackageDirty();
-	}));
+	Guid = FGuid::NewGuid();
 }

@@ -1,30 +1,65 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
-#include "Material/VoxelMaterialDefinitionToolkit.h"
-#include "Material/SVoxelMaterialDefinitionParameters.h"
-#include "Material/VoxelMaterialDefinitionParameterSelectionCustomization.h"
+#include "VoxelMaterialDefinitionToolkit.h"
+#include "VoxelMaterialDefinitionParameterSelectionCustomization.h"
+#include "SVoxelMaterialDefinitionParameters.h"
+#include "Components/StaticMeshComponent.h"
 
 void FVoxelMaterialDefinitionToolkit::Initialize()
 {
 	Super::Initialize();
 
-	MaterialLayerParameters =
-		SNew(SVoxelMaterialDefinitionParameters)
-		.Toolkit(SharedThis(this));
+	if (UVoxelMaterialDefinition* Definition = Cast<UVoxelMaterialDefinition>(Asset))
+	{
+		MaterialLayerParameters =
+			SNew(SVoxelMaterialDefinitionParameters)
+			.Definition(Definition)
+			.Toolkit(SharedThis(this));
+	}
 }
 
 TSharedPtr<FTabManager::FLayout> FVoxelMaterialDefinitionToolkit::GetLayout() const
 {
-	return FTabManager::NewLayout("FVoxelMaterialDefinitionToolkit_Definition_Layout_v1")
-		->AddArea
-		(
-			FTabManager::NewPrimaryArea()
-			->SetOrientation(Orient_Horizontal)
-			->Split
+	if (Asset->IsA<UVoxelMaterialDefinition>())
+	{
+		return FTabManager::NewLayout("FVoxelMaterialDefinitionToolkit_Definition_Layout_v1")
+			->AddArea
 			(
-				FTabManager::NewSplitter()
-				->SetOrientation(Orient_Vertical)
-				->SetSizeCoefficient(0.3f)
+				FTabManager::NewPrimaryArea()
+				->SetOrientation(Orient_Horizontal)
+				->Split
+				(
+					FTabManager::NewSplitter()
+					->SetOrientation(Orient_Vertical)
+					->SetSizeCoefficient(0.3f)
+					->Split
+					(
+						FTabManager::NewStack()
+						->SetSizeCoefficient(0.4f)
+						->AddTab(DetailsTabId, ETabState::OpenedTab)
+					)
+					->Split
+					(
+						FTabManager::NewStack()
+						->SetSizeCoefficient(0.6f)
+						->AddTab(ParametersTabId, ETabState::OpenedTab)
+					)
+				)
+				->Split
+				(
+					FTabManager::NewStack()
+					->SetSizeCoefficient(0.7f)
+					->AddTab(ViewportTabId, ETabState::OpenedTab)
+				)
+			);
+	}
+	else
+	{
+		return FTabManager::NewLayout("FVoxelMaterialDefinitionToolkit_Instance_Layout_v1")
+			->AddArea
+			(
+				FTabManager::NewPrimaryArea()
+				->SetOrientation(Orient_Horizontal)
 				->Split
 				(
 					FTabManager::NewStack()
@@ -34,24 +69,61 @@ TSharedPtr<FTabManager::FLayout> FVoxelMaterialDefinitionToolkit::GetLayout() co
 				->Split
 				(
 					FTabManager::NewStack()
-					->SetSizeCoefficient(0.6f)
-					->AddTab(ParametersTabId, ETabState::OpenedTab)
+					->SetSizeCoefficient(0.7f)
+					->AddTab(ViewportTabId, ETabState::OpenedTab)
 				)
-			)
-			->Split
-			(
-				FTabManager::NewStack()
-				->SetSizeCoefficient(0.7f)
-				->AddTab(ViewportTabId, ETabState::OpenedTab)
-			)
-		);
+			);
+	}
 }
 
-void FVoxelMaterialDefinitionToolkit::RegisterTabs(const FRegisterTab RegisterTab)
+void FVoxelMaterialDefinitionToolkit::RegisterTabs(FRegisterTab RegisterTab)
 {
 	Super::RegisterTabs(RegisterTab);
 
 	RegisterTab(ParametersTabId, INVTEXT("Parameters"), "ClassIcon.BlueprintCore", MaterialLayerParameters);
+}
+
+void FVoxelMaterialDefinitionToolkit::PostEditChange(const FPropertyChangedEvent& PropertyChangedEvent)
+{
+	Super::PostEditChange(PropertyChangedEvent);
+
+	if (PropertyChangedEvent.ChangeType != EPropertyChangeType::Interactive)
+	{
+		UpdatePreview();
+	}
+}
+
+void FVoxelMaterialDefinitionToolkit::SetupPreview()
+{
+	VOXEL_FUNCTION_COUNTER();
+
+	Super::SetupPreview();
+
+	UStaticMesh* StaticMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/EditorMeshes/EditorSphere.EditorSphere"));
+	ensure(StaticMesh);
+
+	StaticMeshComponent = NewObject<UStaticMeshComponent>();
+	StaticMeshComponent->SetStaticMesh(StaticMesh);
+	GetPreviewScene().AddComponent(StaticMeshComponent.Get(), FTransform::Identity);
+}
+
+void FVoxelMaterialDefinitionToolkit::UpdatePreview()
+{
+	VOXEL_FUNCTION_COUNTER();
+
+	Super::UpdatePreview();
+
+	if (!ensure(StaticMeshComponent.IsValid()))
+	{
+		return;
+	}
+
+	StaticMeshComponent->SetMaterial(0, Asset->GetPreviewMaterial());
+}
+
+FRotator FVoxelMaterialDefinitionToolkit::GetInitialViewRotation() const
+{
+	return FRotator(-20.0f, 180 + 45.0f, 0.f);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -69,7 +141,8 @@ void FVoxelMaterialDefinitionToolkit::SelectParameter(const FGuid& Guid, const b
 
 	IDetailsView& DetailsView = GetDetailsView();
 
-	if (!CastChecked<UVoxelMaterialDefinition>(Asset)->GuidToMaterialParameter.Contains(Guid))
+	const FVoxelParameter* Parameter = CastChecked<UVoxelMaterialDefinition>(Asset)->FindParameterByGuid(Guid);
+	if (!Parameter)
 	{
 		MaterialLayerParameters->SelectMember({}, 0, false, bRefresh);
 
@@ -78,7 +151,7 @@ void FVoxelMaterialDefinitionToolkit::SelectParameter(const FGuid& Guid, const b
 		return;
 	}
 
-	MaterialLayerParameters->SelectMember(Guid, 1, bRequestRename, bRefresh);
+	MaterialLayerParameters->SelectMember(Parameter->Name, 1, bRequestRename, bRefresh);
 
 	DetailsView.SetGenericLayoutDetailsDelegate(MakeLambdaDelegate([this, Guid]() -> TSharedRef<IDetailCustomization>
 	{

@@ -1,19 +1,17 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelPinType.h"
 #include "VoxelNode.h"
 #include "VoxelSurface.h"
-#include "VoxelInlineGraph.h"
 #include "VoxelExposedSeed.h"
 #include "VoxelBufferBuilder.h"
 #include "VoxelObjectPinType.h"
 #include "VoxelFunctionLibrary.h"
 #include "VoxelPinValueInterface.h"
 #include "Buffer/VoxelBaseBuffers.h"
-#include "Channel/VoxelChannelAsset_DEPRECATED.h"
+#include "VoxelChannelAsset_DEPRECATED.h"
 #include "Engine/Texture2D.h"
 #include "EdGraph/EdGraphPin.h"
-#include "GameFramework/Volume.h"
 
 #if WITH_EDITOR && VOXEL_DEBUG
 VOXEL_RUN_ON_STARTUP_EDITOR(TestVoxelPinTypes)
@@ -49,8 +47,8 @@ VOXEL_RUN_ON_STARTUP_EDITOR(TestVoxelPinTypes)
 	Times.Emplace_GetRef() = FDateTime::FromJulianDay(2);
 	Times.Emplace_GetRef() = FDateTime::FromJulianDay(3);
 
-	TUniquePtr<FStructProperty> StructProperty = FVoxelUtilities::MakeStructProperty(StaticStructFast<FDateTime>());
-	const TUniquePtr<FArrayProperty> ArrayProperty = FVoxelUtilities::MakeArrayProperty(StructProperty.Release());
+	TUniquePtr<FStructProperty> StructProperty = FVoxelObjectUtilities::MakeStructProperty<FDateTime>();
+	const TUniquePtr<FArrayProperty> ArrayProperty = FVoxelObjectUtilities::MakeArrayProperty(StructProperty.Release());
 
 	const FVoxelPinValue Value = FVoxelPinValue::MakeFromProperty(*ArrayProperty, &Times);
 	const FVoxelRuntimePinValue RuntimeValue = FVoxelPinType::MakeRuntimeValue(
@@ -161,7 +159,7 @@ FVoxelPinType::FVoxelPinType(const FEdGraphPinType& PinType)
 				{
 					if (Struct->IsChildOf(FVoxelBuffer::StaticStruct()))
 					{
-						*this = MakeSharedStruct<FVoxelBuffer>(Struct)->GetInnerType().GetBufferType();
+						*this = TVoxelInstancedStruct<FVoxelBuffer>(Struct)->GetInnerType().GetBufferType();
 					}
 					else
 					{
@@ -188,16 +186,16 @@ FVoxelPinType::FVoxelPinType(const FEdGraphPinType& PinType)
 		}
 		else if (!PinType.PinSubCategory.IsNone())
 		{
-			static TVoxelMap<FName, UEnum*> NameToEnum;
-			if (NameToEnum.Num() == 0)
+			static TMap<FName, UEnum*> EnumToName;
+			if (EnumToName.Num() == 0)
 			{
-				ForEachObjectOfClass<UEnum>([&](UEnum& Enum)
+				ForEachObjectOfClass<UEnum>([&](UEnum* Enum)
 				{
-					NameToEnum.Add_CheckNew(Enum.GetFName(), &Enum);
+					EnumToName.Add(Enum->GetFName(), Enum);
 				});
 			}
 
-			UEnum* Enum = NameToEnum.FindRef(PinType.PinSubCategory);
+			UEnum* Enum = EnumToName.FindRef(PinType.PinSubCategory);
 			if (ensure(Enum))
 			{
 				*this = MakeEnum(Enum);
@@ -217,10 +215,7 @@ FVoxelPinType::FVoxelPinType(const FEdGraphPinType& PinType)
 		}
 	}
 
-	Fixup();
-
-	// Raise ensures
-	(void)IsValid();
+	ensureVoxelSlow(IsValid());
 }
 
 FVoxelPinType::FVoxelPinType(const FProperty& Property)
@@ -407,18 +402,6 @@ FVoxelPinType FVoxelPinType::MakeFromK2(const FEdGraphPinType& PinType)
 
 	Type.bIsBuffer = PinType.IsArray();
 	return Type;
-}
-
-bool FVoxelPinType::TryParse(const FString& TypeString, FVoxelPinType& OutType)
-{
-	UScriptStruct* Struct = FindObject<UScriptStruct>(nullptr, *TypeString);
-	if (!ensure(Struct))
-	{
-		return false;
-	}
-
-	OutType = MakeStruct(Struct);
-	return true;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -652,17 +635,17 @@ FEdGraphPinType FVoxelPinType::GetEdGraphPinType_K2() const
 
 bool FVoxelPinType::HasPinDefaultValue() const
 {
-	ensure(IsValid());
-
 	// No default for wildcards or arrays
 	return
 		!IsWildcard() &&
-		!IsBufferArray() &&
-		!Is<FVoxelInlineGraph>();
+		!IsBufferArray();
 }
 
 bool FVoxelPinType::CanBeCastedTo(const FVoxelPinType& Other) const
 {
+	ensureVoxelSlowNoSideEffects(IsValid());
+	ensureVoxelSlowNoSideEffects(Other.IsValid());
+
 	if (*this == Other)
 	{
 		return true;
@@ -761,18 +744,6 @@ bool FVoxelPinType::CanBeCastedTo_Schema(const FVoxelPinType& Other) const
 	return true;
 }
 
-#if WITH_EDITOR
-bool FVoxelPinType::HasBufferType_EditorOnly() const
-{
-	if (!IsStruct())
-	{
-		return true;
-	}
-
-	return !GetStruct()->HasMetaData("NoBufferType");
-}
-#endif
-
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -788,8 +759,6 @@ FCustomVersionRegistration GRegisterVoxelPinTypeCustomVersionGUID(GVoxelPinTypeC
 
 void FVoxelPinType::PostSerialize(const FArchive& Ar)
 {
-	Fixup();
-
 	if (IsValid())
 	{
 		*this = FVoxelPinType(GetEdGraphPinType());
@@ -824,35 +793,6 @@ bool FVoxelPinType::Serialize(const FStructuredArchive::FSlot Slot)
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-void FVoxelPinType::Fixup()
-{
-	// Fixup buffer structs to allow redirecting to them
-	if (UScriptStruct* Struct = Cast<UScriptStruct>(PrivateInternalField))
-	{
-		if (Struct->IsChildOf(StaticStructFast<FVoxelBuffer>()))
-		{
-			const bool bOldIsBufferArray = bIsBufferArray;
-			*this = FVoxelBuffer::FindInnerType_NotComplex(Struct).GetBufferType();
-			bIsBufferArray = bOldIsBufferArray;
-		}
-	}
-
-	// Set ourselves to invalid if we were referencing an old type
-	if (InternalType == EVoxelPinInternalType::Class ||
-		InternalType == EVoxelPinInternalType::Object ||
-		InternalType == EVoxelPinInternalType::Struct)
-	{
-		if (!PrivateInternalField)
-		{
-			*this = FVoxelPinType();
-		}
-	}
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
 FVoxelPinType FVoxelPinType::GetExposedType() const
 {
 	if (IsBuffer())
@@ -874,7 +814,7 @@ FVoxelPinType FVoxelPinType::GetExposedType() const
 
 	if (IsStruct())
 	{
-		if (const TSharedPtr<const FVoxelObjectPinType> ObjectPinType = FVoxelObjectPinType::StructToPinType().FindRef(GetStruct()))
+		if (const FVoxelObjectPinType* ObjectPinType = FVoxelObjectPinType::StructToPinType().FindRef(GetStruct()))
 		{
 			return MakeObject(ObjectPinType->GetClass());
 		}
@@ -932,10 +872,10 @@ public:
 	}
 
 private:
-	FVoxelCriticalSection CriticalSection;
-	TVoxelMap<FVoxelSeed, FString> LookupMap;
+	FVoxelFastCriticalSection CriticalSection;
+	TVoxelAddOnlyMap<FVoxelSeed, FString> LookupMap;
 };
-FVoxelGraphSeedStatics* GVoxelGraphSeedStatics = new FVoxelGraphSeedStatics();
+FVoxelGraphSeedStatics* GVoxelGraphSeedStatics = MakeVoxelSingleton(FVoxelGraphSeedStatics);
 
 FVoxelRuntimePinValue FVoxelPinType::MakeRuntimeValue(
 	const FVoxelPinType& RuntimeType,
@@ -979,11 +919,11 @@ FVoxelRuntimePinValue FVoxelPinType::MakeRuntimeValue(
 
 	if (ExposedValue.IsObject())
 	{
-		if (const TSharedPtr<const FVoxelObjectPinType> ObjectPinType = FVoxelObjectPinType::StructToPinType().FindRef(RuntimeType.GetStruct()))
+		if (const FVoxelObjectPinType* ObjectPinType = FVoxelObjectPinType::StructToPinType().FindRef(RuntimeType.GetStruct()))
 		{
 			UObject* Object = ExposedValue.GetObject();
 			const FVoxelInstancedStruct Struct = ObjectPinType->GetStruct(Object);
-			ensureVoxelSlow(ObjectPinType->GetObject(Struct) == Object);
+			ensure(ObjectPinType->GetObject(Struct) == Object);
 
 			return FVoxelRuntimePinValue::MakeStruct(Struct);
 		}
@@ -1087,7 +1027,7 @@ FVoxelPinValue FVoxelPinType::MakeExposedValue(
 
 	if (RuntimeValue.GetType().IsStruct())
 	{
-		if (const TSharedPtr<const FVoxelObjectPinType> ObjectPinType = FVoxelObjectPinType::StructToPinType().FindRef(RuntimeValue.GetType().GetStruct()))
+		if (const FVoxelObjectPinType* ObjectPinType = FVoxelObjectPinType::StructToPinType().FindRef(RuntimeValue.GetType().GetStruct()))
 		{
 			UObject* Object = ObjectPinType->GetObject(RuntimeValue.GetStructView());
 
@@ -1147,8 +1087,6 @@ FVoxelPinValue FVoxelPinType::MakeExposedInnerValue(const FVoxelRuntimePinValue&
 ///////////////////////////////////////////////////////////////////////////////
 
 #if WITH_EDITOR
-bool GIsVoxelTypeRegistryLoading = false;
-
 struct FVoxelPinTypeSetRegistry
 {
 	TVoxelSet<FVoxelPinType> AllTypes;
@@ -1165,25 +1103,17 @@ struct FVoxelPinTypeSetRegistry
 	{
 		VOXEL_FUNCTION_COUNTER();
 
-		ensure(!GIsVoxelTypeRegistryLoading);
-		GIsVoxelTypeRegistryLoading = true;
-		ON_SCOPE_EXIT
-		{
-			ensure(GIsVoxelTypeRegistryLoading);
-			GIsVoxelTypeRegistryLoading = false;
-		};
-
-		TVoxelMap<FVoxelPinType, int32> Map;
+		TVoxelAddOnlyMap<FVoxelPinType, int32> Map;
 		Map.Reserve(1024);
 
-		ForEachObjectOfClass<UScriptStruct>([&](UScriptStruct& Struct)
+		ForEachObjectOfClass<UScriptStruct>([&](UScriptStruct* Struct)
 		{
-			if (!Struct.HasMetaDataHierarchical(STATIC_FNAME("VoxelPinType")))
+			if (!Struct->HasMetaDataHierarchical(STATIC_FNAME("VoxelPinType")))
 			{
 				return;
 			}
 
-			Map.FindOrAdd(FVoxelPinType::MakeStruct(&Struct));
+			Map.FindOrAdd(FVoxelPinType::MakeStruct(Struct));
 		});
 
 		for (const auto& It : FVoxelObjectPinType::StructToPinType())
@@ -1191,7 +1121,7 @@ struct FVoxelPinTypeSetRegistry
 			Map.FindOrAdd(FVoxelPinType::MakeStruct(ConstCast(It.Key)));
 		}
 
-		for (const UScriptStruct* Struct : GetDerivedStructs<FVoxelNode>())
+		for (UScriptStruct* Struct : GetDerivedStructs<FVoxelNode>())
 		{
 			if (Struct->HasMetaData(STATIC_FNAME("Abstract")) ||
 				Struct->HasMetaData(STATIC_FNAME("Internal")))
@@ -1199,7 +1129,7 @@ struct FVoxelPinTypeSetRegistry
 				continue;
 			}
 
-			const TSharedRef<FVoxelNode> Node = MakeSharedStruct<FVoxelNode>(Struct);
+			const TVoxelInstancedStruct<FVoxelNode> Node(Struct);
 
 			for (const FVoxelPin& Pin : Node->GetPins())
 			{
@@ -1289,9 +1219,9 @@ struct FVoxelPinTypeSetRegistry
 		AllMaterials = AllExposedTypes;
 		AllMaterials.Add(FVoxelPinType::Make<UTexture2D>());
 
-		ForEachObjectOfClass<UEnum>([&](UEnum& Enum)
+		ForEachObjectOfClass<UEnum>([&](UEnum* Enum)
 		{
-			AllEnums.Add(FVoxelPinType::MakeEnum(&Enum));
+			AllEnums.Add(FVoxelPinType::MakeEnum(Enum));
 		});
 	}
 };

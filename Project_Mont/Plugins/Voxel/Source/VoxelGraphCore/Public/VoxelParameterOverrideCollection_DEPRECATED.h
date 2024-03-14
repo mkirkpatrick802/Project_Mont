@@ -1,4 +1,4 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -6,7 +6,7 @@
 #include "VoxelParameter.h"
 #include "VoxelParameterOverrideCollection_DEPRECATED.generated.h"
 
-class IVoxelParameterOverridesOwner;
+class UVoxelParameterContainer;
 
 USTRUCT()
 struct VOXELGRAPHCORE_API FVoxelParameterOverride_DEPRECATED
@@ -34,5 +34,8 @@ struct VOXELGRAPHCORE_API FVoxelParameterOverrideCollection_DEPRECATED
 	UPROPERTY(EditAnywhere, Category = "Voxel")
 	TArray<FVoxelParameterOverride_DEPRECATED> Parameters;
 
-	void MigrateTo(IVoxelParameterOverridesOwner& OverridesOwner);
+	UPROPERTY(EditAnywhere, Category = "Voxel")
+	TArray<FName> Categories;
+
+	void MigrateTo(UVoxelParameterContainer& ParameterContainer);
 };

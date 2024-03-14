@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -16,10 +16,7 @@ public:
 	struct FBlock
 	{
 		uint64 Size : 48;
-		uint64 Alignment : 15;
-#if VOXEL_DEBUG
-		uint64 IsValid : 1;
-#endif
+		uint64 Alignment : 16;
 		void* UnalignedPtr = nullptr;
 	};
 	checkStatic(sizeof(FBlock) == 16);
@@ -69,7 +66,7 @@ private:
 		// 12 - 43
 		if (Count <= 131072)
 		{
-			return 12 + FVoxelUtilities::DivideCeil_Positive(int32(Count), 4096) - 1;
+			return 12 + FMath::DivideAndRoundUp(int32(Count), 4096) - 1;
 		}
 
 		return -1;

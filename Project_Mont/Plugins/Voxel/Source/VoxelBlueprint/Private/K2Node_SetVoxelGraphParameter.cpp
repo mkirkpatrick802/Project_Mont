@@ -1,8 +1,8 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "K2Node_SetVoxelGraphParameter.h"
 #include "K2Node_GetVoxelGraphParameter.h"
-#include "BlueprintLibrary/VoxelParameterBlueprintLibrary.h"
+#include "FunctionLibrary/VoxelParameterFunctionLibrary.h"
 
 #include "KismetCompiler.h"
 #include "K2Node_MakeArray.h"
@@ -10,9 +10,7 @@
 
 UK2Node_SetVoxelGraphParameter::UK2Node_SetVoxelGraphParameter()
 {
-	FunctionReference.SetExternalMember(
-		GET_FUNCTION_NAME_CHECKED(UVoxelParameterBlueprintLibrary, K2_SetVoxelParameter),
-		UVoxelParameterBlueprintLibrary::StaticClass());
+	FunctionReference.SetExternalMember(GET_FUNCTION_NAME_CHECKED(UVoxelParameterFunctionLibrary, K2_SetVoxelParameter), UVoxelParameterFunctionLibrary::StaticClass());
 }
 
 void UK2Node_SetVoxelGraphParameter::AllocateDefaultPins()
@@ -69,45 +67,47 @@ void UK2Node_SetVoxelGraphParameter::ExpandNode(FKismetCompilerContext& Compiler
 
 	UEdGraphPin* NamePin = FindPin(STATIC_FNAME("Name"));
 	UEdGraphPin* OutValuePin = FindPin(STATIC_FNAME("OutValue"));
-	UEdGraphPin* OwnerPin = FindPin(STATIC_FNAME("Owner"));
+	UEdGraphPin* ParameterContainerPin = FindPin(STATIC_FNAME("ParameterContainer"));
 
 	if (!ensure(NamePin) ||
 		!ensure(OutValuePin) ||
-		!ensure(OwnerPin) ||
-		OutValuePin->LinkedTo.Num() == 0)
+		!ensure(ParameterContainerPin))
 	{
 		return;
 	}
 
-	UK2Node_GetVoxelGraphParameter* GetterNode = CompilerContext.SpawnIntermediateNode<UK2Node_GetVoxelGraphParameter>(this, SourceGraph);
-	GetterNode->AllocateDefaultPins();
-
-	UEdGraphPin* FunctionNamePin = GetterNode->FindPin(STATIC_FNAME("Name"));
-	UEdGraphPin* FunctionValuePin = GetterNode->FindPin(STATIC_FNAME("Value"));
-	UEdGraphPin* FunctionOwnerPin = GetterNode->FindPin(STATIC_FNAME("Owner"));
-
-	if (!ensure(FunctionNamePin) ||
-		!ensure(FunctionValuePin) ||
-		!ensure(FunctionOwnerPin))
+	if (OutValuePin->LinkedTo.Num() > 0)
 	{
-		return;
+		UK2Node_GetVoxelGraphParameter* Function = CompilerContext.SpawnIntermediateNode<UK2Node_GetVoxelGraphParameter>(this, SourceGraph);
+		Function->AllocateDefaultPins();
+
+		UEdGraphPin* FunctionNamePin = Function->FindPin(STATIC_FNAME("Name"));
+		UEdGraphPin* FunctionValuePin = Function->FindPin(STATIC_FNAME("Value"));
+		UEdGraphPin* FunctionParameterContainerPin = Function->FindPin(STATIC_FNAME("ParameterContainer"));
+
+		if (!ensure(FunctionNamePin) ||
+			!ensure(FunctionValuePin) ||
+			!ensure(FunctionParameterContainerPin))
+		{
+			return;
+		}
+
+		Function->CachedParameter = CachedParameter;
+		FunctionNamePin->DefaultValue = NamePin->DefaultValue;
+
+		Function->PostReconstructNode();
+
+		CompilerContext.MovePinLinksToIntermediate(*GetThenPin(), *Function->GetThenPin());
+		CompilerContext.CopyPinLinksToIntermediate(*ParameterContainerPin, *FunctionParameterContainerPin);
+		CompilerContext.CopyPinLinksToIntermediate(*NamePin, *FunctionNamePin);
+		CompilerContext.MovePinLinksToIntermediate(*OutValuePin, *FunctionValuePin);
+
+		GetThenPin()->MakeLinkTo(Function->GetExecPin());
+
+		Function->PostReconstructNode();
+
+		CompilerContext.MessageLog.NotifyIntermediateObjectCreation(Function, this);
 	}
-
-	GetterNode->CachedParameter = CachedParameter;
-	FunctionNamePin->DefaultValue = NamePin->DefaultValue;
-
-	GetterNode->PostReconstructNode();
-
-	CompilerContext.MovePinLinksToIntermediate(*GetThenPin(), *GetterNode->GetThenPin());
-	CompilerContext.CopyPinLinksToIntermediate(*OwnerPin, *FunctionOwnerPin);
-	CompilerContext.CopyPinLinksToIntermediate(*NamePin, *FunctionNamePin);
-	CompilerContext.MovePinLinksToIntermediate(*OutValuePin, *FunctionValuePin);
-
-	GetThenPin()->MakeLinkTo(GetterNode->GetExecPin());
-
-	GetterNode->PostReconstructNode();
-
-	CompilerContext.MessageLog.NotifyIntermediateObjectCreation(GetterNode, this);
 }
 
 bool UK2Node_SetVoxelGraphParameter::IsPinWildcard(const UEdGraphPin& Pin) const

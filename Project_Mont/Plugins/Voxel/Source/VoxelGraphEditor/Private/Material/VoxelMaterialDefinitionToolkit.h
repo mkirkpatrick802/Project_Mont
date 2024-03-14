@@ -1,28 +1,35 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelEditorMinimal.h"
 #include "Material/VoxelMaterialDefinition.h"
-#include "Material/VoxelMaterialDefinitionInterfaceToolkit.h"
+#include "Toolkits/VoxelSimpleAssetToolkit.h"
 #include "VoxelMaterialDefinitionToolkit.generated.h"
 
 class SVoxelMaterialDefinitionParameters;
 
 USTRUCT()
-struct FVoxelMaterialDefinitionToolkit : public FVoxelMaterialDefinitionInterfaceToolkit
+struct FVoxelMaterialDefinitionToolkit : public FVoxelSimpleAssetToolkit
 {
 	GENERATED_BODY()
 	GENERATED_VIRTUAL_STRUCT_BODY()
 
 	UPROPERTY()
-	TObjectPtr<UVoxelMaterialDefinition> Asset;
+	TObjectPtr<UVoxelMaterialDefinitionInterface> Asset;
 
 public:
 	//~ Begin FVoxelSimpleAssetToolkit Interface
 	virtual void Initialize() override;
 	virtual TSharedPtr<FTabManager::FLayout> GetLayout() const override;
 	virtual void RegisterTabs(FRegisterTab RegisterTab) override;
+	virtual void PostEditChange(const FPropertyChangedEvent& PropertyChangedEvent) override;
+
+	virtual bool ShowFloor() const override { return false; }
+	virtual void SetupPreview() override;
+	virtual void UpdatePreview() override;
+	virtual FRotator GetInitialViewRotation() const override;
+	virtual TOptional<float> GetInitialViewDistance() const override { return 500; }
 	//~ End FVoxelSimpleAssetToolkit Interface
 
 	void SelectParameter(const FGuid& Guid, bool bRequestRename, bool bRefresh);
@@ -32,4 +39,5 @@ private:
 
 	FGuid SelectedGuid;
 	TSharedPtr<SVoxelMaterialDefinitionParameters> MaterialLayerParameters;
+	TWeakObjectPtr<UStaticMeshComponent> StaticMeshComponent;
 };

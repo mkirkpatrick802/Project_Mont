@@ -1,11 +1,9 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "SVoxelBlueprintGraphNode.h"
 
 #include "SVoxelGraphPinParameter.h"
 #include "K2Node_QueryVoxelChannel.h"
-#include "SVoxelGraphPinGraphOutput.h"
-#include "K2Node_QueryVoxelGraphOutput.h"
 #include "SVoxelGraphPinChannelName_K2.h"
 #include "K2Node_VoxelGraphParameterBase.h"
 
@@ -74,17 +72,6 @@ TSharedPtr<SGraphPin> SVoxelBlueprintGraphNode::CreatePinWidget(UEdGraphPin* Pin
 		if (Outer->IsA<UK2Node_VoxelGraphParameterBase>())
 		{
 			return SNew(SVoxelGraphPinParameter, Pin);
-		}
-	}
-
-	if (Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Name &&
-		Pin->PinName == UK2Node_QueryVoxelGraphOutput::OutputNamePinName)
-	{
-		const UObject* Outer = Pin->GetOuter();
-
-		if (Outer->IsA<UK2Node_QueryVoxelGraphOutput>())
-		{
-			return SNew(SVoxelGraphPinGraphOutput, Pin);
 		}
 	}
 

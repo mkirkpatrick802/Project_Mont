@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "SVoxelNewAssetInstanceFilterBox.h"
 
@@ -11,7 +11,7 @@ TMap<EVoxelGraphScriptSource, bool> SVoxelNewAssetInstanceSourceFilterBox::Sourc
 	{ EVoxelGraphScriptSource::Developer, false },
 };
 
-void SVoxelNewAssetInstanceSourceFilterCheckBox::Construct(const FArguments& Args, const EVoxelGraphScriptSource InSource)
+void SVoxelNewAssetInstanceSourceFilterCheckBox::Construct(const FArguments& Args, EVoxelGraphScriptSource InSource)
 {
 	Source = InSource;
 	OnSourceStateChanged = Args._OnSourceStateChanged;

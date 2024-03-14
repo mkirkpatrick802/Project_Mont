@@ -1,8 +1,7 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelEditorMinimal.h"
 #include "Styling/SlateStyleMacros.h"
-#include "Styling/StarshipCoreStyle.h"
 
 VOXEL_INITIALIZE_STYLE(GraphEditor)
 {
@@ -16,11 +15,6 @@ VOXEL_INITIALIZE_STYLE(GraphEditor)
 
 	Set("VoxelGraph.EnableStats", new CORE_IMAGE_BRUSH_SVG("Starship/Common/Statistics", Icon40x40));
 	Set("VoxelGraph.EnableStats.Small", new CORE_IMAGE_BRUSH_SVG("Starship/Common/Statistics", Icon20x20));
-
-	Set("VoxelGraph.EnableRangeStats", new CORE_IMAGE_BRUSH_SVG("Starship/Common/Profile", Icon40x40));
-	Set("VoxelGraph.EnableRangeStats.Small", new CORE_IMAGE_BRUSH_SVG("Starship/Common/Profile", Icon20x20));
-
-	Set("VoxelGraph.Execute", new IMAGE_BRUSH_SVG("Graphs/Execute", Icon16x16));
 
 	{
 		Set("Graph.Preview.Scale", new BOX_BRUSH("Graphs/Preview_Scale", 4.f / 16.f));
@@ -70,29 +64,5 @@ VOXEL_INITIALIZE_STYLE(GraphEditor)
 		Set( "Members.Splitter", FSplitterStyle()
 			.SetHandleNormalBrush(CORE_IMAGE_BRUSH("Common/SplitterHandleHighlight", CoreStyleConstants::Icon8x8, FLinearColor(.1f, .1f, .1f)))
 			.SetHandleHighlightBrush(CORE_IMAGE_BRUSH("Common/SplitterHandleHighlight", CoreStyleConstants::Icon8x8, FLinearColor(.2f, .2f, .2f))));
-	}
-	
-	// For SItemSelector
-	{
-		const FTableRowStyle ActionMenuRowStyle = FTableRowStyle()
-			.SetEvenRowBackgroundBrush(FSlateNoResource())
-			.SetOddRowBackgroundBrush(FSlateNoResource())
-			.SetEvenRowBackgroundHoveredBrush(CORE_IMAGE_BRUSH("Common/Selection", Icon8x8, FLinearColor(1.0f, 1.0f, 1.0f, 0.1f)))
-			.SetOddRowBackgroundHoveredBrush(CORE_IMAGE_BRUSH("Common/Selection", Icon8x8, FLinearColor(1.0f, 1.0f, 1.0f, 0.1f)))
-			.SetSelectorFocusedBrush(CORE_BORDER_BRUSH("Common/Selector", FMargin(4.f / 16.f), FStarshipCoreStyle::GetCoreStyle().GetSlateColor("SelectorColor")))
-			.SetActiveBrush(FSlateColorBrush(FStyleColors::Select))
-			.SetActiveHoveredBrush(FSlateColorBrush(FStyleColors::Select))
-			.SetInactiveBrush(FSlateColorBrush(FStyleColors::SelectInactive))
-			.SetInactiveHoveredBrush(FSlateColorBrush(FStyleColors::SelectInactive))
-			.SetActiveHighlightedBrush(FSlateColorBrush(FStyleColors::PrimaryHover))
-			.SetInactiveHighlightedBrush(FSlateColorBrush(FStyleColors::SelectParent))
-			.SetTextColor(FStyleColors::Foreground)
-			.SetSelectedTextColor(FStyleColors::ForegroundInverted)
-
-			.SetDropIndicator_Above(CORE_BOX_BRUSH("Common/DropZoneIndicator_Above", FMargin(10.0f / 16.0f, 10.0f / 16.0f, 0, 0), FStarshipCoreStyle::GetCoreStyle().GetSlateColor("SelectorColor")))
-			.SetDropIndicator_Onto(CORE_BOX_BRUSH("Common/DropZoneIndicator_Onto", FMargin(4.0f / 16.0f), FStarshipCoreStyle::GetCoreStyle().GetSlateColor("SelectorColor")))
-			.SetDropIndicator_Below(CORE_BOX_BRUSH("Common/DropZoneIndicator_Below", FMargin(10.0f / 16.0f, 0, 0, 10.0f / 16.0f), FStarshipCoreStyle::GetCoreStyle().GetSlateColor("SelectorColor")));
-
-		Set("ActionMenu.Row", ActionMenuRowStyle);
 	}
 }

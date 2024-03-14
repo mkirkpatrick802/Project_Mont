@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -13,9 +13,9 @@ struct VOXELGRAPHCORE_API FVoxelExposedSeed
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Config")
 	FString Seed;
 
-	void Randomize(const int32 RandSeed = FMath::Rand())
+	void Randomize()
 	{
-		const FRandomStream Stream(RandSeed);
+		const FRandomStream Stream(FMath::Rand());
 
 		Seed.Reset(8);
 		for (int32 Index = 0; Index < 8; Index++)

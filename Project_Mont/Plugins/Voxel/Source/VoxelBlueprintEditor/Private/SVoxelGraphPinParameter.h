@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -18,12 +18,16 @@ public:
 	void Construct(const FArguments& InArgs, UEdGraphPin* InGraphPinObj);
 
 	//~ Begin SGraphPin Interface
-	virtual void Tick(const FGeometry& AllottedGeometry, double InCurrentTime, float InDeltaTime) override;
+	virtual void Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime) override;
 	virtual TSharedRef<SWidget> GetDefaultValueWidget() override;
 	//~ End SGraphPin Interface
 
 private:
-	TWeakInterfacePtr<IVoxelParameterOverridesObjectOwner> OverridesOwner;
+	void UpdateParameterProvider(const TWeakInterfacePtr<IVoxelParameterProvider>& NewParameterProvider);
+	FVoxelGraphBlueprintParameter GetCachedParameter() const;
+
+private:
+	TWeakInterfacePtr<IVoxelParameterProvider> WeakParameterProvider;
 	FEdGraphPinReference AssetPinReference;
 	TSharedPtr<SVoxelGraphParameterComboBox> ParameterComboBox;
 

@@ -1,4 +1,4 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -11,9 +11,7 @@ struct VOXELGRAPHCORE_API FVoxelParameterPath
 	GENERATED_BODY()
 
 public:
-	TVoxelInlineArray<FGuid, 4> Guids;
-
-	explicit FVoxelParameterPath() = default;
+	TVoxelArray<FGuid, TVoxelInlineAllocator<4>> Guids;
 
 	//~ Begin TStructOpsTypeTraits Interface
 	bool Serialize(FArchive& Ar);
@@ -22,7 +20,6 @@ public:
 	//~ End TStructOpsTypeTraits Interface
 
 public:
-	static FVoxelParameterPath MakeEmpty();
 	static FVoxelParameterPath Make(const FGuid& Guid);
 
 	FString ToString() const;
@@ -30,20 +27,16 @@ public:
 	FVoxelParameterPath MakeChild(const FGuid& Guid) const;
 	FVoxelParameterPath MakeChild(const FVoxelParameterPath& Other) const;
 	bool StartsWith(const FVoxelParameterPath& Other) const;
-	FVoxelParameterPath MakeRelativeTo(const FVoxelParameterPath& BasePath) const;
+	FVoxelParameterPath MakeRelative(const FVoxelParameterPath& BasePath) const;
 
 public:
-	FORCEINLINE bool IsEmpty() const
-	{
-		return Guids.IsEmpty();
-	}
 	FORCEINLINE int32 Num() const
 	{
 		return Guids.Num();
 	}
 	FORCEINLINE FGuid Leaf() const
 	{
-		return Guids.Last();
+		return ensure(Guids.Num() > 0) ? Guids.Last() : FGuid();
 	}
 
 public:

@@ -1,9 +1,8 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "FunctionLibrary/VoxelMathFunctionLibrary.h"
 #include "VoxelGraphMigration.h"
-#include "Utilities/VoxelBufferMathUtilities.h"
-#include "Utilities/VoxelBufferTransformUtilities.h"
+#include "VoxelBufferUtilities.h"
 #include "VoxelMathFunctionLibraryImpl.ispc.generated.h"
 
 FVoxelTransformBuffer UVoxelMathFunctionLibrary::MakeTransform(
@@ -333,7 +332,7 @@ void UVoxelMathFunctionLibrary::SmoothMin(
 	FVoxelFloatBufferStorage Alpha;
 	Alpha.Allocate(Num);
 
-	ForeachVoxelBufferChunk_Parallel(Num, [&](const FVoxelBufferIterator& Iterator)
+	ForeachVoxelBufferChunk(Num, [&](const FVoxelBufferIterator& Iterator)
 	{
 		ispc::VoxelMathFunctionLibrary_SmoothMin(
 			A.GetData(Iterator),
@@ -366,7 +365,7 @@ void UVoxelMathFunctionLibrary::SmoothMax(
 	FVoxelFloatBufferStorage Alpha;
 	Alpha.Allocate(Num);
 
-	ForeachVoxelBufferChunk_Parallel(Num, [&](const FVoxelBufferIterator& Iterator)
+	ForeachVoxelBufferChunk(Num, [&](const FVoxelBufferIterator& Iterator)
 	{
 		ispc::VoxelMathFunctionLibrary_SmoothMax(
 			A.GetData(Iterator),
@@ -393,30 +392,23 @@ FVoxelQuaternionBuffer UVoxelMathFunctionLibrary::CombineRotation(
 	const FVoxelQuaternionBuffer& B) const
 {
 	CheckVoxelBuffersNum_Function(A, B);
-	return FVoxelBufferMathUtilities::Combine(A, B);
+	return FVoxelBufferUtilities::Combine(A, B);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
-
-FTransform UVoxelMathFunctionLibrary::CombineTransform(
-	const FTransform& A,
-	const FTransform& B) const
-{
-	return A * B;
-}
 
 FVoxelVectorBuffer UVoxelMathFunctionLibrary::TransformLocation(
 	const FVoxelVectorBuffer& Location,
 	const FTransform& Transform) const
 {
-	return FVoxelBufferTransformUtilities::ApplyTransform(Location, Transform);
+	return FVoxelBufferUtilities::ApplyTransform(Location, Transform);
 }
 
 FVoxelVectorBuffer UVoxelMathFunctionLibrary::InverseTransformLocation(
 	const FVoxelVectorBuffer& Location,
 	const FTransform& Transform) const
 {
-	return FVoxelBufferTransformUtilities::ApplyInverseTransform(Location, Transform);
+	return FVoxelBufferUtilities::ApplyInverseTransform(Location, Transform);
 }

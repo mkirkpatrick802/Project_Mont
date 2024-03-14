@@ -1,27 +1,23 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelNode.h"
-#include "VoxelGraph.h"
 #include "VoxelExecNode.h"
 #include "VoxelQueryCache.h"
 #include "VoxelTemplateNode.h"
 #include "VoxelSourceParser.h"
-#include "VoxelGraphEvaluator.h"
-#include "VoxelCompilationGraph.h"
+#include "VoxelGraph.h"
+#include "VoxelGraphExecutor.h"
+#include "VoxelCompiledGraph.h"
 
 DEFINE_UNIQUE_VOXEL_ID(FVoxelPinRuntimeId);
 DEFINE_VOXEL_INSTANCE_COUNTER(FVoxelNodeRuntime);
 
-TMap<FName, FVoxelNodeComputePtr> GVoxelNodeOutputNameToCompute;
-#if WITH_EDITOR
-TMap<const UScriptStruct*, int32> GVoxelNodeToLine;
-#endif
+TMap<FName, FVoxelNodeComputePtr> GVoxelNodeStaticComputes;
 
 void RegisterVoxelNodeComputePtr(
 	const UScriptStruct* Node,
 	const FName PinName,
-	const FVoxelNodeComputePtr Ptr,
-	const int32 Line)
+	const FVoxelNodeComputePtr Ptr)
 {
 	VOXEL_FUNCTION_COUNTER();
 
@@ -36,27 +32,10 @@ void RegisterVoxelNodeComputePtr(
 
 		const FName Name(ChildNode->GetStructCPPName() + "." + PinName.ToString());
 
-		ensure(!GVoxelNodeOutputNameToCompute.Contains(Name));
-		GVoxelNodeOutputNameToCompute.Add(Name, Ptr);
+		ensure(!GVoxelNodeStaticComputes.Contains(Name));
+		GVoxelNodeStaticComputes.Add(Name, Ptr);
 	}
-
-#if WITH_EDITOR
-	GVoxelNodeToLine.FindOrAdd(Node, Line);
-#endif
 }
-
-#if WITH_EDITOR
-bool FindVoxelNodeComputeLine(const UScriptStruct* Node, int32& OutLine)
-{
-	if (const int32* LinePtr = GVoxelNodeToLine.Find(Node))
-	{
-		OutLine = *LinePtr;
-		return true;
-	}
-
-	return false;
-}
-#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -89,7 +68,9 @@ VOXEL_RUN_ON_STARTUP_GAME(FixupVoxelNodes)
 			}
 			else if (Parent == FVoxelExecNode::StaticStruct())
 			{
-				ensure(Struct->GetStructCPPName().StartsWith("FVoxelExecNode_"));
+				ensure(Struct->HasMetaData("DisplayName") || Struct->HasMetaData("Autocast"));
+				ensure(Struct->GetStructCPPName().StartsWith("FVoxel"));
+				ensure(Struct->GetStructCPPName().EndsWith("ExecNode"));
 			}
 			else
 			{
@@ -109,8 +90,7 @@ VOXEL_RUN_ON_STARTUP_GAME(FixupVoxelNodes)
 		}
 
 		FString Tooltip = Struct->GetToolTipText().ToString();
-		if (Tooltip.RemoveFromStart("Voxel Node ") ||
-			Tooltip.RemoveFromStart("Voxel Exec Node "))
+		if (Tooltip.RemoveFromStart("Voxel Node "))
 		{
 			Struct->SetMetaData("Tooltip", *Tooltip);
 		}
@@ -122,35 +102,18 @@ VOXEL_RUN_ON_STARTUP_GAME(FixupVoxelNodes)
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-FVoxelFutureValue FVoxelNodeRuntime::Get(
-	const FVoxelPinRef& Pin,
-	const FVoxelQuery& Query) const
+FVoxelFutureValue FVoxelNodeRuntime::Get(const FVoxelPinRef& Pin, const FVoxelQuery& Query) const
 {
 	const FPinData& PinData = GetPinData(Pin);
 	checkVoxelSlow(PinData.bIsInput);
 	ensureVoxelSlow(!PinData.Metadata.bConstantPin);
 
-	FVoxelFutureValue Value = (*PinData.Compute)(Query.EnterScope(GetNodeRef(), Pin));
+	FVoxelFutureValue Value = (*PinData.Compute)(Query);
 	checkVoxelSlow(Value.IsValid());
 	checkVoxelSlow(
 		PinData.Type.CanBeCastedTo(Value.GetParentType()) ||
 		Value.GetParentType().CanBeCastedTo(PinData.Type));
 	return Value;
-}
-
-TVoxelArray<FVoxelFutureValue> FVoxelNodeRuntime::Get(
-	const FVoxelVariadicPinRef& VariadicPin,
-	const FVoxelQuery& Query) const
-{
-	const TVoxelArray<FName>& PinNames = VariadicPinNameToPinNames[VariadicPin];
-
-	TVoxelArray<FVoxelFutureValue> Result;
-	Result.Reserve(PinNames.Num());
-	for (const FName Pin : PinNames)
-	{
-		Result.Add(Get(FVoxelPinRef(Pin), Query));
-	}
-	return Result;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -159,15 +122,15 @@ TVoxelArray<FVoxelFutureValue> FVoxelNodeRuntime::Get(
 
 TSharedRef<const FVoxelComputeValue> FVoxelNodeRuntime::GetCompute(
 	const FVoxelPinRef& Pin,
-	const TSharedRef<FVoxelTerminalGraphInstance>& TerminalGraphInstance) const
+	const TSharedRef<FVoxelQueryContext>& Context) const
 {
-	const TSharedPtr<FPinData> PinData = NameToPinData.FindRef(Pin);
+	const TSharedPtr<FPinData> PinData = PinDatas.FindRef(Pin);
 	checkVoxelSlow(PinData);
 	ensureVoxelSlow(!PinData->Metadata.bConstantPin);
 
-	return MakeVoxelShared<FVoxelComputeValue>([TerminalGraphInstance, Compute = PinData->Compute.ToSharedRef()](const FVoxelQuery& InQuery)
+	return MakeVoxelShared<FVoxelComputeValue>([Context, Compute = PinData->Compute.ToSharedRef()](const FVoxelQuery& InQuery)
 	{
-		const FVoxelQuery NewQuery = InQuery.MakeNewQuery(TerminalGraphInstance);
+		const FVoxelQuery NewQuery = InQuery.MakeNewQuery(Context);
 		const FVoxelQueryScope Scope(NewQuery);
 		return (*Compute)(NewQuery);
 	});
@@ -175,11 +138,9 @@ TSharedRef<const FVoxelComputeValue> FVoxelNodeRuntime::GetCompute(
 
 FVoxelDynamicValueFactory FVoxelNodeRuntime::MakeDynamicValueFactory(const FVoxelPinRef& Pin) const
 {
-	const TSharedPtr<FPinData> PinData = NameToPinData.FindRef(Pin);
+	const TSharedPtr<FPinData> PinData = PinDatas.FindRef(Pin);
 	checkVoxelSlow(PinData);
 	ensureVoxelSlow(!PinData->Metadata.bConstantPin);
-	// If we're not a VirtualPin the executor won't be kept alive by Compute
-	checkVoxelSlow(PinData->Metadata.bVirtualPin);
 	return FVoxelDynamicValueFactory(PinData->Compute.ToSharedRef(), PinData->Type, PinData->StatName);
 }
 
@@ -189,7 +150,7 @@ FVoxelDynamicValueFactory FVoxelNodeRuntime::MakeDynamicValueFactory(const FVoxe
 
 FVoxelPinRuntimeId GetVoxelPinRuntimeId(const FVoxelGraphPinRef& PinRef)
 {
-	static FVoxelCriticalSection CriticalSection;
+	static FVoxelFastCriticalSection CriticalSection;
 	VOXEL_SCOPE_LOCK(CriticalSection);
 
 	static TMap<FVoxelGraphPinRef, FVoxelPinRuntimeId> PinRefToId;
@@ -244,19 +205,20 @@ FVoxelNode& FVoxelNode::operator=(const FVoxelNode& Other)
 	FlushDeferredPins();
 	Other.FlushDeferredPins();
 
-	PrivateNameToPinBackup.Reset();
-	PrivateNameToPin.Reset();
-	PrivateNameToVariadicPin.Reset();
-	PrivatePinsOrder.Reset();
+	InternalPinBackups.Reset();
+	InternalPins.Reset();
+	InternalPinArrays.Reset();
+	InternalPinsOrder.Reset();
 
 	SortOrderCounter = Other.SortOrderCounter;
 
-	TVoxelArray<FDeferredPin> Pins = Other.PrivateNameToPinBackup.ValueArray();
+	TArray<FDeferredPin> Pins;
+	Other.InternalPinBackups.GenerateValueArray(Pins);
 
-	// Register variadic pins first
+	// Register arrays first
 	Pins.Sort([](const FDeferredPin& A, const FDeferredPin& B)
 	{
-		return A.IsVariadicRoot() > B.IsVariadicRoot();
+		return A.ArrayOwner.IsNone() > B.ArrayOwner.IsNone();
 	});
 
 	for (const FDeferredPin& Pin : Pins)
@@ -264,7 +226,7 @@ FVoxelNode& FVoxelNode::operator=(const FVoxelNode& Other)
 		RegisterPin(Pin, false);
 	}
 
-	PrivatePinsOrder.Append(Other.PrivatePinsOrder);
+	InternalPinsOrder.Append(Other.InternalPinsOrder);
 
 	LoadSerializedData(Other.GetSerializedData());
 	UpdateStats();
@@ -277,18 +239,18 @@ int64 FVoxelNode::GetAllocatedSize() const
 	int64 AllocatedSize = GetStruct()->GetStructureSize();
 
 	AllocatedSize += DeferredPins.GetAllocatedSize();
-	AllocatedSize += PrivateNameToPinBackup.GetAllocatedSize();
-	AllocatedSize += PrivatePinsOrder.GetAllocatedSize();
-	AllocatedSize += PrivateNameToPin.GetAllocatedSize();
-	AllocatedSize += PrivateNameToPin.Num() * sizeof(FVoxelPin);
-	AllocatedSize += PrivateNameToVariadicPin.GetAllocatedSize();
+	AllocatedSize += InternalPinBackups.GetAllocatedSize();
+	AllocatedSize += InternalPinsOrder.GetAllocatedSize();
+	AllocatedSize += InternalPins.GetAllocatedSize();
+	AllocatedSize += InternalPins.Num() * sizeof(FVoxelPin);
+	AllocatedSize += InternalPinArrays.GetAllocatedSize();
 #if WITH_EDITOR
 	AllocatedSize += ExposedPinValues.GetAllocatedSize();
 	AllocatedSize += ExposedPins.GetAllocatedSize();
 #endif
 	AllocatedSize += ReturnToPoolFuncs.GetAllocatedSize();
 
-	for (const auto& It : PrivateNameToVariadicPin)
+	for (auto& It : InternalPinArrays)
 	{
 		AllocatedSize += It.Value->Pins.GetAllocatedSize();
 	}
@@ -320,12 +282,12 @@ FString FVoxelNode::GetCategory() const
 FString FVoxelNode::GetDisplayName() const
 {
 	if (GetMetadataContainer().HasMetaData(STATIC_FNAME("Autocast")) &&
-		ensure(PrivatePinsOrder.Num() > 0) &&
-		ensure(FindPin(PrivatePinsOrder[0])))
+		ensure(InternalPinsOrder.Num() > 0) &&
+		ensure(FindPin(InternalPinsOrder[0])))
 	{
 		ensure(!GetMetadataContainer().HasMetaData(STATIC_FNAME("DisplayName")));
 
-		const FString FromType = FindPin(PrivatePinsOrder[0])->GetType().GetInnerType().ToString();
+		const FString FromType = FindPin(InternalPinsOrder[0])->GetType().GetInnerType().ToString();
 		const FString ToType = GetUniqueOutputPin().GetType().GetInnerType().ToString();
 		{
 			FString ExpectedName = FromType + "To" + ToType;
@@ -341,13 +303,13 @@ FString FVoxelNode::GetDisplayName() const
 FString FVoxelNode::GetTooltip() const
 {
 	if (GetMetadataContainer().HasMetaData(STATIC_FNAME("Autocast")) &&
-		ensure(PrivatePinsOrder.Num() > 0) &&
-		ensure(FindPin(PrivatePinsOrder[0])))
+		ensure(InternalPinsOrder.Num() > 0) &&
+		ensure(FindPin(InternalPinsOrder[0])))
 	{
 		ensure(!GetMetadataContainer().HasMetaData(STATIC_FNAME("Tooltip")));
 		ensure(!GetMetadataContainer().HasMetaData(STATIC_FNAME("ShortTooltip")));
 
-		const FString FromType = FindPin(PrivatePinsOrder[0])->GetType().GetInnerType().ToString();
+		const FString FromType = FindPin(InternalPinsOrder[0])->GetType().GetInnerType().ToString();
 		const FString ToType = GetUniqueOutputPin().GetType().GetInnerType().ToString();
 
 		return "Cast from " + FromType + " to " + ToType;
@@ -363,7 +325,7 @@ FString FVoxelNode::GetTooltip() const
 
 void FVoxelNode::ReturnToPool()
 {
-	for (const auto& It : NodeRuntime->NameToPinData)
+	for (const auto& It : NodeRuntime->PinDatas)
 	{
 		if (It.Value->bIsInput)
 		{
@@ -384,12 +346,12 @@ void FVoxelNode::ReturnToPool()
 FVoxelComputeValue FVoxelNode::CompileCompute(const FName PinName) const
 {
 	const FName Name = FName(GetStruct()->GetStructCPPName() + "." + PinName.ToString());
-	if (!GVoxelNodeOutputNameToCompute.Contains(Name))
+	if (!GVoxelNodeStaticComputes.Contains(Name))
 	{
 		return nullptr;
 	}
 
-	const FVoxelNodeComputePtr Ptr = GVoxelNodeOutputNameToCompute.FindChecked(Name);
+	const FVoxelNodeComputePtr Ptr = GVoxelNodeStaticComputes.FindChecked(Name);
 	const FVoxelNodeRuntime::FPinData& PinData = GetNodeRuntime().GetPinData(PinName);
 
 	if (!ensure(!PinData.Type.IsWildcard()))
@@ -397,27 +359,26 @@ FVoxelComputeValue FVoxelNode::CompileCompute(const FName PinName) const
 		return {};
 	}
 
-	return [this, Ptr, &PinData](const FVoxelQuery& Query) -> FVoxelFutureValue
+	return [this, Ptr, Type = PinData.Type, PinId = PinData.PinId](const FVoxelQuery& Query) -> FVoxelFutureValue
 	{
 		checkVoxelSlow(FVoxelTaskReferencer::Get().IsReferenced(this));
 		ON_SCOPE_EXIT
 		{
 			checkVoxelSlow(FVoxelTaskReferencer::Get().IsReferenced(this));
 		};
-		FVoxelQueryScope Scope(Query);
 
 		// No caching for call nodes
 		if (GetNodeRuntime().IsCallNode())
 		{
 			return
-				MakeVoxelTaskImpl(PinData.StatName)
-				.Execute(PinData.Type, [this, Ptr, Query]
+				MakeVoxelTask()
+				.Execute(Type, [this, Ptr, Query]
 				{
 					return (*Ptr)(*this, Query.EnterScope(*this));
 				});
 		}
 
-		FVoxelQueryCache::FEntry& Entry = Query.GetQueryCache().FindOrAddEntry(PinData.PinId);
+		FVoxelQueryCache::FEntry& Entry = Query.GetQueryCache().FindOrAddEntry(PinId);
 
 		VOXEL_SCOPE_LOCK(Entry.CriticalSection);
 
@@ -426,8 +387,8 @@ FVoxelComputeValue FVoxelNode::CompileCompute(const FName PinName) const
 			// Always wrap in a task to sanitize the values,
 			// otherwise errors propagate to other nodes and are impossible to track down
 			Entry.Value =
-				MakeVoxelTaskImpl(PinData.StatName)
-				.Execute(PinData.Type, [this, Ptr, Query]
+				MakeVoxelTask()
+				.Execute(Type, [this, Ptr, Query]
 				{
 					return (*Ptr)(*this, Query.EnterScope(*this));
 				});
@@ -449,10 +410,9 @@ uint32 FVoxelNode::GetNodeHash() const
 
 	uint64 Hash = FVoxelUtilities::MurmurHash(GetStruct());
 	int32 Index = 0;
-	// Only hash our own properties, handling child structs properties is too messy/not required
-	for (const FProperty& Property : GetStructProperties(StaticStructFast<FVoxelNode>()))
+	for (const FProperty& Property : GetStructProperties(StaticStruct()))
 	{
-		const uint32 PropertyHash = FVoxelUtilities::HashProperty(Property, Property.ContainerPtrToValuePtr<void>(this));
+		const uint32 PropertyHash = FVoxelObjectUtilities::HashProperty(Property, Property.ContainerPtrToValuePtr<void>(this));
 		Hash ^= FVoxelUtilities::MurmurHash(PropertyHash, Index++);
 	}
 	return Hash;
@@ -569,6 +529,7 @@ void FVoxelNode::PromotePin(FVoxelPin& Pin, const FVoxelPinType& NewType)
 				OtherPin.SetType(OtherPin.GetType().GetInnerType());
 			}
 		}
+		return;
 	}
 
 	ensure(Pin.BaseType.IsWildcard());
@@ -653,11 +614,6 @@ TOptional<bool> FVoxelNode::AreTemplatePinsBuffersImpl() const
 #if WITH_EDITOR
 bool FVoxelNode::IsPinHidden(const FVoxelPin& Pin) const
 {
-	if (Pin.Metadata.bHidePin)
-	{
-		return true;
-	}
-
 	if (!Pin.Metadata.bShowInDetail)
 	{
 		return false;
@@ -744,99 +700,101 @@ FVoxelPin& FVoxelNode::GetUniqueOutputPin()
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-FName FVoxelNode::Variadic_AddPin(const FName VariadicPinName, FName PinName)
+FName FVoxelNode::AddPinToArray(const FName ArrayName, FName PinName)
 {
 	FlushDeferredPins();
 
-	const TSharedPtr<FVariadicPin> VariadicPin = PrivateNameToVariadicPin.FindRef(VariadicPinName);
-	if (!ensure(VariadicPin))
+	const TSharedPtr<FPinArray> PinArray = InternalPinArrays.FindRef(ArrayName);
+	if (!ensure(PinArray))
 	{
 		return {};
 	}
 
 	if (PinName.IsNone())
 	{
-		PinName = VariadicPinName + TEXTVIEW("_0");
+		PinName = ArrayName + "_0";
 
-		while (
-			PrivateNameToPin.Contains(PinName) ||
-			PrivateNameToVariadicPin.Contains(PinName))
+		while (InternalPins.Contains(PinName) || InternalPinArrays.Contains(PinName))
 		{
 			PinName.SetNumber(PinName.GetNumber() + 1);
 		}
 	}
 
-	if (!ensure(!PrivateNameToPin.Contains(PinName)) ||
-		!ensure(!PrivateNameToVariadicPin.Contains(PinName)))
+	if (!ensure(!InternalPins.Contains(PinName)) ||
+		!ensure(!InternalPinArrays.Contains(PinName)))
 	{
 		return {};
 	}
 
-	FDeferredPin Pin = VariadicPin->PinTemplate;
+	FDeferredPin Pin = PinArray->PinTemplate;
 	Pin.Name = PinName;
 	RegisterPin(Pin);
 
-	FixupVariadicPinNames(VariadicPinName);
+	FixupArrayNames(ArrayName);
 
 	return PinName;
 }
 
-FName FVoxelNode::Variadic_InsertPin(const FName VariadicPinName, const int32 Position)
+FName FVoxelNode::InsertPinToArrayPosition(FName ArrayName, int32 Position)
 {
 	FlushDeferredPins();
 
-	const TSharedPtr<FVariadicPin> VariadicPin = PrivateNameToVariadicPin.FindRef(VariadicPinName);
-	if (!ensure(VariadicPin))
+	const TSharedPtr<FPinArray> PinArray = InternalPinArrays.FindRef(ArrayName);
+	if (!ensure(PinArray))
 	{
 		return {};
 	}
 
-	FName PinName = VariadicPinName + TEXTVIEW("_0");
-	while (
-		PrivateNameToPin.Contains(PinName) ||
-		PrivateNameToVariadicPin.Contains(PinName))
+	FName PinName = ArrayName + "_0";
+	while (InternalPins.Contains(PinName) || InternalPinArrays.Contains(PinName))
 	{
 		PinName.SetNumber(PinName.GetNumber() + 1);
 	}
 
-	FDeferredPin Pin = VariadicPin->PinTemplate;
+	if (!ensure(!InternalPins.Contains(PinName)) ||
+		!ensure(!InternalPinArrays.Contains(PinName)))
+	{
+		return {};
+	}
+
+	FDeferredPin Pin = PinArray->PinTemplate;
 	Pin.Name = PinName;
 	RegisterPin(Pin);
 	SortPins();
 
-	for (int32 Index = Position; Index < VariadicPin->Pins.Num() - 1; Index++)
+	for (int32 Index = Position; Index < PinArray->Pins.Num() - 1; Index++)
 	{
-		VariadicPin->Pins.Swap(Index, VariadicPin->Pins.Num() - 1);
+		PinArray->Pins.Swap(Index, PinArray->Pins.Num() - 1);
 	}
 
-	FixupVariadicPinNames(VariadicPinName);
+	FixupArrayNames(ArrayName);
 
 	return PinName;
 }
 
-void FVoxelNode::FixupVariadicPinNames(const FName VariadicPinName)
+void FVoxelNode::FixupArrayNames(FName ArrayName)
 {
 	FlushDeferredPins();
 
-	const TSharedPtr<FVariadicPin> VariadicPin = PrivateNameToVariadicPin.FindRef(VariadicPinName);
-	if (!ensure(VariadicPin))
+	const TSharedPtr<FPinArray> PinArray = InternalPinArrays.FindRef(ArrayName);
+	if (!ensure(PinArray))
 	{
 		return;
 	}
 
-	for (int32 Index = 0; Index < VariadicPin->Pins.Num(); Index++)
+	for (int32 Index = 0; Index < PinArray->Pins.Num(); Index++)
 	{
-		const FName ArrayPinName = VariadicPin->Pins[Index];
-		const TSharedPtr<FVoxelPin> ArrayPin = PrivateNameToPin.FindRef(ArrayPinName);
+		const FName ArrayPinName = PinArray->Pins[Index];
+		const TSharedPtr<FVoxelPin> ArrayPin = InternalPins.FindRef(ArrayPinName);
 		if (!ensure(ArrayPin))
 		{
 			continue;
 		}
 
-		ConstCast(ArrayPin->SortOrder) = VariadicPin->PinTemplate.SortOrder + Index / 100.f;
+		ConstCast(ArrayPin->SortOrder) = PinArray->PinTemplate.SortOrder + Index / 100.f;
 
 #if WITH_EDITOR
-		ConstCast(ArrayPin->Metadata.DisplayName) = FName::NameToDisplayString(VariadicPinName.ToString(), false) + " " + FString::FromInt(Index);
+		ConstCast(ArrayPin->Metadata.DisplayName) = FName::NameToDisplayString(ArrayName.ToString(), false) + " " + FString::FromInt(Index);
 #endif
 	}
 
@@ -872,6 +830,7 @@ FName FVoxelNode::CreatePin(
 		ensure(Metadata.DefaultValue.IsEmpty());
 #endif
 
+		ensure(!Metadata.bArrayPin);
 		ensure(!Metadata.bVirtualPin);
 		ensure(!Metadata.bConstantPin);
 		ensure(!Metadata.bDisplayLast);
@@ -917,17 +876,17 @@ FName FVoxelNode::CreatePin(
 
 	if (Metadata.bDisplayLast)
 	{
-		PrivatePinsOrder.Add(Name);
+		InternalPinsOrder.Add(Name);
 		DisplayLastPins++;
 	}
 	else
 	{
-		PrivatePinsOrder.Add(Name);
+		InternalPinsOrder.Add(Name);
 		if (DisplayLastPins > 0)
 		{
-			for (int32 Index = PrivatePinsOrder.Num() - DisplayLastPins - 1; Index < PrivatePinsOrder.Num() - 1; Index++)
+			for (int32 Index = InternalPinsOrder.Num() - DisplayLastPins - 1; Index < InternalPinsOrder.Num() - 1; Index++)
 			{
-				PrivatePinsOrder.Swap(Index, PrivatePinsOrder.Num() - 1);
+				InternalPinsOrder.Swap(Index, InternalPinsOrder.Num() - 1);
 			}
 		}
 	}
@@ -941,15 +900,15 @@ void FVoxelNode::RemovePin(const FName Name)
 
 	const TSharedPtr<FVoxelPin> Pin = FindPin(Name);
 	if (ensure(Pin) &&
-		!Pin->VariadicPinName.IsNone() &&
-		ensure(PrivateNameToVariadicPin.Contains(Pin->VariadicPinName)))
+		!Pin->ArrayOwner.IsNone() &&
+		ensure(InternalPinArrays.Contains(Pin->ArrayOwner)))
 	{
-		ensure(PrivateNameToVariadicPin[Pin->VariadicPinName]->Pins.Remove(Name));
+		ensure(InternalPinArrays[Pin->ArrayOwner]->Pins.Remove(Name));
 	}
 
-	ensure(PrivateNameToPinBackup.Remove(Name));
-	ensure(PrivateNameToPin.Remove(Name));
-	PrivatePinsOrder.Remove(Name);
+	ensure(InternalPinBackups.Remove(Name));
+	ensure(InternalPins.Remove(Name));
+	InternalPinsOrder.Remove(Name);
 
 #if WITH_EDITOR
 	if (Pin->Metadata.bShowInDetail)
@@ -982,15 +941,7 @@ void FVoxelNode::RegisterPin(FDeferredPin Pin, const bool bApplyMinNum)
 	ensure(!Pin.Name.IsNone());
 	ensure(Pin.BaseType.IsValid());
 
-	if (Pin.bIsInput &&
-		// Don't use IsA as we might be in a constructor
-		Internal_GetStruct()->IsChildOf(StaticStructFast<FVoxelExecNode>()))
-	{
-		// Exec nodes can only have virtual pins
-		ensure(Pin.Metadata.bVirtualPin);
-	}
-
-	if (Pin.VariadicPinName.IsNone() &&
+	if (Pin.ArrayOwner.IsNone() &&
 		Pin.SortOrder == 0)
 	{
 		Pin.SortOrder = SortOrderCounter++;
@@ -1007,14 +958,15 @@ void FVoxelNode::RegisterPin(FDeferredPin Pin, const bool bApplyMinNum)
 		return;
 	}
 
-	PrivateNameToPinBackup.Add_EnsureNew(Pin.Name, Pin);
+	ensure(!InternalPinBackups.Contains(Pin.Name));
+	InternalPinBackups.Add(Pin.Name, Pin);
 
 	const FString PinName = Pin.Name.ToString();
 
 #if WITH_EDITOR
 	if (!Pin.Metadata.Tooltip.IsSet())
 	{
-		Pin.Metadata.Tooltip = MakeAttributeLambda([Struct = GetStruct(), Name = Pin.VariadicPinName.IsNone() ? Pin.Name : Pin.VariadicPinName]
+		Pin.Metadata.Tooltip = MakeAttributeLambda([Struct = GetStruct(), Name = Pin.ArrayOwner.IsNone() ? Pin.Name : Pin.ArrayOwner]
 		{
 			return GVoxelSourceParser->GetPinTooltip(Struct, Name);
 		});
@@ -1046,41 +998,43 @@ void FVoxelNode::RegisterPin(FDeferredPin Pin, const bool bApplyMinNum)
 	}
 #endif
 
-	if (EnumHasAnyFlags(Pin.Flags, EVoxelPinFlags::VariadicPin))
+	if (EnumHasAnyFlags(Pin.Flags, EVoxelPinFlags::ArrayPin))
 	{
-		ensure(Pin.VariadicPinName.IsNone());
+		ensure(Pin.ArrayOwner.IsNone());
 
 		FDeferredPin PinTemplate = Pin;
-		PinTemplate.VariadicPinName = Pin.Name;
-		EnumRemoveFlags(PinTemplate.Flags, EVoxelPinFlags::VariadicPin);
+		PinTemplate.ArrayOwner = Pin.Name;
+		EnumRemoveFlags(PinTemplate.Flags, EVoxelPinFlags::ArrayPin);
 
-		PrivateNameToVariadicPin.Add_EnsureNew(Pin.Name, MakeVoxelShared<FVariadicPin>(PinTemplate));
+		ensure(!InternalPinArrays.Contains(Pin.Name));
+		InternalPinArrays.Add(Pin.Name, MakeVoxelShared<FPinArray>(PinTemplate));
 
 		if (bApplyMinNum)
 		{
-			for (int32 Index = 0; Index < Pin.MinVariadicNum; Index++)
+			for (int32 Index = 0; Index < Pin.MinArrayNum; Index++)
 			{
-				Variadic_AddPin(Pin.Name);
+				AddPinToArray(Pin.Name);
 			}
 		}
 	}
 	else
 	{
-		if (!Pin.VariadicPinName.IsNone() &&
-			ensure(PrivateNameToVariadicPin.Contains(Pin.VariadicPinName)))
+		if (!Pin.ArrayOwner.IsNone() &&
+			ensure(InternalPinArrays.Contains(Pin.ArrayOwner)))
 		{
-			FVariadicPin& VariadicPin = *PrivateNameToVariadicPin[Pin.VariadicPinName];
+			FPinArray& PinArray = *InternalPinArrays[Pin.ArrayOwner];
 #if WITH_EDITOR
-			Pin.Metadata.Category = Pin.VariadicPinName.ToString();
+			Pin.Metadata.Category = Pin.ArrayOwner.ToString();
 #endif
-			VariadicPin.Pins.Add(Pin.Name);
+			PinArray.Pins.Add(Pin.Name);
 		}
 
-		PrivateNameToPin.Add_EnsureNew(Pin.Name, MakeSharedCopy(FVoxelPin(
+		ensure(!InternalPins.Contains(Pin.Name));
+		InternalPins.Add(Pin.Name, MakeSharedCopy(FVoxelPin(
 			Pin.Name,
 			Pin.bIsInput,
 			Pin.SortOrder,
-			Pin.VariadicPinName,
+			Pin.ArrayOwner,
 			Pin.Flags,
 			Pin.BaseType,
 			Pin.ChildType,
@@ -1092,7 +1046,7 @@ void FVoxelNode::RegisterPin(FDeferredPin Pin, const bool bApplyMinNum)
 
 void FVoxelNode::SortPins()
 {
-	PrivateNameToPin.ValueSort([](const TSharedPtr<FVoxelPin>& A, const TSharedPtr<FVoxelPin>& B)
+	InternalPins.ValueSort([](const TSharedPtr<FVoxelPin>& A, const TSharedPtr<FVoxelPin>& B)
 	{
 		if (A->bIsInput != B->bIsInput)
 		{
@@ -1103,21 +1057,21 @@ void FVoxelNode::SortPins()
 	});
 }
 
-void FVoxelNode::SortVariadicPinNames(const FName VariadicPinName)
+void FVoxelNode::SortArrayPins(FName PinArrayName)
 {
 	VOXEL_FUNCTION_COUNTER();
 
-	const TSharedPtr<FVariadicPin> VariadicPin = PrivateNameToVariadicPin.FindRef(VariadicPinName);
-	if (!VariadicPin)
+	const TSharedPtr<FPinArray> PinArray = InternalPinArrays.FindRef(PinArrayName);
+	if (!PinArray)
 	{
 		return;
 	}
 
 	TArray<int32> SortOrders;
 	TArray<TSharedPtr<FVoxelPin>> AffectedPins;
-	for (const FName PinName : VariadicPin->Pins)
+	for (const FName PinName : PinArray->Pins)
 	{
-		if (const TSharedPtr<FVoxelPin> Pin = PrivateNameToPin.FindRef(PinName))
+		if (TSharedPtr<FVoxelPin> Pin = InternalPins.FindRef(PinName))
 		{
 			SortOrders.Add(Pin->SortOrder);
 		}
@@ -1139,7 +1093,7 @@ FVoxelNodeSerializedData FVoxelNode::GetSerializedData() const
 	FVoxelNodeSerializedData SerializedData;
 	SerializedData.bIsValid = true;
 
-	for (const auto& It : PrivateNameToPin)
+	for (const auto& It : InternalPins)
 	{
 		const FVoxelPin& Pin = *It.Value;
 		if (!Pin.IsPromotable())
@@ -1147,14 +1101,14 @@ FVoxelNodeSerializedData FVoxelNode::GetSerializedData() const
 			continue;
 		}
 
-		SerializedData.NameToPinType.Add(Pin.Name, Pin.GetType());
+		SerializedData.PinTypes.Add(Pin.Name, Pin.GetType());
 	}
 
-	for (const auto& It : PrivateNameToVariadicPin)
+	for (const auto& It : InternalPinArrays)
 	{
-		FVoxelNodeVariadicPinSerializedData VariadicPinSerializedData;
-		VariadicPinSerializedData.PinNames = It.Value->Pins;
-		SerializedData.VariadicPinNameToSerializedData.Add(It.Key, VariadicPinSerializedData);
+		FVoxelNodeSerializedArrayData ArrayData;
+		ArrayData.PinNames = It.Value->Pins;
+		SerializedData.ArrayDatas.Add(It.Key, ArrayData);
 	}
 
 #if WITH_EDITOR
@@ -1177,55 +1131,49 @@ void FVoxelNode::LoadSerializedData(const FVoxelNodeSerializedData& SerializedDa
 
 	FlushDeferredPins();
 
-	for (const auto& It : PrivateNameToVariadicPin)
+	for (const auto& It : InternalPinArrays)
 	{
-		FVariadicPin& VariadicPin = *It.Value;
+		FPinArray& PinArray = *It.Value;
 
-		const TVoxelArray<FName> Pins = VariadicPin.Pins;
+		const TVoxelArray<FName> Pins = PinArray.Pins;
 		for (const FName Name : Pins)
 		{
 			RemovePin(Name);
 		}
-		ensure(VariadicPin.Pins.Num() == 0);
+		ensure(PinArray.Pins.Num() == 0);
 	}
 
-	for (const auto& It : SerializedData.VariadicPinNameToSerializedData)
+	for (const auto& It : SerializedData.ArrayDatas)
 	{
-		const TSharedPtr<FVariadicPin> VariadicPin = PrivateNameToVariadicPin.FindRef(It.Key);
-		if (!ensureVoxelSlow(VariadicPin))
+		const TSharedPtr<FPinArray> PinArray = InternalPinArrays.FindRef(It.Key);
+		if (!ensure(PinArray))
 		{
 			continue;
 		}
 
 		for (const FName Name : It.Value.PinNames)
 		{
-			Variadic_AddPin(It.Key, Name);
+			AddPinToArray(It.Key, Name);
 		}
 	}
 
 	// Ensure MinNum is applied
-	for (const auto& It : PrivateNameToVariadicPin)
+	for (const auto& It : InternalPinArrays)
 	{
-		FVariadicPin& VariadicPin = *It.Value;
+		FPinArray& PinArray = *It.Value;
 
-		for (int32 Index = VariadicPin.Pins.Num(); Index < VariadicPin.PinTemplate.MinVariadicNum; Index++)
+		for (int32 Index = PinArray.Pins.Num(); Index < PinArray.PinTemplate.MinArrayNum; Index++)
 		{
-			Variadic_AddPin(It.Key);
+			AddPinToArray(It.Key);
 		}
 	}
 
-	for (const auto& It : SerializedData.NameToPinType)
+	for (const auto& It : SerializedData.PinTypes)
 	{
-		const TSharedPtr<FVoxelPin> Pin = PrivateNameToPin.FindRef(It.Key);
+		const TSharedPtr<FVoxelPin> Pin = InternalPins.FindRef(It.Key);
 		if (!Pin ||
 			!Pin->IsPromotable())
 		{
-			continue;
-		}
-
-		if (!It.Value.IsValid())
-		{
-			// Old type that was removed
 			continue;
 		}
 
@@ -1250,9 +1198,8 @@ void FVoxelNode::InitializeNodeRuntime(
 	const bool bIsCallNode)
 {
 	VOXEL_FUNCTION_COUNTER();
-	ensure(NodeRef.TerminalGraphRef.Graph.IsValid() || bIsCallNode);
+	ensure(NodeRef.Graph.IsValid() || bIsCallNode);
 	ensure(!NodeRef.NodeId.IsNone() || bIsCallNode);
-	ensure(!NodeRef.IsDeleted());
 
 	FlushDeferredPins();
 
@@ -1268,12 +1215,11 @@ void FVoxelNode::InitializeNodeRuntime(
 	NodeRuntime->AreTemplatePinsBuffers = AreTemplatePinsBuffersImpl();
 	NodeRuntime->bIsCallNode = bIsCallNode;
 
-	for (const auto& It : PrivateNameToVariadicPin)
+	for (const auto& It : InternalPinArrays)
 	{
-		NodeRuntime->VariadicPinNameToPinNames.Add_CheckNew(It.Key, It.Value->Pins);
+		NodeRuntime->PinArrays.Add(It.Key, It.Value->Pins);
 	}
 
-	// Make sure pin datas are available when pre-compiling/compiling
 	for (const FVoxelPin& Pin : GetPins())
 	{
 		const TSharedRef<FVoxelNodeRuntime::FPinData> PinData = MakeVoxelShared<FVoxelNodeRuntime::FPinData>(
@@ -1283,14 +1229,14 @@ void FVoxelNode::InitializeNodeRuntime(
 			FVoxelGraphPinRef{ NodeRef, Pin.Name },
 			Pin.Metadata);
 
-		NodeRuntime->NameToPinData.Add_CheckNew(Pin.Name, PinData);
+		NodeRuntime->PinDatas.Add(Pin.Name, PinData);
 	}
 
 	PreCompile();
 
 	for (const FVoxelPin& Pin : GetPins())
 	{
-		FVoxelNodeRuntime::FPinData& PinData = *NodeRuntime->NameToPinData[Pin.Name];
+		FVoxelNodeRuntime::FPinData& PinData = *NodeRuntime->PinDatas[Pin.Name];
 
 		if (Pin.bIsInput)
 		{
@@ -1301,26 +1247,11 @@ void FVoxelNode::InitializeNodeRuntime(
 					NodeRef,
 					Pin.Name
 				};
-				const TSharedRef<FVoxelGraphEvaluatorRef> EvaluatorRef = GVoxelGraphEvaluatorManager->MakeEvaluatorRef_GameThread(PinRef);
-
-				PinData.Compute = MakeVoxelShared<FVoxelComputeValue>([
-					Type = Pin.GetType(),
-					EvaluatorRef](const FVoxelQuery& Query)
-				{
-					// Wrap in a task to check type
-					return
-						MakeVoxelTask()
-						.Execute(Type, [=]
-						{
-							return EvaluatorRef->Compute(Query);
-						});
-				});
+				PinData.Compute = GVoxelGraphExecutorManager->MakeCompute_GameThread(Pin.GetType(), PinRef);
 			}
 			else
 			{
 				// Assigned by compiler utilities
-				// Exec nodes can only have virtual pins
-				ensure(!IsA<FVoxelExecNode>());
 			}
 		}
 		else
@@ -1345,10 +1276,10 @@ void FVoxelNode::RemoveEditorData()
 	bEditorDataRemoved = true;
 
 	DeferredPins.Empty();
-	PrivateNameToPinBackup.Empty();
-	PrivatePinsOrder.Empty();
-	PrivateNameToPin.Empty();
-	PrivateNameToVariadicPin.Empty();
+	InternalPinBackups.Empty();
+	InternalPinsOrder.Empty();
+	InternalPins.Empty();
+	InternalPinArrays.Empty();
 
 #if WITH_EDITOR
 	ExposedPinValues.Empty();
@@ -1382,48 +1313,102 @@ TSharedPtr<const IVoxelNodeDefinition::FNode> FVoxelNodeDefinition::GetOutputs()
 	return GetPins(false);
 }
 
-TSharedPtr<const IVoxelNodeDefinition::FNode> FVoxelNodeDefinition::GetPins(const bool bIsInput) const
+TSharedPtr<const IVoxelNodeDefinition::FNode> FVoxelNodeDefinition::GetPins(const bool bInput) const
 {
-	const TSharedRef<FCategoryNode> RootNode = FNode::MakeRoot(bIsInput);
+#if WITH_EDITOR
+	TArray<TSharedRef<FNode>> Leaves;
 
-	for (const FName PinName : Node.PrivatePinsOrder)
+	for (const FName PinName : Node.InternalPinsOrder)
 	{
-		const FVoxelNode::FDeferredPin* Pin = Node.PrivateNameToPinBackup.Find(PinName);
-		if (!ensure(Pin) ||
-			Pin->bIsInput != bIsInput ||
-			Pin->IsVariadicChild())
+		const FVoxelNode::FDeferredPin* Pin = Node.InternalPinBackups.Find(PinName);
+		if (!ensure(Pin))
 		{
 			continue;
 		}
 
-		if (Pin->IsVariadicRoot())
+		if (Pin->bIsInput != bInput)
 		{
-			const TSharedRef<FVariadicPinNode> VariadicPinNode = RootNode->FindOrAddCategory(Pin->Metadata.Category)->AddVariadicPin(PinName);
-			const TSharedPtr<FVoxelNode::FVariadicPin> VariadicPin = Node.PrivateNameToVariadicPin.FindRef(PinName);
-			if (!ensure(VariadicPin))
-			{
-				continue;
-			}
+			continue;
+		}
 
-			for (const FName ArrayPin : VariadicPin->Pins)
+		if (Pin->IsArrayElement())
+		{
+			continue;
+		}
+
+		if (Pin->IsArrayDeclaration())
+		{
+			TArray<FName> PinArrayPath = FNode::MakePath(Pin->Metadata.Category, PinName);
+			TSharedRef<FNode> ArrayCategoryNode = FNode::MakeArrayCategory(PinName, PinArrayPath);
+			Leaves.Add(ArrayCategoryNode);
+
+			if (const TSharedPtr<FVoxelNode::FPinArray>& PinArray = Node.InternalPinArrays.FindRef(PinName))
 			{
-				VariadicPinNode->AddPin(ArrayPin);
+				for (const FName ArrayElement : PinArray->Pins)
+				{
+					ArrayCategoryNode->Children.Add(FNode::MakePin(ArrayElement, PinArrayPath));
+				}
 			}
 			continue;
 		}
 
-		RootNode->FindOrAddCategory(Pin->Metadata.Category)->AddPin(PinName);
+		Leaves.Add(FNode::MakePin(PinName, FNode::MakePath(Pin->Metadata.Category)));
 	}
 
-	return RootNode;
-}
+	const TSharedRef<FNode> Root = FNode::MakeCategory({}, {});
+	TMap<FName, TSharedPtr<FNode>> MappedCategories;
+
+	const auto FindOrAddCategory = [&MappedCategories](const TSharedPtr<FNode>& Parent, const FString& PathElement, const FName FullPath)
+	{
+		if (const TSharedPtr<FNode>& CategoryNode = MappedCategories.FindRef(FullPath))
+		{
+			return CategoryNode.ToSharedRef();
+		}
+
+		TSharedRef<FNode> Category = FNode::MakeCategory(FName(PathElement), FNode::MakePath(FullPath.ToString()));
+		Parent->Children.Add(Category);
+		MappedCategories.Add(FullPath, Category);
+
+		return Category;
+	};
+
+	for (const TSharedRef<FNode>& Leaf : Leaves)
+	{
+		int32 NumPath = Leaf->Path.Num();
+		if (Leaf->NodeState != ENodeState::Pin)
+		{
+			NumPath--;
+		}
+
+		if (NumPath == 0)
+		{
+			Root->Children.Add(Leaf);
+			continue;
+		}
+
+		FString CurrentPath = Leaf->Path[0].ToString();
+		TSharedRef<FNode> ParentCategoryNode = FindOrAddCategory(Root, CurrentPath, FName(CurrentPath));
+
+		for (int32 Index = 1; Index < NumPath; Index++)
+		{
+			CurrentPath += "|" + Leaf->Path[Index].ToString();
+			ParentCategoryNode = FindOrAddCategory(ParentCategoryNode, Leaf->Path[Index].ToString(), FName(CurrentPath));
+		}
+
+		ParentCategoryNode->Children.Add(Leaf);
+	}
+
+	return Root;
+#else
+	ensure(false);
+	return nullptr;
 #endif
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-#if WITH_EDITOR
 FString FVoxelNodeDefinition::GetAddPinLabel() const
 {
 	return "Add pin";
@@ -1438,49 +1423,38 @@ FString FVoxelNodeDefinition::GetRemovePinTooltip() const
 {
 	return "Remove pin";
 }
-#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-#if WITH_EDITOR
-bool FVoxelNodeDefinition::Variadic_CanAddPinTo(const FName VariadicPinName) const
+bool FVoxelNodeDefinition::CanAddToCategory(FName Category) const
 {
-	ensure(!VariadicPinName.IsNone());
-	return Node.PrivateNameToVariadicPin.Contains(VariadicPinName);
+	return Node.InternalPinArrays.Contains(Category);
 }
 
-FName FVoxelNodeDefinition::Variadic_AddPinTo(const FName VariadicPinName)
+void FVoxelNodeDefinition::AddToCategory(FName Category)
 {
-	ensure(!VariadicPinName.IsNone());
-	return Node.Variadic_AddPin(VariadicPinName);
+	Node.AddPinToArray(Category);
 }
 
-bool FVoxelNodeDefinition::Variadic_CanRemovePinFrom(const FName VariadicPinName) const
+bool FVoxelNodeDefinition::CanRemoveFromCategory(FName Category) const
 {
-	ensure(!VariadicPinName.IsNone());
-
-	const TSharedPtr<FVoxelNode::FVariadicPin> VariadicPin = Node.PrivateNameToVariadicPin.FindRef(VariadicPinName);
-
-	return
-		VariadicPin &&
-		VariadicPin->Pins.Num() > VariadicPin->PinTemplate.MinVariadicNum;
+	const TSharedPtr<FVoxelNode::FPinArray> PinArray = Node.InternalPinArrays.FindRef(Category);
+	return PinArray && PinArray->Pins.Num() > PinArray->PinTemplate.MinArrayNum;
 }
 
-void FVoxelNodeDefinition::Variadic_RemovePinFrom(const FName VariadicPinName)
+void FVoxelNodeDefinition::RemoveFromCategory(FName Category)
 {
-	ensure(!VariadicPinName.IsNone());
-
-	const TSharedPtr<FVoxelNode::FVariadicPin> VariadicPin = Node.PrivateNameToVariadicPin.FindRef(VariadicPinName);
-	if (!ensure(VariadicPin) ||
-		!ensure(VariadicPin->Pins.Num() > 0) ||
-		!ensure(VariadicPin->Pins.Num() > VariadicPin->PinTemplate.MinVariadicNum))
+	const TSharedPtr<FVoxelNode::FPinArray> PinArray = Node.InternalPinArrays.FindRef(Category);
+	if (!ensure(PinArray) ||
+		!ensure(PinArray->Pins.Num() > 0) ||
+		!ensure(PinArray->Pins.Num() > PinArray->PinTemplate.MinArrayNum))
 	{
 		return;
 	}
 
-	const FName PinName = VariadicPin->Pins.Last();
+	const FName PinName = PinArray->Pins.Last();
 	Node.RemovePin(PinName);
 
 	Node.ExposedPins.Remove(PinName);
@@ -1490,26 +1464,20 @@ void FVoxelNodeDefinition::Variadic_RemovePinFrom(const FName VariadicPinName)
 		Node.ExposedPinValues.RemoveAt(ExposedPinIndex);
 	}
 
-	Node.FixupVariadicPinNames(VariadicPinName);
+	Node.FixupArrayNames(Category);
 }
 
-bool FVoxelNodeDefinition::CanRemoveSelectedPin(const FName PinName) const
+bool FVoxelNodeDefinition::CanRemoveSelectedPin(FName PinName) const
 {
-	const TSharedPtr<FVoxelPin> Pin = Node.FindPin(PinName);
-	if (!Pin)
+	if (const TSharedPtr<FVoxelPin> Pin = Node.FindPin(PinName))
 	{
-		return false;
+		return CanRemoveFromCategory(Pin->ArrayOwner);
 	}
 
-	if (Pin->VariadicPinName.IsNone())
-	{
-		return false;
-	}
-
-	return Variadic_CanRemovePinFrom(Pin->VariadicPinName);
+	return false;
 }
 
-void FVoxelNodeDefinition::RemoveSelectedPin(const FName PinName)
+void FVoxelNodeDefinition::RemoveSelectedPin(FName PinName)
 {
 	if (!ensure(CanRemoveSelectedPin(PinName)))
 	{
@@ -1530,56 +1498,18 @@ void FVoxelNodeDefinition::RemoveSelectedPin(const FName PinName)
 
 	Node.RemovePin(Pin->Name);
 
-	Node.FixupVariadicPinNames(Pin->VariadicPinName);
+	Node.FixupArrayNames(Pin->ArrayOwner);
 }
 
-void FVoxelNodeDefinition::InsertPinBefore(const FName PinName)
+void FVoxelNodeDefinition::InsertPinBefore(FName PinName)
 {
 	const TSharedPtr<FVoxelPin> Pin = Node.FindPin(PinName);
-	if (!Pin ||
-		Pin->VariadicPinName.IsNone())
+	if (!Pin)
 	{
 		return;
 	}
 
-	const TSharedPtr<FVoxelNode::FVariadicPin> VariadicPin = Node.PrivateNameToVariadicPin.FindRef(Pin->VariadicPinName);
-	if (!VariadicPin)
-	{
-		return;
-	}
-
-	const int32 PinPosition = VariadicPin->Pins.IndexOfByPredicate([&Pin] (const FName& Name)
-	{
-		return Pin->Name == Name;
-	});
-
-	if (!ensure(PinPosition != -1))
-	{
-		return;
-	}
-
-	const FName NewPinName = Node.Variadic_InsertPin(Pin->VariadicPinName, PinPosition);
-	Node.SortVariadicPinNames(Pin->VariadicPinName);
-
-	if (Pin->Metadata.bShowInDetail)
-	{
-		if (Node.ExposedPins.Contains(Pin->Name))
-		{
-			Node.ExposedPins.Add(NewPinName);
-		}
-	}
-}
-
-void FVoxelNodeDefinition::DuplicatePin(const FName PinName)
-{
-	const TSharedPtr<FVoxelPin> Pin = Node.FindPin(PinName);
-	if (!Pin ||
-		Pin->VariadicPinName.IsNone())
-	{
-		return;
-	}
-
-	const TSharedPtr<FVoxelNode::FVariadicPin> PinArray = Node.PrivateNameToVariadicPin.FindRef(Pin->VariadicPinName);
+	const TSharedPtr<FVoxelNode::FPinArray> PinArray = Node.InternalPinArrays.FindRef(Pin->ArrayOwner);
 	if (!PinArray)
 	{
 		return;
@@ -1595,9 +1525,43 @@ void FVoxelNodeDefinition::DuplicatePin(const FName PinName)
 		return;
 	}
 
-	const FName NewPinName = Node.Variadic_InsertPin(Pin->VariadicPinName, PinPosition + 1);
-	Node.SortVariadicPinNames(Pin->VariadicPinName);
+	const FName NewPinName = Node.InsertPinToArrayPosition(Pin->ArrayOwner, PinPosition);
+	Node.SortArrayPins(Pin->ArrayOwner);
+	if (Pin->Metadata.bShowInDetail)
+	{
+		if (Node.ExposedPins.Contains(Pin->Name))
+		{
+			Node.ExposedPins.Add(NewPinName);
+		}
+	}
+}
 
+void FVoxelNodeDefinition::DuplicatePin(FName PinName)
+{
+	const TSharedPtr<FVoxelPin> Pin = Node.FindPin(PinName);
+	if (!Pin)
+	{
+		return;
+	}
+
+	const TSharedPtr<FVoxelNode::FPinArray> PinArray = Node.InternalPinArrays.FindRef(Pin->ArrayOwner);
+	if (!PinArray)
+	{
+		return;
+	}
+
+	const int32 PinPosition = PinArray->Pins.IndexOfByPredicate([&Pin] (const FName& Name)
+	{
+		return Pin->Name == Name;
+	});
+
+	if (!ensure(PinPosition != -1))
+	{
+		return;
+	}
+
+	const FName NewPinName = Node.InsertPinToArrayPosition(Pin->ArrayOwner, PinPosition + 1);
+	Node.SortArrayPins(Pin->ArrayOwner);
 	if (Pin->Metadata.bShowInDetail)
 	{
 		FVoxelPinValue NewValue;
@@ -1614,18 +1578,6 @@ void FVoxelNodeDefinition::DuplicatePin(const FName PinName)
 		}
 	}
 }
-
-void FVoxelNodeDefinition::ExposePin(const FName PinName)
-{
-	const TSharedPtr<FVoxelPin> Pin = Node.FindPin(PinName);
-	if (!Pin ||
-		!Pin->Metadata.bShowInDetail)
-	{
-		return;
-	}
-
-	Node.ExposedPins.Add(PinName);
-}
 #endif
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1634,7 +1586,7 @@ void FVoxelNodeDefinition::ExposePin(const FName PinName)
 
 FVoxelComputeValue& FVoxelNodeCaller::FBindings::Bind(const FName Name) const
 {
-	FVoxelNodeRuntime::FPinData& PinData = *NodeRuntime.NameToPinData[Name];
+	FVoxelNodeRuntime::FPinData& PinData = *NodeRuntime.PinDatas[FName(Name)];
 	ensure(!PinData.Compute);
 
 	TVoxelUniquePtr<FVoxelComputeValue> NewCompute = MakeVoxelUnique<FVoxelComputeValue>();
@@ -1658,7 +1610,7 @@ FVoxelComputeValue& FVoxelNodeCaller::FBindings::Bind(const FName Name) const
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-FVoxelCriticalSection GVoxelNodePoolsCriticalSection;
+FVoxelFastCriticalSection GVoxelNodePoolsCriticalSection;
 TArray<FVoxelNodeCaller::FNodePool*> GVoxelNodePools_RequiresLock;
 
 void PurgeVoxelNodePools()
@@ -1715,7 +1667,7 @@ FVoxelFutureValue FVoxelNodeCaller::CallNode(
 
 		if (Pool.Nodes.Num() > 0)
 		{
-			Node = Pool.Nodes.Pop();
+			Node = Pool.Nodes.Pop(false);
 		}
 	}
 
@@ -1729,8 +1681,8 @@ FVoxelFutureValue FVoxelNodeCaller::CallNode(
 
 		for (FVoxelPin& Pin : Node->GetPins())
 		{
-			// Calling nodes taking variadic pins is not supported
-			ensure(Pin.VariadicPinName.IsNone());
+			// Calling nodes taking pin arrays is not supported
+			ensure(Pin.ArrayOwner.IsNone());
 			// Virtual pins are not supported
 			ensure(!Pin.Metadata.bVirtualPin);
 		}
@@ -1754,7 +1706,7 @@ FVoxelFutureValue FVoxelNodeCaller::CallNode(
 	FBindings Bindings(NodeRuntime);
 	Bind(Bindings, *Node);
 
-	for (auto& It : NodeRuntime.NameToPinData)
+	for (auto& It : NodeRuntime.PinDatas)
 	{
 		FVoxelNodeRuntime::FPinData& PinData = *It.Value;
 		if (!PinData.bIsInput)
@@ -1799,8 +1751,7 @@ FVoxelFutureValue FVoxelNodeCaller::CallNode(
 		Node.ToSharedRef()
 	});
 
-	return
-		MakeVoxelTask("Return node to pool")
+	return MakeVoxelTask(STATIC_FNAME("Return node to pool"))
 		.Dependency(Result)
 		.Execute(PinData.Type, [Result, ReturnToPool]
 		{

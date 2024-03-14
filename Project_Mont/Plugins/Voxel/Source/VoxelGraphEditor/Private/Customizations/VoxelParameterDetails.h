@@ -1,21 +1,19 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelEditorMinimal.h"
-#include "VoxelPinType.h"
-#include "VoxelParameterPath.h"
+#include "VoxelParameterView.h"
 
-class FVoxelParameterView;
 class FVoxelParameterChildBuilder;
-class FVoxelParameterOverridesDetails;
+class FVoxelParameterContainerDetails;
 
 class FVoxelParameterDetails : public TSharedFromThis<FVoxelParameterDetails>
 {
 public:
-	FVoxelParameterOverridesDetails& OverridesDetails;
+	FVoxelParameterContainerDetails& ContainerDetails;
 	const FVoxelParameterPath Path;
-	const TVoxelArray<FVoxelParameterView*> ParameterViews;
+	const TVoxelArray<IVoxelParameterView*> ParameterViews;
 	FName OrphanName;
 	FVoxelPinType OrphanExposedType;
 
@@ -23,9 +21,9 @@ public:
 	FVoxelPinType RowExposedType;
 
 	FVoxelParameterDetails(
-		FVoxelParameterOverridesDetails& ContainerDetail,
+		FVoxelParameterContainerDetails& ContainerDetail,
 		const FVoxelParameterPath& Path,
-		const TVoxelArray<FVoxelParameterView*>& ParameterViews);
+		const TVoxelArray<IVoxelParameterView*>& ParameterViews);
 
 	void InitializeOrphan(
 		const FVoxelPinValue& Value,
@@ -78,10 +76,9 @@ private:
 
 	double LastSyncTime = 0.;
 	bool bHasSingleValue = false;
-	bool bForceEnableOverride = false;
 	TSharedPtr<IPropertyHandle> PropertyHandle;
 	TSharedPtr<FVoxelParameterChildBuilder> ChildBuilder;
-	TSharedPtr<FVoxelInstancedStructDetailsWrapper> StructWrapper;
+	TSharedPtr<FVoxelStructCustomizationWrapper> StructWrapper;
 
 	void SyncFromViews();
 	FVoxelPinValue& GetValueRef() const;

@@ -1,9 +1,8 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelCoreMinimal.h"
-#include "UObject/ObjectKey.h"
 #include "VoxelMinimal/Utilities/VoxelObjectUtilities.h"
 
 class VOXELCORE_API IVoxelWorldSubsystem : public TSharedFromThis<IVoxelWorldSubsystem>

@@ -1,16 +1,11 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "SVoxelNotification.h"
-#include "VoxelMessage.h"
 #include "Misc/UObjectToken.h"
 #include "Internationalization/Regex.h"
 
-void SVoxelNotification::Construct(
-	const FArguments& Args,
-	const TSharedRef<FVoxelMessage>& Message)
+void SVoxelNotification::Construct(const FArguments& Args, const TSharedRef<FTokenizedMessage>& Message)
 {
-	SetToolTipText(FText::FromString(Message->ToString()));
-
 	const TSharedRef<SVerticalBox> VBox = SNew(SVerticalBox);
 
 	TSharedPtr<SHorizontalBox> HBox;
@@ -20,8 +15,7 @@ void SVoxelNotification::Construct(
 		SAssignNew(HBox, SHorizontalBox)
 	];
 
-	const TSharedRef<FTokenizedMessage> TokenizedMessage = Message->CreateTokenizedMessage();
-	for (const TSharedRef<IMessageToken>& Token : TokenizedMessage->GetMessageTokens())
+	for (const TSharedRef<IMessageToken>& Token : Message->GetMessageTokens())
 	{
 		CreateMessage(VBox, HBox, Token, 2.0f);
 	}
@@ -68,7 +62,7 @@ void SVoxelNotification::Construct(
 				.HeightOverride(16)
 				[
 					SNew(SImage)
-					.Image(FAppStyle::Get().GetBrush(FTokenizedMessage::GetSeverityIconName(TokenizedMessage->GetSeverity())))
+					.Image(FAppStyle::Get().GetBrush(FTokenizedMessage::GetSeverityIconName(Message->GetSeverity())))
 				]
 			]
 		]
@@ -77,7 +71,7 @@ void SVoxelNotification::Construct(
 		.VAlign(VAlign_Center)
 		[
 			SNew(SBox)
-			.MaxDesiredWidth(Args._MaxDesiredWidth)
+			.MaxDesiredWidth(1200)
 			[
 				VBox
 			]

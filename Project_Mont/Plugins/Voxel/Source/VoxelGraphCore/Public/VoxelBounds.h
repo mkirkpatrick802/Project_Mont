@@ -1,4 +1,4 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -41,6 +41,16 @@ public:
 
 public:
 	FVoxelBounds ExtendLocal(float LocalAmount) const;
+
+	FVoxelBounds Extend(
+		float Amount,
+		const FVoxelQuery& Query,
+		const FVoxelTransformRef& AmountToWorld) const;
+
+	float GetLocalValue(
+		float Value,
+		const FVoxelQuery& Query,
+		const FVoxelTransformRef& ValueToWorld) const;
 
 public:
 	FVoxelBox GetBox_NoDependency(const FMatrix& OtherLocalToWorld) const;

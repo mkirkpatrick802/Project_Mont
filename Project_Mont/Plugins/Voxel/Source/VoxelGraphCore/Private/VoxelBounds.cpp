@@ -1,4 +1,4 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelBounds.h"
 
@@ -20,6 +20,23 @@ FVoxelBounds FVoxelBounds::ExtendLocal(const float LocalAmount) const
 	FVoxelBounds Result = *this;
 	Result.Box = Result.Box.Extend(LocalAmount);
 	return Result;
+}
+
+FVoxelBounds FVoxelBounds::Extend(
+	const float Amount,
+	const FVoxelQuery& Query,
+	const FVoxelTransformRef& AmountToWorld) const
+{
+	return ExtendLocal(GetLocalValue(Amount, Query, AmountToWorld));
+}
+
+float FVoxelBounds::GetLocalValue(
+	const float Value,
+	const FVoxelQuery& Query,
+	const FVoxelTransformRef& ValueToWorld) const
+{
+	const FVoxelTransformRef ValueToLocal = ValueToWorld * LocalToWorld.Inverse();
+	return Value * ValueToLocal.Get(Query).GetScaleVector().GetAbsMax();
 }
 
 ///////////////////////////////////////////////////////////////////////////////

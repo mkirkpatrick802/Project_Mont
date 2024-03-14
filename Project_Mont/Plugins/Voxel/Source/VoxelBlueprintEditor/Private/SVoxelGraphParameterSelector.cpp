@@ -1,55 +1,57 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "SVoxelGraphParameterSelector.h"
 #include "VoxelGraphVisuals.h"
+#include "VoxelParameter.h"
+#include "VoxelParameterView.h"
 #include "SListViewSelectorDropdownMenu.h"
 
-struct FSelectorItemRow
+struct FSelectorParameterRow
 {
 public:
 	FString Name;
-	FVoxelSelectorItem Item;
-	TArray<TSharedPtr<FSelectorItemRow>> Items;
-	TMap<FName, TSharedPtr<FSelectorItemRow>> ChildCategories;
+	FVoxelParameter Parameter;
+	TArray<TSharedPtr<FSelectorParameterRow>> Parameters;
+	TMap<FName, TSharedPtr<FSelectorParameterRow>> ChildCategories;
 
-	FSelectorItemRow() = default;
+	FSelectorParameterRow() = default;
 
-	explicit FSelectorItemRow(
-		const FVoxelSelectorItem& Item)
-		: Name(Item.Name.ToString())
-		, Item(Item)
+	explicit FSelectorParameterRow(const FVoxelParameter& Parameter)
+		: Name(Parameter.Name.ToString())
+		, Parameter(Parameter)
 	{
 	}
 
-	explicit FSelectorItemRow(const FString& Name)
+	explicit FSelectorParameterRow(const FString& Name)
 		: Name(Name)
 	{
 	}
 
-	FSelectorItemRow(const FString& Name, const TArray<TSharedPtr<FSelectorItemRow>>& Types)
+	FSelectorParameterRow(const FString& Name, const TArray<TSharedPtr<FSelectorParameterRow>>& Types)
 		: Name(Name)
-		, Items(Types)
+		, Parameters(Types)
 	{
 	}
 };
 
 void SVoxelGraphParameterSelector::Construct(const FArguments& InArgs)
 {
-	OnItemChanged = InArgs._OnItemChanged;
-	ensure(OnItemChanged.IsBound());
+	CachedParameterProvider = InArgs._ParameterProvider;
+
+	OnParameterChanged = InArgs._OnParameterChanged;
+	ensure(OnParameterChanged.IsBound());
 	OnCloseMenu = InArgs._OnCloseMenu;
-	Items = InArgs._Items;
 
-	FillItemsList();
+	FillParametersList();
 
-	SAssignNew(ItemsTreeView, SItemsTreeView)
-	.TreeItemsSource(&FilteredItemsList)
+	SAssignNew(ParametersTreeView, SParameterTreeView)
+	.TreeItemsSource(&FilteredParametersList)
 	.SelectionMode(ESelectionMode::Single)
-	.OnGenerateRow(this, &SVoxelGraphParameterSelector::GenerateItemTreeRow)
-	.OnSelectionChanged(this, &SVoxelGraphParameterSelector::OnItemSelectionChanged)
-	.OnGetChildren(this, &SVoxelGraphParameterSelector::GetItemChildren);
+	.OnGenerateRow(this, &SVoxelGraphParameterSelector::GenerateParameterTreeRow)
+	.OnSelectionChanged(this, &SVoxelGraphParameterSelector::OnParameterSelectionChanged)
+	.OnGetChildren(this, &SVoxelGraphParameterSelector::GetParameterChildren);
 
-	ItemsTreeView->SetSingleExpandedItem(AutoExpandedRow.Pin());
+	ParametersTreeView->SetSingleExpandedItem(AutoExpandedRow.Pin());
 
 	SAssignNew(FilterTextBox, SSearchBox)
 	.OnTextChanged(this, &SVoxelGraphParameterSelector::OnFilterTextChanged)
@@ -57,7 +59,7 @@ void SVoxelGraphParameterSelector::Construct(const FArguments& InArgs)
 
 	ChildSlot
 	[
-		SNew(SListViewSelectorDropdownMenu<TSharedPtr<FSelectorItemRow>>, FilterTextBox, ItemsTreeView)
+		SNew(SListViewSelectorDropdownMenu<TSharedPtr<FSelectorParameterRow>>, FilterTextBox, ParametersTreeView)
 		[
 			SNew(SVerticalBox)
 			+ SVerticalBox::Slot()
@@ -74,7 +76,7 @@ void SVoxelGraphParameterSelector::Construct(const FArguments& InArgs)
 				.HeightOverride(400.f)
 				.WidthOverride(300.f)
 				[
-					ItemsTreeView.ToSharedRef()
+					ParametersTreeView.ToSharedRef()
 				]
 			]
 			+ SVerticalBox::Slot()
@@ -84,8 +86,8 @@ void SVoxelGraphParameterSelector::Construct(const FArguments& InArgs)
 				SNew(STextBlock)
 				.Text_Lambda([this]
 				{
-					const FString ItemText = FilteredItemsCount == 1 ? " parameter" : " parameters";
-					return FText::FromString(FText::AsNumber(FilteredItemsCount).ToString() + ItemText);
+					const FString ItemText = FilteredParametersCount == 1 ? " parameter" : " parameters";
+					return FText::FromString(FText::AsNumber(FilteredParametersCount).ToString() + ItemText);
 				})
 			]
 		]
@@ -98,8 +100,8 @@ void SVoxelGraphParameterSelector::Construct(const FArguments& InArgs)
 
 void SVoxelGraphParameterSelector::ClearSelection() const
 {
-	ItemsTreeView->SetSelection(nullptr, ESelectInfo::OnNavigation);
-	ItemsTreeView->SetSingleExpandedItem(AutoExpandedRow.Pin());
+	ParametersTreeView->SetSelection(nullptr, ESelectInfo::OnNavigation);
+	ParametersTreeView->SetSingleExpandedItem(AutoExpandedRow.Pin());
 }
 
 TSharedPtr<SWidget> SVoxelGraphParameterSelector::GetWidgetToFocus() const
@@ -107,19 +109,44 @@ TSharedPtr<SWidget> SVoxelGraphParameterSelector::GetWidgetToFocus() const
 	return FilterTextBox;
 }
 
-void SVoxelGraphParameterSelector::Refresh()
+void SVoxelGraphParameterSelector::UpdateParameterProvider(const TWeakInterfacePtr<IVoxelParameterProvider>& ParameterProvider)
 {
-	FillItemsList();
+	CachedParameterProvider = ParameterProvider;
+
+	FillParametersList();
+}
+
+FVoxelParameter SVoxelGraphParameterSelector::GetUpdatedParameter(const FVoxelParameter& TargetParameter) const
+{
+	IVoxelParameterProvider* ParameterProvider = CachedParameterProvider.Get();
+	if (!ParameterProvider)
+	{
+		return {};
+	}
+
+	const TSharedPtr<IVoxelParameterRootView> ParameterRootView = ParameterProvider->GetParameterView();
+	if (!ensure(ParameterRootView))
+	{
+		return {};
+	}
+
+	const IVoxelParameterView* ParameterView = ParameterRootView->FindByGuid(TargetParameter.Guid);
+	if (!ParameterView)
+	{
+		return {};
+	}
+
+	return ParameterView->GetAsParameter();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-TSharedRef<ITableRow> SVoxelGraphParameterSelector::GenerateItemTreeRow(TSharedPtr<FSelectorItemRow> RowItem, const TSharedRef<STableViewBase>& OwnerTable) const
+TSharedRef<ITableRow> SVoxelGraphParameterSelector::GenerateParameterTreeRow(TSharedPtr<FSelectorParameterRow> RowItem, const TSharedRef<STableViewBase>& OwnerTable) const
 {
-	const FLinearColor Color = RowItem->Items.Num() > 0 ? FLinearColor::White : FVoxelGraphVisuals::GetPinColor(RowItem->Item.Type);
-	const FSlateBrush* Image = RowItem->Items.Num() > 0 ? FAppStyle::GetBrush("NoBrush") : FVoxelGraphVisuals::GetPinIcon(RowItem->Item.Type).GetIcon();
+	const FLinearColor Color = RowItem->Parameters.Num() > 0 ? FLinearColor::White : GetColor(RowItem->Parameter.Type);
+	const FSlateBrush* Image = RowItem->Parameters.Num() > 0 ? FAppStyle::GetBrush("NoBrush") : GetIcon(RowItem->Parameter.Type);
 
 	const TSharedRef<SHorizontalBox> Row =
 		SNew(SHorizontalBox)
@@ -141,10 +168,10 @@ TSharedRef<ITableRow> SVoxelGraphParameterSelector::GenerateItemTreeRow(TSharedP
 			{
 				return SearchText;
 			})
-			.Font(RowItem->Items.Num() > 0 ? FAppStyle::GetFontStyle(TEXT("Kismet.TypePicker.CategoryFont")) : FAppStyle::GetFontStyle(TEXT("Kismet.TypePicker.NormalFont")))
+			.Font(RowItem->Parameters.Num() > 0 ? FAppStyle::GetFontStyle(TEXT("Kismet.TypePicker.CategoryFont")) : FAppStyle::GetFontStyle(TEXT("Kismet.TypePicker.NormalFont")))
 		];
 
-	if (RowItem->Items.Num() == 0)
+	if (RowItem->Parameters.Num() == 0)
 	{
 		Row->AddSlot()
 			.AutoWidth()
@@ -152,24 +179,24 @@ TSharedRef<ITableRow> SVoxelGraphParameterSelector::GenerateItemTreeRow(TSharedP
 			.VAlign(VAlign_Center)
 			[
 				SNew(STextBlock)
-				.Text(FText::FromString("(" + RowItem->Item.Type.ToString() + ")"))
+				.Text(FText::FromString("(" + RowItem->Parameter.Type.ToString() + ")"))
 				.Font(FAppStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
 				.ColorAndOpacity(FSlateColor::UseSubduedForeground())
 			];
 	}
 
 	return
-		SNew(STableRow<TSharedPtr<FSelectorItemRow>>, OwnerTable)
+		SNew(STableRow<TSharedPtr<FSelectorParameterRow>>, OwnerTable)
 		[
 			Row
 		];
 }
 
-void SVoxelGraphParameterSelector::OnItemSelectionChanged(TSharedPtr<FSelectorItemRow> Selection, const ESelectInfo::Type SelectInfo) const
+void SVoxelGraphParameterSelector::OnParameterSelectionChanged(TSharedPtr<FSelectorParameterRow> Selection, ESelectInfo::Type SelectInfo) const
 {
 	if (SelectInfo == ESelectInfo::OnNavigation)
 	{
-		if (ItemsTreeView->WidgetFromItem(Selection).IsValid())
+		if (ParametersTreeView->WidgetFromItem(Selection).IsValid())
 		{
 			OnCloseMenu.ExecuteIfBound();
 		}
@@ -182,46 +209,46 @@ void SVoxelGraphParameterSelector::OnItemSelectionChanged(TSharedPtr<FSelectorIt
 		return;
 	}
 
-	if (Selection->Items.Num() == 0)
+	if (Selection->Parameters.Num() == 0)
 	{
 		OnCloseMenu.ExecuteIfBound();
-		OnItemChanged.ExecuteIfBound(Selection->Item);
+		OnParameterChanged.ExecuteIfBound(Selection->Parameter);
 		return;
 	}
 
-	ItemsTreeView->SetItemExpansion(Selection, !ItemsTreeView->IsItemExpanded(Selection));
+	ParametersTreeView->SetItemExpansion(Selection, !ParametersTreeView->IsItemExpanded(Selection));
 
 	if (SelectInfo == ESelectInfo::OnMouseClick)
 	{
-		ItemsTreeView->ClearSelection();
+		ParametersTreeView->ClearSelection();
 	}
 }
 
-void SVoxelGraphParameterSelector::GetItemChildren(TSharedPtr<FSelectorItemRow> ItemRow, TArray<TSharedPtr<FSelectorItemRow>>& ChildrenRows) const
+void SVoxelGraphParameterSelector::GetParameterChildren(TSharedPtr<FSelectorParameterRow> ParameterRow, TArray<TSharedPtr<FSelectorParameterRow>>& ChildrenRows) const
 {
-	ChildrenRows = ItemRow->Items;
+	ChildrenRows = ParameterRow->Parameters;
 }
 
 void SVoxelGraphParameterSelector::OnFilterTextChanged(const FText& NewText)
 {
 	SearchText = NewText;
-	FilteredItemsList = {};
+	FilteredParametersList = {};
 
 	GetChildrenMatchingSearch(NewText);
-	ItemsTreeView->RequestTreeRefresh();
+	ParametersTreeView->RequestTreeRefresh();
 }
 
-void SVoxelGraphParameterSelector::OnFilterTextCommitted(const FText& NewText, const ETextCommit::Type CommitInfo) const
+void SVoxelGraphParameterSelector::OnFilterTextCommitted(const FText& NewText, ETextCommit::Type CommitInfo) const
 {
 	if (CommitInfo != ETextCommit::OnEnter)
 	{
 		return;
 	}
 
-	TArray<TSharedPtr<FSelectorItemRow>> SelectedItems = ItemsTreeView->GetSelectedItems();
+	TArray<TSharedPtr<FSelectorParameterRow>> SelectedItems = ParametersTreeView->GetSelectedItems();
 	if (SelectedItems.Num() > 0)
 	{
-		ItemsTreeView->SetSelection(SelectedItems[0]);
+		ParametersTreeView->SetSelection(SelectedItems[0]);
 	}
 }
 
@@ -231,15 +258,15 @@ void SVoxelGraphParameterSelector::OnFilterTextCommitted(const FText& NewText, c
 
 void SVoxelGraphParameterSelector::GetChildrenMatchingSearch(const FText& InSearchText)
 {
-	FilteredItemsCount = 0;
+	FilteredParametersCount = 0;
 
 	TArray<FString> FilterTerms;
 	TArray<FString> SanitizedFilterTerms;
 
 	if (InSearchText.IsEmpty())
 	{
-		FilteredItemsList = ItemsList;
-		FilteredItemsCount = TotalItemsCount;
+		FilteredParametersList = ParametersList;
+		FilteredParametersCount = TotalParametersCount;
 		return;
 	}
 
@@ -254,7 +281,7 @@ void SVoxelGraphParameterSelector::GetChildrenMatchingSearch(const FText& InSear
 
 	ensure(SanitizedFilterTerms.Num() == FilterTerms.Num());
 
-	const auto SearchMatches = [&FilterTerms, &SanitizedFilterTerms](const TSharedPtr<FSelectorItemRow>& TypeRow) -> bool
+	const auto SearchMatches = [&FilterTerms, &SanitizedFilterTerms](const TSharedPtr<FSelectorParameterRow>& TypeRow) -> bool
 	{
 		FString ItemName = TypeRow->Name;
 		ItemName = ItemName.Replace(TEXT(" "), TEXT(""));
@@ -271,41 +298,41 @@ void SVoxelGraphParameterSelector::GetChildrenMatchingSearch(const FText& InSear
 		return false;
 	};
 
-	const auto LookThroughList = [&](const TArray<TSharedPtr<FSelectorItemRow>>& UnfilteredList, TArray<TSharedPtr<FSelectorItemRow>>& OutFilteredList, auto& Lambda) -> bool
+	const auto LookThroughList = [&](const TArray<TSharedPtr<FSelectorParameterRow>>& UnfilteredList, TArray<TSharedPtr<FSelectorParameterRow>>& OutFilteredList, auto& Lambda) -> bool
 	{
 		bool bReturnVal = false;
-		for (const TSharedPtr<FSelectorItemRow>& TypeRow : UnfilteredList)
+		for (const TSharedPtr<FSelectorParameterRow>& TypeRow : UnfilteredList)
 		{
 			const bool bMatchesItem = SearchMatches(TypeRow);
-			if (TypeRow->Items.Num() == 0 ||
+			if (TypeRow->Parameters.Num() == 0 ||
 				bMatchesItem)
 			{
 				if (bMatchesItem)
 				{
 					OutFilteredList.Add(TypeRow);
 
-					if (TypeRow->Items.Num() > 0 &&
-						ItemsTreeView.IsValid())
+					if (TypeRow->Parameters.Num() > 0 &&
+						ParametersTreeView.IsValid())
 					{
-						ItemsTreeView->SetItemExpansion(TypeRow, true);
+						ParametersTreeView->SetItemExpansion(TypeRow, true);
 					}
 
-					FilteredItemsCount += FMath::Max(1, TypeRow->Items.Num());
+					FilteredParametersCount += FMath::Max(1, TypeRow->Parameters.Num());
 
 					bReturnVal = true;
 				}
 				continue;
 			}
 
-			TArray<TSharedPtr<FSelectorItemRow>> ValidChildren;
-			if (Lambda(TypeRow->Items, ValidChildren, Lambda))
+			TArray<TSharedPtr<FSelectorParameterRow>> ValidChildren;
+			if (Lambda(TypeRow->Parameters, ValidChildren, Lambda))
 			{
-				TSharedRef<FSelectorItemRow> NewCategory = MakeVoxelShared<FSelectorItemRow>(TypeRow->Name, ValidChildren);
+				TSharedRef<FSelectorParameterRow> NewCategory = MakeVoxelShared<FSelectorParameterRow>(TypeRow->Name, ValidChildren);
 				OutFilteredList.Add(NewCategory);
 
-				if (ItemsTreeView.IsValid())
+				if (ParametersTreeView.IsValid())
 				{
-					ItemsTreeView->SetItemExpansion(NewCategory, true);
+					ParametersTreeView->SetItemExpansion(NewCategory, true);
 				}
 
 				bReturnVal = true;
@@ -315,22 +342,63 @@ void SVoxelGraphParameterSelector::GetChildrenMatchingSearch(const FText& InSear
 		return bReturnVal;
 	};
 
-	LookThroughList(ItemsList, FilteredItemsList, LookThroughList);
+	LookThroughList(ParametersList, FilteredParametersList, LookThroughList);
 }
 
-void SVoxelGraphParameterSelector::FillItemsList()
+void SVoxelGraphParameterSelector::FillParametersList()
 {
-	ItemsList = {};
+	ParametersList = {};
 
-	const TSharedPtr<FSelectorItemRow> RootRow = MakeVoxelShared<FSelectorItemRow>();
-
+	IVoxelParameterProvider* ParameterProvider = CachedParameterProvider.Get();
+	if (!ParameterProvider)
 	{
-		const TSharedPtr<FSelectorItemRow> DefaultCategory = MakeVoxelShared<FSelectorItemRow>("Default");
-		RootRow->ChildCategories.Add(STATIC_FNAME("Default"), DefaultCategory);
-		RootRow->Items.Add(DefaultCategory);
+		return;
 	}
 
-	const auto GetCategoryRow = [&](const FString& Category) -> TSharedPtr<FSelectorItemRow>
+	const TSharedPtr<IVoxelParameterRootView> ParameterRootView = ParameterProvider->GetParameterView();
+	if (!ensure(ParameterRootView))
+	{
+		return;
+	}
+
+	const TSharedPtr<FSelectorParameterRow> RootRow = MakeVoxelShared<FSelectorParameterRow>();
+
+	{
+		const TSharedPtr<FSelectorParameterRow> DefaultCategory = MakeVoxelShared<FSelectorParameterRow>("Default");
+		RootRow->ChildCategories.Add(STATIC_FNAME("Default"), DefaultCategory);
+		RootRow->Parameters.Add(DefaultCategory);
+	}
+
+	const FVoxelParameterCategories* Categories = ParameterRootView->GetCategories();
+	if (ensure(Categories))
+	{
+		for (const FString& Category : Categories->Categories)
+		{
+			TArray<FString> CategoryChain = GetCategoryChain(Category);
+			if (CategoryChain.Num() == 0)
+			{
+				continue;
+			}
+
+			TSharedPtr<FSelectorParameterRow> TargetRow = RootRow;
+			for (int32 Index = 0; Index < CategoryChain.Num(); Index++)
+			{
+				if (const TSharedPtr<FSelectorParameterRow> CategoryRow = RootRow->ChildCategories.FindRef(*CategoryChain[Index]))
+				{
+					TargetRow = CategoryRow;
+					continue;
+				}
+
+				TSharedPtr<FSelectorParameterRow> CategoryRow = MakeVoxelShared<FSelectorParameterRow>(CategoryChain[Index]);
+				TargetRow->Parameters.Add(CategoryRow);
+				TargetRow->ChildCategories.Add(*CategoryChain[Index], CategoryRow);
+
+				TargetRow = CategoryRow;
+			}
+		}
+	}
+
+	const auto GetCategoryRow = [&](const FString& Category) -> TSharedPtr<FSelectorParameterRow>
 	{
 		TArray<FString> CategoryChain = GetCategoryChain(Category);
 		if (CategoryChain.Num() == 0)
@@ -338,17 +406,17 @@ void SVoxelGraphParameterSelector::FillItemsList()
 			return RootRow->ChildCategories[STATIC_FNAME("Default")];
 		}
 
-		TSharedPtr<FSelectorItemRow> TargetRow = RootRow;
+		TSharedPtr<FSelectorParameterRow> TargetRow = RootRow;
 		for (int32 Index = 0; Index < CategoryChain.Num(); Index++)
 		{
-			if (const TSharedPtr<FSelectorItemRow> CategoryRow = TargetRow->ChildCategories.FindRef(*CategoryChain[Index]))
+			if (const TSharedPtr<FSelectorParameterRow> CategoryRow = TargetRow->ChildCategories.FindRef(*CategoryChain[Index]))
 			{
 				TargetRow = CategoryRow;
 				continue;
 			}
 
-			TSharedPtr<FSelectorItemRow> CategoryRow = MakeVoxelShared<FSelectorItemRow>(CategoryChain[Index]);
-			TargetRow->Items.Add(CategoryRow);
+			TSharedPtr<FSelectorParameterRow> CategoryRow = MakeVoxelShared<FSelectorParameterRow>(CategoryChain[Index]);
+			TargetRow->Parameters.Add(CategoryRow);
 			TargetRow->ChildCategories.Add(*CategoryChain[Index], CategoryRow);
 
 			TargetRow = CategoryRow;
@@ -357,25 +425,27 @@ void SVoxelGraphParameterSelector::FillItemsList()
 		return TargetRow;
 	};
 
-	int32 NumItems = 0;
-	for (const FVoxelSelectorItem& Item : Items.Get())
+	int32 NumParameters = 0;
+	for (const IVoxelParameterView* ParameterView : ParameterRootView->GetChildren())
 	{
-		if (const TSharedPtr<FSelectorItemRow> CategoryRow = GetCategoryRow(Item.Category))
+		const FVoxelParameter Parameter = ParameterView->GetAsParameter();
+
+		if (const TSharedPtr<FSelectorParameterRow> CategoryRow = GetCategoryRow(Parameter.Category))
 		{
-			CategoryRow->Items.Add(MakeVoxelShared<FSelectorItemRow>(Item));
+			CategoryRow->Parameters.Add(MakeVoxelShared<FSelectorParameterRow>(Parameter));
 		}
 		else
 		{
-			ItemsList.Add(MakeVoxelShared<FSelectorItemRow>(Item));
+			ParametersList.Add(MakeVoxelShared<FSelectorParameterRow>(Parameter));
 		}
 
-		NumItems++;
+		NumParameters++;
 	}
 
 	AutoExpandedRow = nullptr;
-	for (const TSharedPtr<FSelectorItemRow>& CategoryRow : RootRow->Items)
+	for (const TSharedPtr<FSelectorParameterRow>& CategoryRow : RootRow->Parameters)
 	{
-		if (CategoryRow->Items.Num() == 0)
+		if (CategoryRow->Parameters.Num() == 0)
 		{
 			continue;
 		}
@@ -385,18 +455,28 @@ void SVoxelGraphParameterSelector::FillItemsList()
 			AutoExpandedRow = CategoryRow;
 		}
 
-		ItemsList.Add(CategoryRow);
+		ParametersList.Add(CategoryRow);
 	}
 
-	FilteredItemsList = ItemsList;
+	FilteredParametersList = ParametersList;
 
-	TotalItemsCount = NumItems;
-	FilteredItemsCount = NumItems;
+	TotalParametersCount = NumParameters;
+	FilteredParametersCount = NumParameters;
+}
+
+const FSlateBrush* SVoxelGraphParameterSelector::GetIcon(const FVoxelPinType& PinType) const
+{
+	return FVoxelGraphVisuals::GetPinIcon(PinType).GetIcon();
+}
+
+FLinearColor SVoxelGraphParameterSelector::GetColor(const FVoxelPinType& PinType) const
+{
+	return FVoxelGraphVisuals::GetPinColor(PinType);
 }
 
 TArray<FString> SVoxelGraphParameterSelector::GetCategoryChain(const FString& Category) const
 {
-	TArray<FString> Categories;
-	FEditorCategoryUtils::GetCategoryDisplayString(Category).ParseIntoArray(Categories, TEXT("|"), true);
-	return Categories;
+	TArray<FString> CategoryChain;
+	FEditorCategoryUtils::GetCategoryDisplayString(Category).ParseIntoArray(CategoryChain, TEXT("|"), true);
+	return CategoryChain;
 }

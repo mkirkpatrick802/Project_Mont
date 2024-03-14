@@ -1,11 +1,9 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelCoreMinimal.h"
-#include "VoxelMinimal/VoxelAtomic.h"
 #include "VoxelMinimal/VoxelDuplicateTransient.h"
-#include "Utilities/VoxelObjectUtilities.h"
 #include "VoxelVirtualStruct.generated.h"
 
 USTRUCT()
@@ -33,19 +31,20 @@ public:
 	virtual void PreSerialize() {}
 	virtual void PostSerialize() {}
 
+#if WITH_EDITOR
+	// When editing an instanced struct, a copy of the struct is used and is then copied over to the original source
+	// This needs to be customized when the struct stores delegates
+	virtual void SyncFromSource_EditorOnly(const FVoxelVirtualStruct& Source);
+	virtual void SyncToSource_EditorOnly(FVoxelVirtualStruct& Source) const;
+#endif
+
 	FORCEINLINE UScriptStruct* GetStruct() const
 	{
 		if (!PrivateStruct.Get())
 		{
 			PrivateStruct = Internal_GetStruct();
 		}
-
-		checkfVoxelSlow(
-			PrivateStruct.Get() == Internal_GetStruct() || PrivateStruct.Get()->GetName().StartsWith("LIVECODING_"),
-			TEXT("GetStruct() called in %s::%s"),
-			*PrivateStruct.Get()->GetStructCPPName(),
-			*PrivateStruct.Get()->GetStructCPPName());
-
+		checkVoxelSlow(PrivateStruct.Get() == Internal_GetStruct() || PrivateStruct.Get()->GetName().StartsWith("LIVECODING_"));
 		return PrivateStruct.Get();
 	}
 
@@ -53,13 +52,13 @@ public:
 	{
 		return GetStruct()->IsChildOf(Struct);
 	}
-	template<typename T, typename = std::enable_if_t<TIsDerivedFrom<T, FVoxelVirtualStruct>::Value>>
+	template<typename T, typename = typename TEnableIf<TIsDerivedFrom<T, FVoxelVirtualStruct>::Value>::Type>
 	FORCEINLINE bool IsA() const
 	{
 		return this->IsA(T::StaticStruct());
 	}
 
-	template<typename T, typename = std::enable_if_t<TIsDerivedFrom<T, FVoxelVirtualStruct>::Value>>
+	template<typename T, typename = typename TEnableIf<TIsDerivedFrom<T, FVoxelVirtualStruct>::Value>::Type>
 	T* As()
 	{
 		if (!IsA<T>())
@@ -69,7 +68,7 @@ public:
 
 		return static_cast<T*>(this);
 	}
-	template<typename T, typename = std::enable_if_t<TIsDerivedFrom<T, FVoxelVirtualStruct>::Value>>
+	template<typename T, typename = typename TEnableIf<TIsDerivedFrom<T, FVoxelVirtualStruct>::Value>::Type>
 	const T* As() const
 	{
 		if (!IsA<T>())
@@ -80,13 +79,13 @@ public:
 		return static_cast<const T*>(this);
 	}
 
-	template<typename T, typename = std::enable_if_t<TIsDerivedFrom<T, FVoxelVirtualStruct>::Value>>
-	T& AsChecked()
+	template<typename T, typename = typename TEnableIf<TIsDerivedFrom<T, FVoxelVirtualStruct>::Value>::Type>
+	T* AsChecked()
 	{
 		checkVoxelSlow(IsA<T>());
 		return static_cast<T&>(*this);
 	}
-	template<typename T, typename = std::enable_if_t<TIsDerivedFrom<T, FVoxelVirtualStruct>::Value>>
+	template<typename T, typename = typename TEnableIf<TIsDerivedFrom<T, FVoxelVirtualStruct>::Value>::Type>
 	const T& AsChecked() const
 	{
 		checkVoxelSlow(IsA<T>());
@@ -124,7 +123,7 @@ private:
 		SharedPointerInternals::EnableSharedFromThis(&SharedRef, &SharedRef.Get(), &SharedRef.Get()); \
 		return SharedRef; \
 	} \
-	template<typename T, typename = std::enable_if_t<!TIsReferenceType<T>::Value>> \
+	template<typename T, typename = typename TEnableIf<!TIsReferenceType<T>::Value>::Type> \
 	static auto MakeSharedCopy(T&& Data) -> decltype(auto) \
 	{ \
 		return ::MakeSharedCopy(MoveTemp(Data)); \
@@ -212,7 +211,7 @@ FORCEINLINE const To& CastChecked(const FVoxelVirtualStruct& Struct)
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-template<typename To, typename From, typename = std::enable_if_t<TIsDerivedFrom<From, FVoxelVirtualStruct>::Value>>
+template<typename To, typename From, typename = typename TEnableIf<TIsDerivedFrom<From, FVoxelVirtualStruct>::Value>::Type>
 FORCEINLINE TSharedPtr<To> Cast(const TSharedPtr<From>& Struct)
 {
 	if (!Struct ||
@@ -223,7 +222,7 @@ FORCEINLINE TSharedPtr<To> Cast(const TSharedPtr<From>& Struct)
 
 	return StaticCastSharedPtr<To>(Struct);
 }
-template<typename To, typename From, typename = std::enable_if_t<TIsDerivedFrom<From, FVoxelVirtualStruct>::Value>>
+template<typename To, typename From, typename = typename TEnableIf<TIsDerivedFrom<From, FVoxelVirtualStruct>::Value>::Type>
 FORCEINLINE TSharedPtr<const To> Cast(const TSharedPtr<const From>& Struct)
 {
 	if (!Struct ||
@@ -235,11 +234,7 @@ FORCEINLINE TSharedPtr<const To> Cast(const TSharedPtr<const From>& Struct)
 	return StaticCastSharedPtr<const To>(Struct);
 }
 
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-template<typename To, typename From, typename = std::enable_if_t<TIsDerivedFrom<From, FVoxelVirtualStruct>::Value>>
+template<typename To, typename From, typename = typename TEnableIf<TIsDerivedFrom<From, FVoxelVirtualStruct>::Value>::Type>
 FORCEINLINE TSharedPtr<To> Cast(const TSharedRef<From>& Struct)
 {
 	if (!Struct->template IsA<To>())
@@ -249,7 +244,7 @@ FORCEINLINE TSharedPtr<To> Cast(const TSharedRef<From>& Struct)
 
 	return StaticCastSharedRef<To>(Struct);
 }
-template<typename To, typename From, typename = std::enable_if_t<TIsDerivedFrom<From, FVoxelVirtualStruct>::Value>>
+template<typename To, typename From, typename = typename TEnableIf<TIsDerivedFrom<From, FVoxelVirtualStruct>::Value>::Type>
 FORCEINLINE TSharedPtr<const To> Cast(const TSharedRef<const From>& Struct)
 {
 	if (!Struct->template IsA<To>())
@@ -260,55 +255,28 @@ FORCEINLINE TSharedPtr<const To> Cast(const TSharedRef<const From>& Struct)
 	return StaticCastSharedRef<const To>(Struct);
 }
 
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-template<typename To, typename From, typename = std::enable_if_t<TIsDerivedFrom<From, FVoxelVirtualStruct>::Value>>
+template<typename To, typename From, typename = typename TEnableIf<TIsDerivedFrom<From, FVoxelVirtualStruct>::Value>::Type>
 FORCEINLINE TSharedRef<To> CastChecked(const TSharedRef<From>& Struct)
 {
 	checkVoxelSlow(Struct->template IsA<To>());
 	return StaticCastSharedRef<To>(Struct);
 }
-template<typename To, typename From, typename = std::enable_if_t<TIsDerivedFrom<From, FVoxelVirtualStruct>::Value>>
+template<typename To, typename From, typename = typename TEnableIf<TIsDerivedFrom<From, FVoxelVirtualStruct>::Value>::Type>
 FORCEINLINE TSharedRef<const To> CastChecked(const TSharedRef<const From>& Struct)
 {
 	checkVoxelSlow(Struct->template IsA<To>());
 	return StaticCastSharedRef<const To>(Struct);
 }
 
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-template<typename To, typename From, typename = std::enable_if_t<TIsDerivedFrom<From, FVoxelVirtualStruct>::Value>>
+template<typename To, typename From, typename = typename TEnableIf<TIsDerivedFrom<From, FVoxelVirtualStruct>::Value>::Type>
 FORCEINLINE TUniquePtr<To> CastChecked(TUniquePtr<From>&& Struct)
 {
 	checkVoxelSlow(Struct->template IsA<To>());
 	return TUniquePtr<To>(static_cast<To*>(Struct.Release()));
 }
-template<typename To, typename From, typename = std::enable_if_t<TIsDerivedFrom<From, FVoxelVirtualStruct>::Value>>
+template<typename To, typename From, typename = typename TEnableIf<TIsDerivedFrom<From, FVoxelVirtualStruct>::Value>::Type>
 FORCEINLINE TUniquePtr<const To> CastChecked(TUniquePtr<const From>&& Struct)
 {
 	checkVoxelSlow(Struct->template IsA<To>());
 	return TUniquePtr<const To>(static_cast<const To*>(Struct.Release()));
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-template<typename To, typename From, typename = std::enable_if_t<TIsDerivedFrom<From, FVoxelVirtualStruct>::Value>>
-FORCEINLINE TSharedPtr<To> CastEnsured(const TSharedPtr<From>& Struct)
-{
-	const TSharedPtr<To> Result = Cast<To>(Struct);
-	ensure(!Struct || Result);
-	return Result;
-}
-template<typename To, typename From, typename = std::enable_if_t<TIsDerivedFrom<From, FVoxelVirtualStruct>::Value>>
-FORCEINLINE TSharedPtr<const To> CastEnsured(const TSharedPtr<const From>& Struct)
-{
-	const TSharedPtr<const To> Result = Cast<const To>(Struct);
-	ensure(!Struct || Result);
-	return Result;
 }

@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "SVoxelGraphNodeBase.h"
 #include "VoxelPinType.h"
@@ -6,7 +6,7 @@
 #include "SVoxelToolTip.h"
 #include "Point/VoxelPointSet.h"
 
-void SVoxelGraphNodeBase::Construct(const FArguments& InArgs, UVoxelGraphNode* InNode)
+void SVoxelGraphNodeBase::Construct(const FArguments& InArgs, UVoxelGraphNodeBase* InNode)
 {
 	VOXEL_FUNCTION_COUNTER();
 

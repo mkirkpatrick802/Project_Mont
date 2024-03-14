@@ -1,28 +1,15 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
-#include "VoxelSimpleAssetToolkit.h"
+#include "Toolkits/VoxelSimpleAssetToolkit.h"
 #include "Toolkits/SVoxelSimpleAssetEditorViewport.h"
 #include "ImageUtils.h"
 #include "Engine/Texture2D.h"
+#include "Engine/BlueprintGeneratedClass.h"
 #include "Components/StaticMeshComponent.h"
+#include "Subsystems/AssetEditorSubsystem.h"
 
 const FName FVoxelSimpleAssetToolkit::DetailsTabId = "VoxelSimpleAssetEditor_Details";
 const FName FVoxelSimpleAssetToolkit::ViewportTabId = "VoxelSimpleAssetEditor_Viewport";
-
-FVoxelSimpleAssetToolkit::~FVoxelSimpleAssetToolkit()
-{
-	VOXEL_FUNCTION_COUNTER();
-
-	for (AActor* Actor : PrivateActors)
-	{
-		if (!ensure(Actor))
-		{
-			continue;
-		}
-
-		Actor->Destroy();
-	}
-}
 
 void FVoxelSimpleAssetToolkit::Initialize()
 {
@@ -41,31 +28,6 @@ void FVoxelSimpleAssetToolkit::Initialize()
 
 	PrivatePreviewScene = MakeVoxelShared<FAdvancedPreviewScene>(FPreviewScene::ConstructionValues());
 	PrivatePreviewScene->SetFloorVisibility(ShowFloor(), true);
-
-	CachedWorld = GetPreviewScene().GetWorld();
-	if (!ensure(CachedWorld.IsValid()))
-	{
-		return;
-	}
-
-	// Setup PrivateRootComponent
-	{
-		AActor* Actor = SpawnActor<AActor>();
-		if (!ensure(Actor))
-		{
-			return;
-		}
-
-		PrivateRootComponent = NewObject<USceneComponent>(Actor, NAME_None, RF_Transient);
-		if (!ensure(PrivateRootComponent))
-		{
-			return;
-		}
-		PrivateRootComponent->RegisterComponent();
-
-		GetPreviewScene().AddComponent(PrivateRootComponent, FTransform::Identity);
-		Actor->SetRootComponent(PrivateRootComponent);
-	}
 
 	SetupPreview();
 	UpdatePreview();
@@ -120,7 +82,113 @@ TSharedPtr<FTabManager::FLayout> FVoxelSimpleAssetToolkit::GetLayout() const
 		);
 }
 
-void FVoxelSimpleAssetToolkit::RegisterTabs(const FRegisterTab RegisterTab)
+TSharedPtr<SWidget> FVoxelSimpleAssetToolkit::GetMenuOverlay() const
+{
+	if (GetAsset()->GetClass() == GetObjectProperty()->PropertyClass)
+	{
+		return nullptr;
+	}
+
+	return
+		SNew(SHorizontalBox)
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.VAlign(VAlign_Center)
+		[
+			SNew(STextBlock)
+			.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+			.ShadowOffset(FVector2D::UnitVector)
+			.Text(INVTEXT("Class: "))
+		]
+		+SHorizontalBox::Slot()
+		.AutoWidth()
+		.VAlign(VAlign_Center)
+		[
+			SNew(SSpacer)
+			.Size(FVector2D(2.0f,1.0f))
+		]
+		+SHorizontalBox::Slot()
+		.AutoWidth()
+		.VAlign(VAlign_Center)
+		[
+			SNew(STextBlock)
+			.ShadowOffset(FVector2D::UnitVector)
+			.Text(GetAsset()->GetClass()->GetDisplayNameText())
+			.TextStyle(FAppStyle::Get(), "Common.InheritedFromBlueprintTextStyle")
+			.ToolTipText(INVTEXT("The class that the current asset is based on"))
+		]
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		[
+			SNew(SButton)
+			.VAlign(VAlign_Center)
+			.ButtonStyle(FAppStyle::Get(), "HoverHintOnly")
+			.OnClicked_Lambda([this]
+			{
+				if (const UBlueprintGeneratedClass* ParentBlueprintGeneratedClass = Cast<UBlueprintGeneratedClass>(GetAsset()->GetClass()))
+				{
+					if (ParentBlueprintGeneratedClass->ClassGeneratedBy)
+					{
+						TArray<UObject*> Objects;
+						Objects.Add(ParentBlueprintGeneratedClass->ClassGeneratedBy);
+						GEditor->SyncBrowserToObjects(Objects);
+					}
+				}
+
+				return FReply::Handled();
+			})
+			.Visibility_Lambda([this]
+			{
+				return Cast<UBlueprintGeneratedClass>(GetAsset()->GetClass()) ? EVisibility::Visible : EVisibility::Collapsed;
+			})
+			.ToolTipText(INVTEXT("Find parent in Content Browser"))
+			.ContentPadding(4.0f)
+			.ForegroundColor(FSlateColor::UseForeground())
+			[
+				SNew(SImage)
+				.Image(FAppStyle::GetBrush("Icons.Search"))
+			]
+		]
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		[
+			SNew(SButton)
+			.VAlign(VAlign_Center)
+			.ButtonStyle(FAppStyle::Get(), "HoverHintOnly")
+			.OnClicked_Lambda([this]
+			{
+				if (const UBlueprintGeneratedClass* ParentBlueprintGeneratedClass = Cast<UBlueprintGeneratedClass>(GetAsset()->GetClass()))
+				{
+					if (ParentBlueprintGeneratedClass->ClassGeneratedBy)
+					{
+						GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(ParentBlueprintGeneratedClass->ClassGeneratedBy);
+					}
+				}
+
+				return FReply::Handled();
+			})
+			.Visibility_Lambda([this]
+			{
+				return Cast<UBlueprintGeneratedClass>(GetAsset()->GetClass()) ? EVisibility::Visible : EVisibility::Collapsed;
+			})
+			.ToolTipText( INVTEXT("Open parent in editor") )
+			.ContentPadding(4.0f)
+			.ForegroundColor( FSlateColor::UseForeground() )
+			[
+				SNew(SImage)
+				.Image(FAppStyle::GetBrush("Icons.Edit"))
+			]
+		]
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.VAlign(VAlign_Center)
+		[
+			SNew(SSpacer)
+			.Size(FVector2D(8.0f, 1.0f))
+		];
+}
+
+void FVoxelSimpleAssetToolkit::RegisterTabs(FRegisterTab RegisterTab)
 {
 	Super::RegisterTabs(RegisterTab);
 

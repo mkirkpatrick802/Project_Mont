@@ -1,35 +1,38 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelEditorMinimal.h"
 #include "VoxelComponent.h"
-#include "VoxelParameterOverridesDetails.h"
+#include "Customizations/VoxelParameterContainerDetails.h"
 
 VOXEL_CUSTOMIZE_CLASS(UVoxelComponent)(IDetailLayoutBuilder& DetailLayout)
 {
-	FVoxelEditorUtilities::EnableRealtime();
+	TArray<TWeakObjectPtr<UObject>> WeakObjects;
+	DetailLayout.GetObjectsBeingCustomized(WeakObjects);
 
-	const TSharedRef<IPropertyHandle> GraphHandle = DetailLayout.GetProperty(GET_MEMBER_NAME_STATIC(UVoxelComponent, Graph_NewProperty));
-	GraphHandle->MarkHiddenByCustomization();
-
-	// Force graph at the bottom
-	DetailLayout
-	.EditCategory(
-		"Config",
-		{},
-		ECategoryPriority::Uncommon)
-	.AddProperty(GraphHandle);
-
-	KeepAlive(FVoxelParameterOverridesDetails::Create(
-		DetailLayout,
-		GetObjectsBeingCustomized(DetailLayout),
-		FVoxelEditorUtilities::MakeRefreshDelegate(this, DetailLayout)));
-
-	// Hide component properties
-	for (const FProperty& Property : GetClassProperties<UActorComponent>())
+	TArray<UObject*> Objects;
+	for (const TWeakObjectPtr<UObject>& WeakObject : WeakObjects)
 	{
-		if (const TSharedPtr<IPropertyHandle> PropertyHandle = DetailLayout.GetProperty(Property.GetFName(), UActorComponent::StaticClass()))
-		{
-			PropertyHandle->MarkHiddenByCustomization();
-		}
+		Objects.Add(WeakObject.Get());
 	}
+
+	IDetailPropertyRow* Row = DetailLayout.EditCategory("").AddExternalObjectProperty(
+		Objects,
+		GET_MEMBER_NAME_STATIC(UVoxelComponent, ParameterContainer),
+		EPropertyLocation::Default,
+		FAddPropertyParams().ForceShowProperty());
+
+	if (!ensure(Row))
+	{
+		return;
+	}
+
+	Row->Visibility(EVisibility::Collapsed);
+
+	const TSharedPtr<IPropertyHandle> PropertyHandle = Row->GetPropertyHandle();
+	if (!ensure(PropertyHandle))
+	{
+		return;
+	}
+
+	KeepAlive(FVoxelParameterContainerDetails::Create(DetailLayout, PropertyHandle.ToSharedRef()));
 }

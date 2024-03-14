@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -7,17 +7,24 @@
 
 class SVoxelGraphSearch;
 
-class FVoxelGraphSearchManager : public FVoxelSingleton
+class FVoxelGraphSearchManager
 {
 public:
-	const FName GlobalSearchTabId = "VoxelGraphSearch";
+	static FName GlobalSearchTabId;
 
-	FVoxelGraphSearchManager() = default;
+	FVoxelGraphSearchManager();
 
-	//~ Begin FVoxelSingleton Interface
-	virtual void Initialize() override;
-	//~ End FVoxelSingleton Interface
+	static FVoxelGraphSearchManager& Get();
 
+private:
+	void Initialize();
+	TSharedRef<SDockTab> SpawnGlobalSearchWidgetTab(const FSpawnTabArgs& SpawnTabArgs);
+
+public:
 	TSharedPtr<SVoxelGraphSearch> OpenGlobalSearch() const;
+	TMap<UObject*, UVoxelGraph*> GetAllLookupGraphs() const;
+
+private:
+	TWeakPtr<SVoxelGraphSearch> GlobalSearchWidget;
+	TMap<const UClass*, const FProperty*> AssetClasses;
 };
-extern FVoxelGraphSearchManager* GVoxelGraphSearchManager;

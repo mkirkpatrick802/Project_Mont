@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -97,7 +97,7 @@ public:
 	{
 		this->OnChanged([Lambda = MoveTemp(Lambda), WeakState = MakeWeakPtr(State)](const auto Value)
 		{
-			RunOnGameThread([Lambda, WeakState, Value]
+			FVoxelUtilities::RunOnGameThread([Lambda, WeakState, Value]
 			{
 				if (WeakState.IsValid())
 				{
@@ -123,7 +123,7 @@ public:
 		: Compute(Compute)
 		, Type(Type)
 		, Name(Name)
-		, Referencer(MakeVoxelShared<FVoxelTaskReferencer>(TEXTVIEW("FVoxelDynamicValue - ") + Name))
+		, Referencer(MakeVoxelShared<FVoxelTaskReferencer>(FVoxelUtilities::AppendName(TEXT("FVoxelDynamicValue - "), Name)))
 	{
 	}
 
@@ -138,11 +138,11 @@ protected:
 	FName Name;
 	TSharedPtr<FVoxelTaskReferencer> Referencer;
 
-	bool bPrivateRunSynchronously = false;
+	EVoxelTaskThread PrivateThread = EVoxelTaskThread::AsyncThread;
 	FVoxelTaskPriority PrivatePriority;
 
 	TSharedRef<FVoxelDynamicValueStateBase> ComputeState(
-		const TSharedRef<FVoxelTerminalGraphInstance>& TerminalGraphInstance,
+		const TSharedRef<FVoxelQueryContext>& Context,
 		const TSharedRef<const FVoxelQueryParameters>& Parameters) const;
 };
 
@@ -151,10 +151,9 @@ class FVoxelDynamicValueFactory : public FVoxelDynamicValueFactoryBase
 public:
 	using FVoxelDynamicValueFactoryBase::FVoxelDynamicValueFactoryBase;
 
-	FORCEINLINE FVoxelDynamicValueFactory& RunSynchronously()
+	FORCEINLINE FVoxelDynamicValueFactory& Thread(const EVoxelTaskThread NewThread)
 	{
-		ensureVoxelSlow(!bPrivateRunSynchronously);
-		bPrivateRunSynchronously = true;
+		PrivateThread = NewThread;
 		return *this;
 	}
 	FORCEINLINE FVoxelDynamicValueFactory& Priority(const FVoxelTaskPriority& NewPriority)
@@ -171,10 +170,10 @@ public:
 	}
 
 	FORCEINLINE FVoxelDynamicValue Compute(
-		const TSharedRef<FVoxelTerminalGraphInstance>& TerminalGraphInstance,
+		const TSharedRef<FVoxelQueryContext>& Context,
 		const TSharedRef<const FVoxelQueryParameters>& Parameters = MakeVoxelShared<FVoxelQueryParameters>()) const
 	{
-		return FVoxelDynamicValue(this->ComputeState(TerminalGraphInstance, Parameters));
+		return FVoxelDynamicValue(this->ComputeState(Context, Parameters));
 	}
 };
 
@@ -201,10 +200,9 @@ public:
 	{
 	}
 
-	FORCEINLINE TVoxelDynamicValueFactory& RunSynchronously()
+	FORCEINLINE TVoxelDynamicValueFactory& Thread(const EVoxelTaskThread NewThread)
 	{
-		ensureVoxelSlow(!bPrivateRunSynchronously);
-		bPrivateRunSynchronously = true;
+		PrivateThread = NewThread;
 		return *this;
 	}
 	FORCEINLINE TVoxelDynamicValueFactory& Priority(const FVoxelTaskPriority& NewPriority)
@@ -220,9 +218,9 @@ public:
 		return *this;
 	}
 	FORCEINLINE TVoxelDynamicValue<T> Compute(
-		const TSharedRef<FVoxelTerminalGraphInstance>& TerminalGraphInstance,
+		const TSharedRef<FVoxelQueryContext>& Context,
 		const TSharedRef<const FVoxelQueryParameters>& Parameters = MakeVoxelShared<FVoxelQueryParameters>()) const
 	{
-		return TVoxelDynamicValue<T>(this->ComputeState(TerminalGraphInstance, Parameters));
+		return TVoxelDynamicValue<T>(this->ComputeState(Context, Parameters));
 	}
 };

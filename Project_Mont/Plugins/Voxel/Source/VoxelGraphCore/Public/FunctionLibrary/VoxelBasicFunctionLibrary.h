@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -71,13 +71,7 @@ public:
 public:
 	// Returns the transform of the current actor/brush
 	UFUNCTION(Category = "Actor")
-	FTransform GetLocalToQuery() const;
-
-	UFUNCTION(Category = "Actor")
-	FTransform GetQueryToWorld() const;
-	
-	UFUNCTION(Category = "Actor")
-	FTransform GetLocalToWord() const;
+	FTransform GetTransform() const;
 
 public:
 	UFUNCTION(meta = (Internal))

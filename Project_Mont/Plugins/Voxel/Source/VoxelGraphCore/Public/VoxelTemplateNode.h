@@ -1,18 +1,10 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelMinimal.h"
 #include "VoxelNode.h"
 #include "VoxelTemplateNode.generated.h"
-
-namespace Voxel::Graph
-{
-	class FPin;
-	class FNode;
-	class FGraph;
-	enum class ENodeType : uint8;
-}
 
 // We need to make template node refs deterministic
 struct FVoxelTemplateNodeContext
@@ -127,30 +119,30 @@ public:
 private:
 	static TSharedPtr<FVoxelNode> GetConvertToFloatNode(const FPin* Pin);
 	static TSharedPtr<FVoxelNode> GetConvertToDoubleNode(const FPin* Pin);
-	static TSharedPtr<FVoxelNode> GetMakeNode(const FPin* Pin, int32 Dimension);
+	static TSharedPtr<FVoxelNode> GetMakeNode(const FPin* Pin, const int32 Dimension);
 
 	static FNode& CreateNode(const FPin* Pin, const TSharedRef<FVoxelNode>& VoxelNode);
 
 public:
-	static bool Any(const TArray<FPin*>& Pins, TFunctionRef<bool(FPin*)> Lambda);
-	static bool All(const TArray<FPin*>& Pins, TFunctionRef<bool(FPin*)> Lambda);
-	static TArray<FPin*> Filter(const TArray<FPin*>& Pins, TFunctionRef<bool(const FPin*)> Lambda);
+	static bool Any(const TArray<FPin*>& Pins, const TFunctionRef<bool(FPin*)> Lambda);
+	static bool All(const TArray<FPin*>& Pins, const TFunctionRef<bool(FPin*)> Lambda);
+	static TArray<FPin*> Filter(const TArray<FPin*>& Pins, const TFunctionRef<bool(const FPin*)> Lambda);
 
 	static FPin* Reduce(TArray<FPin*> Pins, TFunctionRef<FPin*(FPin*, FPin*)> Lambda);
 
-	template<typename T, typename = std::enable_if_t<TIsDerivedFrom<T, FVoxelNode>::Value>>
+	template<typename T, typename = typename TEnableIf<TIsDerivedFrom<T, FVoxelNode>::Value>::Type>
 	static FPin* Call_Single(
 		const TArray<FPin*>& Pins,
 		TOptional<FVoxelPinType> OutputPinType = {})
 	{
 		return Call_Single(T::StaticStruct(), Pins, OutputPinType);
 	}
-	template<typename... TArg, typename = std::enable_if_t<(... && std::is_same_v<TArg, FPin*>)>>
+	template<typename... TArg, typename = typename TEnableIf<(... && std::is_same_v<TArg, FPin*>)>::Type>
 	static FPin* Call_Single(UScriptStruct* NodeStruct, TArg... Args)
 	{
 		return Call_Single(NodeStruct, { Args... });
 	}
-	template<typename T, typename... TArg, typename = std::enable_if_t<(TIsDerivedFrom<T, FVoxelNode>::Value && ... && std::is_same_v<TArg, FPin*>)>>
+	template<typename T, typename... TArg, typename = typename TEnableIf<(TIsDerivedFrom<T, FVoxelNode>::Value && ... && std::is_same_v<TArg, FPin*>)>::Type>
 	static FPin* Call_Single(TArg... Args)
 	{
 		return Call_Single(T::StaticStruct(), { Args... });
@@ -160,17 +152,17 @@ public:
 		const TArray<FPin*>& Pins,
 		TOptional<FVoxelPinType> OutputPinType = {});
 
-	template<typename T, typename = std::enable_if_t<TIsDerivedFrom<T, FVoxelNode>::Value>>
+	template<typename T, typename = typename TEnableIf<TIsDerivedFrom<T, FVoxelNode>::Value>::Type>
 	static TArray<FPin*> Call_Multi(const TArray<TArray<FPin*>>& Pins)
 	{
 		return Call_Multi(T::StaticStruct(), Pins);
 	}
-	template<typename... TArg, typename = std::enable_if_t<(... && std::is_same_v<TArg, TArray<FPin*>>)>>
+	template<typename... TArg, typename = typename TEnableIf<(... && std::is_same_v<TArg, TArray<FPin*>>)>::Type>
 	static TArray<FPin*> Call_Multi(UScriptStruct* NodeStruct, TArg... Args)
 	{
 		return Call_Multi(NodeStruct, { Args... });
 	}
-	template<typename T, typename... TArg, typename = std::enable_if_t<(TIsDerivedFrom<T, FVoxelNode>::Value && ... && std::is_same_v<TArg, FPin*>)>>
+	template<typename T, typename... TArg, typename = typename TEnableIf<(TIsDerivedFrom<T, FVoxelNode>::Value && ... && std::is_same_v<TArg, FPin*>)>::Type>
 	static TArray<FPin*> Call_Multi(TArg... Args)
 	{
 		return Call_Multi(T::StaticStruct(), { Args... });
@@ -180,8 +172,8 @@ public:
 		const TArray<TArray<FPin*>>& Pins,
 		TOptional<FVoxelPinType> OutputPinType = {});
 
-	template<typename LambdaType, typename... TArgs, typename = std::enable_if_t<TIsInvocable<LambdaType, FPin*, TArgs...>::Value>>
-	static TArray<FPin*> Apply(const TConstVoxelArrayView<FPin*> InPins, LambdaType&& Lambda, TArgs... Args)
+	template<typename LambdaType, typename... TArgs, typename = typename TEnableIf<TIsInvocable<LambdaType, FPin*, TArgs...>::Value>::Type>
+	static TArray<FPin*> Apply(TConstArrayView<FPin*> InPins, LambdaType&& Lambda, TArgs... Args)
 	{
 		TArray<FPin*> Pins(InPins);
 		for (FPin*& Pin : Pins)
@@ -191,8 +183,8 @@ public:
 		return Pins;
 	}
 
-	template<typename LambdaType, typename... TArgs, typename = std::enable_if_t<TIsInvocable<LambdaType, FPin*, TArgs...>::Value>>
-	static TArray<TArray<FPin*>> ApplyVector(const TConstVoxelArrayView<FPin*> InPins, LambdaType&& Lambda, TArgs... Args)
+	template<typename LambdaType, typename... TArgs, typename = typename TEnableIf<TIsInvocable<LambdaType, FPin*, TArgs...>::Value>::Type>
+	static TArray<TArray<FPin*>> ApplyVector(TConstArrayView<FPin*> InPins, LambdaType&& Lambda, TArgs... Args)
 	{
 		TArray<TArray<FPin*>> Result;
 		TArray<FPin*> Pins(InPins);
@@ -221,7 +213,7 @@ public:
 	}
 
 	virtual void ExpandNode(FGraph& Graph, FNode& Node) const;
-	virtual void ExpandPins(FNode& Node, const TArray<FPin*> Pins, const TArray<FPin*>& AllPins, TArray<FPin*>& OutPins) const
+	virtual void ExpandPins(FNode& Node, TArray<FPin*> Pins, const TArray<FPin*>& AllPins, TArray<FPin*>& OutPins) const
 	{
 		OutPins = { ExpandPins(Node, Pins, AllPins) };
 	}

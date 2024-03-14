@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelMinimal.h"
 #include "VoxelMemoryScope.h"
@@ -47,7 +47,7 @@ public:
 	}
 
 public:
-	virtual void* Malloc(const SIZE_T Count, const uint32 Alignment) override
+	virtual void* Malloc(SIZE_T Count, uint32 Alignment) override
 	{
 		if (!GVoxelMallocDisableChecks &&
 			!GVoxelMallocIsAllowed &&
@@ -57,7 +57,7 @@ public:
 		}
 		return Base.Malloc(Count, Alignment);
 	}
-	virtual void* TryMalloc(const SIZE_T Count, const uint32 Alignment) override
+	virtual void* TryMalloc(SIZE_T Count, uint32 Alignment) override
 	{
 		if (!GVoxelMallocDisableChecks &&
 			!GVoxelMallocIsAllowed &&
@@ -67,7 +67,7 @@ public:
 		}
 		return Base.TryMalloc(Count, Alignment);
 	}
-	virtual void* Realloc(void* Original, const SIZE_T Count, const uint32 Alignment) override
+	virtual void* Realloc(void* Original, SIZE_T Count, uint32 Alignment) override
 	{
 		if (!GVoxelMallocDisableChecks &&
 			!GVoxelMallocIsAllowed &&
@@ -77,7 +77,7 @@ public:
 		}
 		return Base.Realloc(Original, Count, Alignment);
 	}
-	virtual void* TryRealloc(void* Original, const SIZE_T Count, const uint32 Alignment) override
+	virtual void* TryRealloc(void* Original, SIZE_T Count, uint32 Alignment) override
 	{
 		if (!GVoxelMallocDisableChecks &&
 			!GVoxelMallocIsAllowed &&
@@ -90,7 +90,7 @@ public:
 	virtual void Free(void* Original) override
 	{
 #if VOXEL_DEBUG && 0
-		extern FVoxelCriticalSection GVoxelValidAllocationsCriticalSection;
+		extern FVoxelFastCriticalSection GVoxelValidAllocationsCriticalSection;
 		if (!GVoxelValidAllocationsCriticalSection.IsLockedByThisThread_Debug())
 		{
 			extern TSet<void*> GVoxelValidAllocations;
@@ -112,9 +112,9 @@ public:
 		Base.Free(Original);
 	}
 
-	virtual SIZE_T QuantizeSize(const SIZE_T Count, const uint32 Alignment) override { return Base.QuantizeSize(Count, Alignment); }
+	virtual SIZE_T QuantizeSize(SIZE_T Count, uint32 Alignment) override { return Base.QuantizeSize(Count, Alignment); }
 	virtual bool GetAllocationSize(void* Original, SIZE_T& SizeOut) override { return Base.GetAllocationSize(Original, SizeOut); }
-	virtual void Trim(const bool bTrimThreadCaches) override { Base.Trim(bTrimThreadCaches); }
+	virtual void Trim(bool bTrimThreadCaches) override { Base.Trim(bTrimThreadCaches); }
 	virtual void SetupTLSCachesOnCurrentThread() override { Base.SetupTLSCachesOnCurrentThread(); }
 	virtual void ClearAndDisableTLSCachesOnCurrentThread() override { Base.ClearAndDisableTLSCachesOnCurrentThread(); }
 	virtual void InitializeStatsMetadata() override { Base.InitializeStatsMetadata(); }

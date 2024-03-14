@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -9,7 +9,7 @@
 #include "K2Node_VoxelGraphParameterBase.generated.h"
 
 class UVoxelGraph;
-class IVoxelParameterOverridesObjectOwner;
+class IVoxelParameterProvider;
 
 USTRUCT()
 struct FVoxelGraphBlueprintParameter
@@ -29,10 +29,8 @@ struct FVoxelGraphBlueprintParameter
 	bool bIsValid = true;
 
 	FVoxelGraphBlueprintParameter() = default;
-	FVoxelGraphBlueprintParameter(
-		const FGuid& Guid,
-		const FVoxelParameter& Parameter)
-		: Guid(Guid)
+	explicit FVoxelGraphBlueprintParameter(const FVoxelParameter& Parameter)
+		: Guid(Parameter.Guid)
 		, Name(Parameter.Name)
 		, Type(Parameter.Type.GetExposedType())
 	{
@@ -87,8 +85,8 @@ public:
 	FVoxelGraphBlueprintParameter CachedParameter;
 
 	UPROPERTY()
-	TScriptInterface<IVoxelParameterOverridesObjectOwner> CachedParameterOverridesOwner;
+	TScriptInterface<IVoxelParameterProvider> CachedParameterProvider;
 
 private:
-	FSharedVoidPtr OnParameterLayoutChangedPtr;
+	FSharedVoidPtr OnGraphChangedHandleOwnerPtr;
 };

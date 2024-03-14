@@ -1,64 +1,57 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelGraphCompileScope.h"
-#include "VoxelMessage.h"
-#include "VoxelTerminalGraph.h"
+#include "VoxelGraph.h"
 #include "EdGraph/EdGraph.h"
+#include "Logging/TokenizedMessage.h"
 
 FVoxelGraphCompileScope* GVoxelGraphCompileScope = nullptr;
 
-FVoxelGraphCompileScope::FVoxelGraphCompileScope(
-	const UVoxelTerminalGraph& TerminalGraph,
-	const bool bEnableLogging)
-	: TerminalGraph(TerminalGraph)
+FVoxelGraphCompileScope::FVoxelGraphCompileScope(const UVoxelGraph& Graph)
+	: Graph(Graph)
 {
 	PreviousScope = GVoxelGraphCompileScope;
 	GVoxelGraphCompileScope = this;
 
-	ScopedMessageConsumer = MakeVoxelUnique<FVoxelScopedMessageConsumer>([=](const TSharedRef<FVoxelMessage>& Message)
+	ScopedMessageConsumer = MakeVoxelUnique<FVoxelScopedMessageConsumer>([this](const TSharedRef<FTokenizedMessage>& Message)
 	{
-		if (Message->GetSeverity() == EVoxelMessageSeverity::Error)
+		if (Message->GetSeverity() == EMessageSeverity::Error)
 		{
 			bHasError = true;
 		}
 
-		Messages.Add(Message);
-
-		if (!bEnableLogging)
-		{
-			return;
-		}
-
-		const FString GraphPath = this->TerminalGraph.GetPathName();
+		const FString GraphPath = this->Graph.GetPathName();
 
 		switch (Message->GetSeverity())
 		{
 		default: ensure(false);
-		case EVoxelMessageSeverity::Info:
+		case EMessageSeverity::Info:
 		{
-			LOG_VOXEL(Log, "%s: %s", *GraphPath, *Message->ToString());
+			LOG_VOXEL(Log, "%s: %s", *GraphPath, *Message->ToText().ToString());
 		}
 		break;
-		case EVoxelMessageSeverity::Warning:
+		case EMessageSeverity::Warning:
 		{
-			LOG_VOXEL(Warning, "%s: %s", *GraphPath, *Message->ToString());
+			LOG_VOXEL(Warning, "%s: %s", *GraphPath, *Message->ToText().ToString());
 		}
 		break;
-		case EVoxelMessageSeverity::Error:
+		case EMessageSeverity::Error:
 		{
 			if (IsRunningCookCommandlet() ||
 				IsRunningCookOnTheFly())
 			{
 				// Don't fail cooking
-				LOG_VOXEL(Warning, "%s: %s", *GraphPath, *Message->ToString());
+				LOG_VOXEL(Warning, "%s: %s", *GraphPath, *Message->ToText().ToString());
 			}
 			else
 			{
-				LOG_VOXEL(Error, "%s: %s", *GraphPath, *Message->ToString());
+				LOG_VOXEL(Error, "%s: %s", *GraphPath, *Message->ToText().ToString());
 			}
 		}
 		break;
 		}
+
+		Messages.Add(Message);
 	});
 }
 

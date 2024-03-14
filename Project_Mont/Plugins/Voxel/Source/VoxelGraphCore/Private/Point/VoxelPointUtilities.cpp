@@ -1,8 +1,7 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "Point/VoxelPointUtilities.h"
-#include "Utilities/VoxelBufferMathUtilities.h"
-#include "Utilities/VoxelBufferTransformUtilities.h"
+#include "VoxelBufferUtilities.h"
 
 void FVoxelPointUtilities::GetMeshBounds(
 	const FVoxelStaticMeshBuffer& MeshBuffer,
@@ -44,7 +43,7 @@ void FVoxelPointUtilities::GetMeshBounds(
 			FVector3f Min;
 			FVector3f Max;
 		};
-		TVoxelMap<FVoxelStaticMesh, FBounds> MeshToBounds;
+		TVoxelAddOnlyMap<FVoxelStaticMesh, FBounds> MeshToBounds;
 		MeshToBounds.Reserve(16);
 
 		for (int32 Index = 0; Index < BufferAccessor.Num(); Index++)
@@ -87,15 +86,15 @@ void FVoxelPointUtilities::GetMeshBounds(
 	FVoxelVectorBuffer MinMaxMax; MinMaxMax.X.SetStorage(MinX); MinMaxMax.Y.SetStorage(MaxY); MinMaxMax.Z.SetStorage(MaxZ);
 	FVoxelVectorBuffer MaxMaxMax; MaxMaxMax.X.SetStorage(MaxX); MaxMaxMax.Y.SetStorage(MaxY); MaxMaxMax.Z.SetStorage(MaxZ);
 
-	MinMinMin = FVoxelBufferTransformUtilities::ApplyTransform(MinMinMin, PositionBuffer, RotationBuffer, ScaleBuffer);
-	MaxMinMin = FVoxelBufferTransformUtilities::ApplyTransform(MaxMinMin, PositionBuffer, RotationBuffer, ScaleBuffer);
-	MinMaxMin = FVoxelBufferTransformUtilities::ApplyTransform(MinMaxMin, PositionBuffer, RotationBuffer, ScaleBuffer);
-	MaxMaxMin = FVoxelBufferTransformUtilities::ApplyTransform(MaxMaxMin, PositionBuffer, RotationBuffer, ScaleBuffer);
-	MinMinMax = FVoxelBufferTransformUtilities::ApplyTransform(MinMinMax, PositionBuffer, RotationBuffer, ScaleBuffer);
-	MaxMinMax = FVoxelBufferTransformUtilities::ApplyTransform(MaxMinMax, PositionBuffer, RotationBuffer, ScaleBuffer);
-	MinMaxMax = FVoxelBufferTransformUtilities::ApplyTransform(MinMaxMax, PositionBuffer, RotationBuffer, ScaleBuffer);
-	MaxMaxMax = FVoxelBufferTransformUtilities::ApplyTransform(MaxMaxMax, PositionBuffer, RotationBuffer, ScaleBuffer);
+	MinMinMin = FVoxelBufferUtilities::ApplyTransform(MinMinMin, PositionBuffer, RotationBuffer, ScaleBuffer);
+	MaxMinMin = FVoxelBufferUtilities::ApplyTransform(MaxMinMin, PositionBuffer, RotationBuffer, ScaleBuffer);
+	MinMaxMin = FVoxelBufferUtilities::ApplyTransform(MinMaxMin, PositionBuffer, RotationBuffer, ScaleBuffer);
+	MaxMaxMin = FVoxelBufferUtilities::ApplyTransform(MaxMaxMin, PositionBuffer, RotationBuffer, ScaleBuffer);
+	MinMinMax = FVoxelBufferUtilities::ApplyTransform(MinMinMax, PositionBuffer, RotationBuffer, ScaleBuffer);
+	MaxMinMax = FVoxelBufferUtilities::ApplyTransform(MaxMinMax, PositionBuffer, RotationBuffer, ScaleBuffer);
+	MinMaxMax = FVoxelBufferUtilities::ApplyTransform(MinMaxMax, PositionBuffer, RotationBuffer, ScaleBuffer);
+	MaxMaxMax = FVoxelBufferUtilities::ApplyTransform(MaxMaxMax, PositionBuffer, RotationBuffer, ScaleBuffer);
 
-	OutBoundsMin = FVoxelBufferMathUtilities::Min8(MinMinMin, MaxMinMin, MinMaxMin, MaxMaxMin, MinMinMax, MaxMinMax, MinMaxMax, MaxMaxMax);
-	OutBoundsMax = FVoxelBufferMathUtilities::Max8(MinMinMin, MaxMinMin, MinMaxMin, MaxMaxMin, MinMinMax, MaxMinMax, MinMaxMax, MaxMaxMax);
+	OutBoundsMin = FVoxelBufferUtilities::Min8(MinMinMin, MaxMinMin, MinMaxMin, MaxMaxMin, MinMinMax, MaxMinMax, MinMaxMax, MaxMaxMax);
+	OutBoundsMax = FVoxelBufferUtilities::Max8(MinMinMin, MaxMinMin, MinMaxMin, MaxMaxMin, MinMinMax, MaxMinMax, MinMaxMax, MaxMaxMax);
 }

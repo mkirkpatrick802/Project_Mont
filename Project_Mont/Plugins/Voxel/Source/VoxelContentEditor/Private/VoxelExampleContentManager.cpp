@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelExampleContentManager.h"
 #include "VoxelPluginVersion.h"
@@ -7,6 +7,7 @@
 #include "Engine/Texture2D.h"
 #include "Interfaces/IHttpRequest.h"
 #include "Interfaces/IHttpResponse.h"
+#include "Interfaces/IPluginManager.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "Slate/DeferredCleanupSlateBrush.h"
@@ -19,13 +20,23 @@ void FVoxelExampleContentManager::OnExamplesReady(const FSimpleDelegate& OnReady
 		return;
 	}
 
-	const FVoxelPluginVersion Version = FVoxelUtilities::GetPluginVersion();
+	FString VersionName;
+	if (!FParse::Value(FCommandLine::Get(), TEXT("-PluginVersionName="), VersionName))
+	{
+		VersionName = FVoxelSystemUtilities::GetPlugin().GetDescriptor().VersionName;
+	}
 
 	FString ContentVersion = "dev";
-	if (Version.Type == FVoxelPluginVersion::EType::Release ||
-		Version.Type == FVoxelPluginVersion::EType::Preview)
+	if (VersionName != "Unknown")
 	{
-		ContentVersion = FString::FromInt(Version.GetCounter());
+		FVoxelPluginVersion Version;
+		ensure(Version.Parse(VersionName));
+
+		if (Version.Type == FVoxelPluginVersion::EType::Release ||
+			Version.Type == FVoxelPluginVersion::EType::Preview)
+		{
+			ContentVersion = FString::FromInt(Version.GetCounter());
+		}
 	}
 
 	const TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
@@ -67,32 +78,14 @@ void FVoxelExampleContentManager::OnExamplesReady(const FSimpleDelegate& OnReady
 			}
 
 			const TSharedRef<FVoxelExampleContent> Content = MakeVoxelShared<FVoxelExampleContent>();
-			Content->Name = ContentObject->GetStringField(TEXT("name"));
+			Content->Name = ContentObject->GetStringField("name");
 			Content->Version = ContentVersion;
-			Content->Size = ContentObject->GetNumberField(TEXT("size"));
-			Content->Hash = ContentObject->GetStringField(TEXT("hash"));
-			Content->DisplayName = ContentObject->GetStringField(TEXT("displayName"));
-			Content->Description = ContentObject->GetStringField(TEXT("description"));
-			Content->Thumbnail = MakeImage(ContentObject->GetStringField(TEXT("thumbnailHash")));
-			Content->Image = MakeImage(ContentObject->GetStringField(TEXT("imageHash")));
-
-			TArray<FString> CategoriesList;
-			ContentObject->GetStringField(TEXT("categories")).ParseIntoArray(CategoriesList, TEXT(";"), false);
-
-			if (ensure(CategoriesList.Num() > 0))
-			{
-				Content->Category = FName(CategoriesList[0]);
-
-				for (int32 Index = 1; Index < CategoriesList.Num(); Index++)
-				{
-					if (CategoriesList[Index].IsEmpty())
-					{
-						continue;
-					}
-
-					Content->Tags.Add(FName(CategoriesList[Index]));
-				}
-			}
+			Content->Size = ContentObject->GetNumberField("size");
+			Content->Hash = ContentObject->GetStringField("hash");
+			Content->DisplayName = ContentObject->GetStringField("displayName");
+			Content->Description = ContentObject->GetStringField("description");
+			Content->Thumbnail = MakeImage(ContentObject->GetStringField("thumbnailHash"));
+			Content->Image = MakeImage(ContentObject->GetStringField("imageHash"));
 
 			ExampleContents.Add(Content);
 		}
@@ -106,13 +99,6 @@ TArray<TSharedPtr<FVoxelExampleContent>> FVoxelExampleContentManager::GetExample
 {
 	ensure(ExampleContents.Num() > 0);
 	return ExampleContents;
-}
-
-FLinearColor FVoxelExampleContentManager::GetContentTagColor(const FName ContentTag)
-{
-	const uint32 Hash = FCrc::StrCrc32(*ContentTag.ToString());
-	const FLinearColor TagColor =  FLinearColor::MakeRandomSeededColor(Hash);
-	return TagColor;
 }
 
 TSharedRef<TSharedPtr<ISlateBrushSource>> FVoxelExampleContentManager::MakeImage(const FString& Hash)
@@ -131,7 +117,7 @@ TSharedRef<TSharedPtr<ISlateBrushSource>> FVoxelExampleContentManager::MakeImage
 		return Result;
 	}
 
-	const auto SetData = [Result](const TConstVoxelArrayView<uint8> Data)
+	const auto SetData = [Result](const TConstArrayView<uint8> Data)
 	{
 		FImage Image;
 		if (!ensure(FImageUtils::DecompressImage(Data.GetData(), Data.Num(), Image)))
@@ -148,7 +134,7 @@ TSharedRef<TSharedPtr<ISlateBrushSource>> FVoxelExampleContentManager::MakeImage
 		*Result = FDeferredCleanupSlateBrush::CreateBrush(Texture, FVector2D(Image.SizeX, Image.SizeY));
 	};
 
-	const FString Path = FVoxelUtilities::GetAppDataCache() / "ContentCache" / Hash + ".jpg";
+	const FString Path = FVoxelSystemUtilities::GetAppDataCache() / "ContentCache" / Hash + ".jpg";
 
 	TArray<uint8> FileData;
 	if (FFileHelper::LoadFileToArray(FileData, *Path))
@@ -198,7 +184,7 @@ TSharedRef<TSharedPtr<ISlateBrushSource>> FVoxelExampleContentManager::MakeImage
 			ensure(FFileHelper::SaveArrayToFile(DownloadedData, *Path));
 			IFileManager::Get().SetTimeStamp(*Path, FDateTime::UtcNow());
 
-			FVoxelUtilities::CleanupFileCache(FPaths::GetPath(Path), 10 * 1024 * 1024);
+			FVoxelSystemUtilities::CleanupFileCache(FPaths::GetPath(Path), 10 * 1024 * 1024);
 
 			SetData(DownloadedData);
 		});

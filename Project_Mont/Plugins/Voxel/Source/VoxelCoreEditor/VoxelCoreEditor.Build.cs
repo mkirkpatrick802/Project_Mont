@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 using System;
 using System.IO;
@@ -8,7 +8,11 @@ public class VoxelCoreEditor : ModuleRules_Voxel
 {
     public VoxelCoreEditor(ReadOnlyTargetRules Target) : base(Target)
 	{
+#if UE_5_2_OR_LATER
 		IWYUSupport = IWYUSupport.None;
+#else
+		bEnforceIWYU = false;
+#endif
 
 		if (!bUseUnity &&
 			!bStrictIncludes)

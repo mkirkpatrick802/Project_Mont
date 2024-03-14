@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -6,75 +6,18 @@
 #include "VoxelGraphNodeRef.generated.h"
 
 class UVoxelGraph;
-class UVoxelTerminalGraph;
+class UVoxelGraphInterface;
 struct FVoxelGraphNodeRef;
-struct FOnVoxelGraphChanged;
 
-struct VOXELGRAPHCORE_API FVoxelGraphConstants
+struct VOXELGRAPHCORE_API FVoxelNodeNames
 {
-	static const FName NodeId_Preview;
-	static const FName PinName_EnableNode;
-	static const FName PinName_GraphParameter;
-
-	static FName GetOutputNodeId(const FGuid& Guid);
-};
-
-USTRUCT()
-struct VOXELGRAPHCORE_API FVoxelTerminalGraphRef
-{
-	GENERATED_BODY()
-
-	UPROPERTY()
-	TWeakObjectPtr<const UVoxelGraph> Graph;
-
-	UPROPERTY()
-	FGuid TerminalGraphGuid;
-
-	FVoxelTerminalGraphRef() = default;
-	FVoxelTerminalGraphRef(
-		const TWeakObjectPtr<const UVoxelGraph>& Graph,
-		const FGuid& TerminalGraphGuid)
-		: Graph(Graph)
-		, TerminalGraphGuid(TerminalGraphGuid)
-	{
-	}
-	explicit FVoxelTerminalGraphRef(const UVoxelTerminalGraph* TerminalGraph);
-	explicit FVoxelTerminalGraphRef(const UVoxelTerminalGraph& TerminalGraph);
-
-	const UVoxelTerminalGraph* GetTerminalGraph(const FOnVoxelGraphChanged& OnChanged) const;
-
-	FORCEINLINE bool IsExplicitlyNull() const
-	{
-		return
-			Graph.IsExplicitlyNull() &&
-			!TerminalGraphGuid.IsValid();
-	}
-
-	FORCEINLINE bool operator==(const FVoxelTerminalGraphRef& Other) const
-	{
-		return
-			Graph == Other.Graph &&
-			TerminalGraphGuid == Other.TerminalGraphGuid;
-	}
-	FORCEINLINE bool operator!=(const FVoxelTerminalGraphRef& Other) const
-	{
-		return
-			Graph != Other.Graph ||
-			TerminalGraphGuid != Other.TerminalGraphGuid;
-	}
-
-	FORCEINLINE friend FArchive& operator<<(FArchive& Ar, FVoxelTerminalGraphRef& Key)
-	{
-		Ar << Key.Graph;
-		Ar << Key.TerminalGraphGuid;
-		return Ar;
-	}
-	FORCEINLINE friend uint32 GetTypeHash(const FVoxelTerminalGraphRef& Key)
-	{
-		return FVoxelUtilities::MurmurHashMulti(
-			GetTypeHash(Key.Graph),
-			GetTypeHash(Key.TerminalGraphGuid));
-	}
+	static const FName Builtin;
+	static const FName ExecuteNodeId;
+	static const FName MergeNodeId;
+	static const FName PreviewNodeId;
+	static const FName GetPreviousOutputNodeId;
+	static const FName MacroTemplateInput;
+	static const FName MacroRecursiveTemplateInput;
 };
 
 USTRUCT()
@@ -84,7 +27,7 @@ struct VOXELGRAPHCORE_API FVoxelGraphNodeRef
 
 public:
 	UPROPERTY()
-	FVoxelTerminalGraphRef TerminalGraphRef;
+	TWeakObjectPtr<const UVoxelGraphInterface> Graph;
 
 	UPROPERTY()
 	FName NodeId;
@@ -101,59 +44,50 @@ public:
 	UPROPERTY()
 	FName EdGraphNodeName;
 
-public:
 	FVoxelGraphNodeRef() = default;
-
 	FVoxelGraphNodeRef(
-		const FVoxelTerminalGraphRef& TerminalGraphRef,
-		const FName NodeId,
-		const FName EdGraphNodeTitle,
-		const FName EdGraphNodeName)
-		: TerminalGraphRef(TerminalGraphRef)
+		const TWeakObjectPtr<const UVoxelGraphInterface>& Graph,
+		const FName NodeId)
+		: Graph(Graph)
 		, NodeId(NodeId)
-		, EdGraphNodeTitle(EdGraphNodeTitle)
-		, EdGraphNodeName(EdGraphNodeName)
+		, EdGraphNodeTitle(NodeId)
+		, EdGraphNodeName(FVoxelNodeNames::Builtin)
 	{
 	}
 
+	UVoxelGraph* GetGraph() const;
 #if WITH_EDITOR
 	UEdGraphNode* GetGraphNode_EditorOnly() const;
 #endif
 
 	bool IsDeleted() const;
-	void AppendString(FWideStringBuilderBase& Out) const;
-	bool NetSerialize(FArchive& Ar, UPackageMap& Map);
 	FVoxelGraphNodeRef WithSuffix(const FString& Suffix) const;
-	TSharedRef<FVoxelMessageToken> CreateMessageToken() const;
-	// Will return parent graph if this node is an output
-	const UVoxelTerminalGraph* GetNodeTerminalGraph(const FOnVoxelGraphChanged& OnChanged) const;
 
-public:
 	FORCEINLINE bool IsExplicitlyNull() const
 	{
 		return
-			TerminalGraphRef.IsExplicitlyNull() &&
+			Graph.IsExplicitlyNull() &&
 			*this == FVoxelGraphNodeRef();
 	}
 
 	FORCEINLINE bool operator==(const FVoxelGraphNodeRef& Other) const
 	{
 		return
-			TerminalGraphRef == Other.TerminalGraphRef &&
+			Graph == Other.Graph &&
 			NodeId == Other.NodeId &&
 			TemplateInstance == Other.TemplateInstance;
 	}
 	FORCEINLINE bool operator!=(const FVoxelGraphNodeRef& Other) const
 	{
 		return
-			TerminalGraphRef != Other.TerminalGraphRef ||
+			Graph != Other.Graph ||
 			NodeId != Other.NodeId ||
 			TemplateInstance != Other.TemplateInstance;
 	}
 
 	FORCEINLINE friend FArchive& operator<<(FArchive& Ar, FVoxelGraphNodeRef& Key)
 	{
-		Ar << Key.TerminalGraphRef;
+		Ar << Key.Graph;
 		Ar << Key.NodeId;
 		Ar << Key.TemplateInstance;
 		Ar << Key.EdGraphNodeTitle;
@@ -163,7 +97,7 @@ public:
 	FORCEINLINE friend uint32 GetTypeHash(const FVoxelGraphNodeRef& Key)
 	{
 		return FVoxelUtilities::MurmurHashMulti(
-			GetTypeHash(Key.TerminalGraphRef),
+			GetTypeHash(Key.Graph),
 			GetTypeHash(Key.NodeId),
 			GetTypeHash(Key.TemplateInstance));
 	}
@@ -175,32 +109,54 @@ struct VOXELGRAPHCORE_API FVoxelGraphPinRef
 	GENERATED_BODY()
 
 	UPROPERTY()
-	FVoxelGraphNodeRef NodeRef;
+	FVoxelGraphNodeRef Node;
 
 	UPROPERTY()
 	FName PinName;
 
 	FString ToString() const;
-	const UVoxelTerminalGraph* GetNodeTerminalGraph(const FOnVoxelGraphChanged& OnChanged) const;
-	TSharedRef<FVoxelMessageToken> CreateMessageToken() const;
 
 	FORCEINLINE bool operator==(const FVoxelGraphPinRef& Other) const
 	{
 		return
-			NodeRef == Other.NodeRef &&
+			Node == Other.Node &&
 			PinName == Other.PinName;
 	}
 	FORCEINLINE bool operator!=(const FVoxelGraphPinRef& Other) const
 	{
 		return
-			NodeRef != Other.NodeRef ||
+			Node != Other.Node ||
 			PinName != Other.PinName;
 	}
 
 	FORCEINLINE friend uint32 GetTypeHash(const FVoxelGraphPinRef& Key)
 	{
 		return FVoxelUtilities::MurmurHashMulti(
-			GetTypeHash(Key.NodeRef),
+			GetTypeHash(Key.Node),
 			GetTypeHash(Key.PinName));
 	}
+};
+
+USTRUCT()
+struct VOXELGRAPHCORE_API FVoxelNodePath
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	TArray<FVoxelGraphNodeRef> NodeRefs;
+
+	FORCEINLINE bool operator==(const FVoxelNodePath& Other) const
+	{
+		return NodeRefs == Other.NodeRefs;
+	}
+	FORCEINLINE bool operator!=(const FVoxelNodePath& Other) const
+	{
+		return NodeRefs != Other.NodeRefs;
+	}
+
+	FString ToDebugString() const;
+	bool NetSerialize(FArchive& Ar, UPackageMap& Map);
+
+	VOXELGRAPHCORE_API friend FArchive& operator<<(FArchive& Ar, FVoxelNodePath& Path);
+	VOXELGRAPHCORE_API friend uint32 GetTypeHash(const FVoxelNodePath& Path);
 };

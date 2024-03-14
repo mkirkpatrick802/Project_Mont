@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -7,7 +7,6 @@
 #include "VoxelChunkSpawner.generated.h"
 
 class FVoxelRuntime;
-class FVoxelExecNodeRuntime_OutputMarchingCubeMesh;
 
 DECLARE_UNIQUE_VOXEL_ID_EXPORT(VOXELGRAPHCORE_API, FVoxelChunkId);
 
@@ -82,7 +81,7 @@ struct VOXELGRAPHCORE_API FVoxelChunkRef
 	{
 		Queue->Enqueue(FVoxelChunkAction(EVoxelChunkAction::BeginDestroy, ChunkId));
 	}
-	void Compute(TVoxelUniqueFunction<void()> OnComputeComplete = nullptr) const
+	void Compute(TVoxelUniqueFunction<void()>&& OnComputeComplete = nullptr) const
 	{
 		FVoxelChunkAction Action(EVoxelChunkAction::Compute, ChunkId);
 		if (OnComputeComplete)
@@ -91,7 +90,7 @@ struct VOXELGRAPHCORE_API FVoxelChunkRef
 		}
 		Queue->Enqueue(Action);
 	}
-	void SetTransitionMask(const uint8 TransitionMask) const
+	void SetTransitionMask(uint8 TransitionMask) const
 	{
 		FVoxelChunkAction Action(EVoxelChunkAction::SetTransitionMask, ChunkId);
 		Action.TransitionMask = TransitionMask;
@@ -102,18 +101,13 @@ struct VOXELGRAPHCORE_API FVoxelChunkRef
 USTRUCT()
 struct VOXELGRAPHCORE_API FVoxelChunkSpawner
 	: public FVoxelVirtualStruct
-	, public TVoxelRuntimeInfo<FVoxelChunkSpawner>
 	, public TSharedFromThis<FVoxelChunkSpawner>
 {
 	GENERATED_BODY()
 	GENERATED_VIRTUAL_STRUCT_BODY()
 
 public:
-	FORCEINLINE const FVoxelRuntimeInfo& GetRuntimeInfoRef() const
-	{
-		return *PrivateRuntimeInfo;
-	}
-	FORCEINLINE int32 GetVoxelSize() const
+	FORCEINLINE float GetVoxelSize() const
 	{
 		return PrivateVoxelSize;
 	}
@@ -123,8 +117,8 @@ public:
 		int32 ChunkSize,
 		const FVoxelBox& Bounds) const;
 
-	virtual void Initialize(const FVoxelExecNodeRuntime_OutputMarchingCubeMesh& NodeRuntime) {}
-	virtual void Tick(const FVoxelExecNodeRuntime_OutputMarchingCubeMesh& NodeRuntime) {}
+	virtual void Initialize(FVoxelRuntime& Runtime) {}
+	virtual void Tick(FVoxelRuntime& Runtime) {}
 
 private:
 	using FCreateChunk = TFunction<TSharedPtr<FVoxelChunkRef>(
@@ -132,9 +126,8 @@ private:
 		int32 ChunkSize,
 		const FVoxelBox& Bounds)>;
 
-	TSharedPtr<const FVoxelRuntimeInfo> PrivateRuntimeInfo;
-	int32 PrivateVoxelSize = 0;
+	float PrivateVoxelSize = 0.f;
 	FCreateChunk PrivateCreateChunkLambda;
 
-	friend class FVoxelExecNodeRuntime_OutputMarchingCubeMesh;
+	friend class FVoxelMarchingCubeExecNodeRuntime;
 };

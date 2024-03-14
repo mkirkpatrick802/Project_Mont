@@ -1,11 +1,13 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelMinimal.h"
 #include "VoxelExecNode.h"
 
-class VOXELGRAPHCORE_API FVoxelExecNodeRuntimeWrapper : public TSharedFromThis<FVoxelExecNodeRuntimeWrapper>
+class VOXELGRAPHCORE_API FVoxelExecNodeRuntimeWrapper
+	: public IVoxelExecNodeRuntimeInterface
+	, public TSharedFromThis<FVoxelExecNodeRuntimeWrapper>
 {
 public:
 	const TSharedRef<FVoxelExecNode> Node;
@@ -15,14 +17,16 @@ public:
 	{
 	}
 
-	void Initialize(const TSharedRef<FVoxelTerminalGraphInstance>& NewTerminalGraphInstance);
+	void Initialize(const TSharedRef<FVoxelQueryContext>& NewContext);
 
-	void Tick(FVoxelRuntime& Runtime) const;
-	void AddReferencedObjects(FReferenceCollector& Collector) const;
-	FVoxelOptionalBox GetBounds() const;
+	//~ Begin IVoxelExecNodeRuntimeInterface Interface
+	virtual void Tick(FVoxelRuntime& Runtime) override;
+	virtual void AddReferencedObjects(FReferenceCollector& Collector) override;
+	virtual FVoxelOptionalBox GetBounds() const override;
+	//~ End IVoxelExecNodeRuntimeInterface Interface
 
 private:
-	TSharedPtr<FVoxelTerminalGraphInstance> TerminalGraphInstance;
+	TSharedPtr<FVoxelQueryContext> Context;
 	TVoxelDynamicValue<bool> EnableNodeValue;
 
 	struct FConstantValue : TSharedFromThis<FConstantValue>
@@ -30,7 +34,7 @@ private:
 		FVoxelDynamicValue DynamicValue;
 		FVoxelRuntimePinValue Value;
 	};
-	TMap<FName, TVoxelArray<TSharedPtr<FConstantValue>>> ConstantPins_GameThread;
+	TMap<FName, TSharedPtr<FConstantValue>> ConstantPins_GameThread;
 
 	TSharedPtr<FVoxelExecNodeRuntime> NodeRuntime_GameThread;
 

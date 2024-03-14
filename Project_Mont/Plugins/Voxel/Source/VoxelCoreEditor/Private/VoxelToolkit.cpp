@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelToolkit.h"
 #include "Toolkits/ToolkitManager.h"
@@ -54,20 +54,26 @@ void FVoxelToolkit::AddReferencedObjects(FReferenceCollector& Collector)
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-FVoxelToolkit* FVoxelToolkit::OpenToolkit(const UObject& Asset, const UScriptStruct* ToolkitStruct)
+FVoxelToolkit* FVoxelToolkit::OpenToolkit(UObject* Asset, UScriptStruct* ToolkitStruct)
 {
-	const FObjectProperty* ObjectProperty = MakeSharedStruct<FVoxelToolkit>(ToolkitStruct)->GetObjectProperty();
+	const FObjectProperty* ObjectProperty = TVoxelInstancedStruct<FVoxelToolkit>(ToolkitStruct)->GetObjectProperty();
 	if (!ensure(ObjectProperty))
 	{
 		return nullptr;
 	}
 
-	if (!ensure(Asset.IsA(ObjectProperty->PropertyClass)))
+	if (!ensure(Asset) ||
+		!ensure(Asset->IsA(ObjectProperty->PropertyClass)))
 	{
 		return nullptr;
 	}
 
-	UObject* OuterAsset = Asset.GetOutermostObject();
+	UObject* OuterAsset = Asset;
+	while (OuterAsset && !Cast<UPackage>(OuterAsset->GetOuter()))
+	{
+		OuterAsset = OuterAsset->GetOuter();
+	}
+
 	if (!ensure(OuterAsset))
 	{
 		return nullptr;
@@ -92,7 +98,7 @@ FVoxelToolkit* FVoxelToolkit::OpenToolkit(const UObject& Asset, const UScriptStr
 
 	FVoxelEditorToolkitImpl& ToolkitImpl = static_cast<FVoxelEditorToolkitImpl&>(*ToolkitInterface);
 
-	if (OuterAsset == &Asset &&
+	if (OuterAsset == Asset &&
 		// GetToolkit will be null if we're using modes
 		ToolkitImpl.GetToolkit())
 	{

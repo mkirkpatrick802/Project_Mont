@@ -1,118 +1,103 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelEditorMinimal.h"
 #include "VoxelGraph.h"
-#include "VoxelParameterOverridesDetails.h"
+#include "VoxelMacroLibrary.h"
 
 VOXEL_CUSTOMIZE_CLASS(UVoxelGraph)(IDetailLayoutBuilder& DetailLayout)
 {
-	FVoxelEditorUtilities::EnableRealtime();
+	const TSharedRef<IPropertyHandle> Parameters = DetailLayout.GetProperty(GET_MEMBER_NAME_STATIC(UVoxelGraph, Parameters));
+	Parameters->MarkHiddenByCustomization();
 
-	DetailLayout.GetProperty(GET_MEMBER_NAME_STATIC(UVoxelGraph, Category))->MarkHiddenByCustomization();
-	DetailLayout.GetProperty(GET_MEMBER_NAME_STATIC(UVoxelGraph, Description))->MarkHiddenByCustomization();
-	DetailLayout.GetProperty(GET_MEMBER_NAME_STATIC(UVoxelGraph, DisplayNameOverride))->MarkHiddenByCustomization();
-	DetailLayout.GetProperty(GET_MEMBER_NAME_STATIC(UVoxelGraph, bEnableThumbnail))->MarkHiddenByCustomization();
-	DetailLayout.GetProperty(GET_MEMBER_NAME_STATIC(UVoxelGraph, bUseAsTemplate))->MarkHiddenByCustomization();
-	DetailLayout.GetProperty(GET_MEMBER_NAME_STATIC(UVoxelGraph, bShowInContextMenu))->MarkHiddenByCustomization();
+	const TSharedRef<IPropertyHandle> ParameterGraphsHandle = DetailLayout.GetProperty(GET_MEMBER_NAME_STATIC(UVoxelGraph, ParameterGraphs));
+	ParameterGraphsHandle->MarkHiddenByCustomization();
 
-	if (IDetailsView* DetailView = DetailLayout.GetDetailsView())
+	TArray<TWeakObjectPtr<UObject>> SelectedObjects;
+	DetailLayout.GetObjectsBeingCustomized(SelectedObjects);
+	if (SelectedObjects.Num() != 1)
 	{
-		if (DetailView->GetGenericLayoutDetailsDelegate().IsBound())
-		{
-			// Manual customization, exit
-			return;
-		}
+		return;
 	}
 
-	const TVoxelArray<TWeakObjectPtr<UVoxelGraph>> WeakGraphs = GetWeakObjectsBeingCustomized(DetailLayout);
-
-	const auto GetBaseGraphs = [=]
+	const UVoxelGraph* Graph = Cast<UVoxelGraph>(SelectedObjects[0].Get());
+	if (!ensure(Graph))
 	{
-		TVoxelSet<UVoxelGraph*> BaseGraphs;
-		for (const TWeakObjectPtr<UVoxelGraph>& WeakGraph : WeakGraphs)
+		return;
+	}
+
+	const TSharedRef<IPropertyHandle> EnableOverrideHandle = DetailLayout.GetProperty(GET_MEMBER_NAME_STATIC(UVoxelGraph, bEnableNameOverride));
+	EnableOverrideHandle->MarkHiddenByCustomization();
+
+	const TSharedRef<IPropertyHandle> NameHandle = DetailLayout.GetProperty(GET_MEMBER_NAME_STATIC(UVoxelGraph, NameOverride));
+	IDetailPropertyRow& NameRow = DetailLayout.AddPropertyToCategory(NameHandle);
+
+	const TSharedRef<IPropertyHandle> CategoryHandle = DetailLayout.GetProperty(GET_MEMBER_NAME_STATIC(UVoxelGraph, Category), UVoxelGraph::StaticClass());
+	IDetailPropertyRow& CategoryRow = DetailLayout.AddPropertyToCategory(CategoryHandle);
+
+	const TSharedRef<IPropertyHandle> ExposeToLibraryHandle = DetailLayout.GetProperty(GET_MEMBER_NAME_STATIC(UVoxelGraph, bExposeToLibrary));
+	if (!Graph->GetTypedOuter<UVoxelMacroLibrary>())
+	{
+		ExposeToLibraryHandle->MarkHiddenByCustomization();
+	}
+
+	const UVoxelGraph* MainGraph = Graph->GetTypedOuter<UVoxelGraph>();
+	if (!MainGraph)
+	{
+		NameRow.EditCondition(MakeAttributeLambda([EnableOverrideHandle]
 		{
-			const UVoxelGraph* Graph = WeakGraph.Get();
-			if (!ensureVoxelSlow(Graph))
-			{
-				continue;
-			}
+			bool bEnabled = false;
+			EnableOverrideHandle->GetValue(bEnabled);
 
-			BaseGraphs.Add(Graph->GetBaseGraph_Unsafe());
-		}
-		return BaseGraphs;
-	};
+			return bEnabled;
+		}),
+		MakeLambdaDelegate([EnableOverrideHandle](const bool bNewValue)
+		{
+			EnableOverrideHandle->SetValue(bNewValue);
+		}));
 
-	// Force graph at the top
-	IDetailCategoryBuilder& Category = DetailLayout.EditCategory(
-		"Config",
-		{},
-		ECategoryPriority::Important);
+		return;
+	}
 
-	Category.AddCustomRow(INVTEXT("BaseGraph"))
+	// Create category selection
+	FDetailWidgetRow& CustomWidget = CategoryRow.CustomWidget();
+
+	FString Category;
+	CategoryHandle->GetValue(Category);
+
+	CustomWidget
 	.NameContent()
 	[
-		SNew(SVoxelDetailText)
-		.Text(INVTEXT("Base Graph"))
+		CategoryHandle->CreatePropertyNameWidget()
 	]
 	.ValueContent()
 	[
-		SNew(SOverlay)
-		+ SOverlay::Slot()
+		SNew(SBox)
+		.MinDesiredWidth(125.f)
 		[
-			SNew(SVoxelDetailText)
-			.Text(INVTEXT("Multiple Values"))
-			.Visibility_Lambda([=]
+			SNew(SVoxelDetailComboBox<FString>)
+			.RefreshDelegate(CategoryHandle, DetailLayout)
+			.Options_Lambda([WeakMainGraph = MakeWeakObjectPtr(MainGraph)]()
 			{
-				return GetBaseGraphs().Num() != 1 ? EVisibility::Visible : EVisibility::Collapsed;
-			})
-		]
-		+ SOverlay::Slot()
-		[
-			SNew(SObjectPropertyEntryBox)
-			.Visibility_Lambda([=]
-			{
-				return GetBaseGraphs().Num() == 1 ? EVisibility::Visible : EVisibility::Collapsed;
-			})
-			.AllowedClass(UVoxelGraph::StaticClass())
-			.AllowClear(true)
-			.ThumbnailPool(FVoxelEditorUtilities::GetThumbnailPool())
-			.ObjectPath_Lambda([=]() -> FString
-			{
-				const TVoxelSet<UVoxelGraph*> BaseGraphs = GetBaseGraphs();
-				if (BaseGraphs.Num() != 1)
+				TArray<FString> Categories;
+
+				if (const UVoxelGraph* PinnedMainGraph = WeakMainGraph.Get())
 				{
-					return {};
+					Categories.Append(PinnedMainGraph->InlineMacroCategories.Categories);
 				}
 
-				const UVoxelGraph* BaseGraph = BaseGraphs.GetUniqueValue();
-				if (!BaseGraph)
-				{
-					return {};
-				}
-
-				return BaseGraph->GetPathName();
+				Categories.AddUnique("Default");
+				return Categories;
 			})
-			.OnObjectChanged_Lambda([=](const FAssetData& NewAssetData)
+			.CurrentOption(Category.IsEmpty() ? "Default" : Category)
+			.CanEnterCustomOption(true)
+			.OptionText(MakeLambdaDelegate([](FString Option)
 			{
-				UVoxelGraph* NewBaseGraph = CastEnsured<UVoxelGraph>(NewAssetData.GetAsset());
-				for (const TWeakObjectPtr<UVoxelGraph>& WeakGraph : WeakGraphs)
-				{
-					UVoxelGraph* Graph = WeakGraph.Get();
-					if (!ensure(Graph))
-					{
-						continue;
-					}
-
-					Graph->PreEditChange(nullptr);
-					Graph->SetBaseGraph(NewBaseGraph);
-					Graph->PostEditChange();
-				}
+				return Option;
+			}))
+			.OnSelection_Lambda([CategoryHandle](const FString NewValue)
+			{
+				CategoryHandle->SetValue(NewValue == "Default" ? "" : NewValue);
 			})
 		]
 	];
-
-	KeepAlive(FVoxelParameterOverridesDetails::Create(
-		DetailLayout,
-		GetObjectsBeingCustomized(DetailLayout),
-		FVoxelEditorUtilities::MakeRefreshDelegate(this, DetailLayout)));
 }

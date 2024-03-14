@@ -1,14 +1,23 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelComponent.h"
-#include "VoxelGraph.h"
 #include "VoxelRuntime.h"
-#include "VoxelParameterContainer_DEPRECATED.h"
+#include "VoxelGraphInterface.h"
+#include "VoxelParameterContainer.h"
 
 UVoxelComponent::UVoxelComponent()
 {
+	ParameterContainer = CreateDefaultSubobject<UVoxelParameterContainer>("ParameterContainer");
+	ParameterContainer->bAlwaysEnabled = true;
+	ParameterContainer->OnProviderChanged.AddWeakLambda(this, [this]
+	{
+		if (IsRuntimeCreated())
+		{
+			QueueRecreate();
+		}
+	});
+
 	PrimaryComponentTick.bCanEverTick = true;
-	bWantsOnUpdateTransform = true;
 	bTickInEditor = true;
 }
 
@@ -51,41 +60,17 @@ void UVoxelComponent::PostLoad()
 
 	Super::PostLoad();
 
-	if (UVoxelGraph* OldGraph = Graph_DEPRECATED.LoadSynchronous())
+	if (Graph_DEPRECATED)
 	{
-		ensure(!Graph);
-		Graph = OldGraph;
+		ensure(!ParameterContainer->Provider);
+		ParameterContainer->Provider = Graph_DEPRECATED.Get();
+		Graph_DEPRECATED = {};
+
+		ParameterCollection_DEPRECATED.MigrateTo(*ParameterContainer);
 	}
-
-	if (ParameterCollection_DEPRECATED.Parameters.Num() > 0)
-	{
-		ParameterCollection_DEPRECATED.MigrateTo(*this);
-	}
-
-	if (ParameterContainer_DEPRECATED)
-	{
-		ensure(!Graph);
-		Graph = CastEnsured<UVoxelGraph>(ParameterContainer_DEPRECATED->Provider);
-
-		ParameterContainer_DEPRECATED->MigrateTo(ParameterOverrides);
-	}
-
-	FixupParameterOverrides();
 }
 
-void UVoxelComponent::PostInitProperties()
-{
-	VOXEL_FUNCTION_COUNTER();
-
-	Super::PostInitProperties();
-
-	FixupParameterOverrides();
-}
-
-void UVoxelComponent::TickComponent(
-	const float DeltaTime,
-	const ELevelTick TickType,
-	FActorComponentTickFunction* ThisTickFunction)
+void UVoxelComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	VOXEL_FUNCTION_COUNTER();
 
@@ -116,14 +101,6 @@ void UVoxelComponent::TickComponent(
 	}
 }
 
-void UVoxelComponent::UpdateBounds()
-{
-	VOXEL_FUNCTION_COUNTER();
-
-	Super::UpdateBounds();
-	FVoxelTransformRef::NotifyTransformChanged(*this);
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -134,8 +111,6 @@ void UVoxelComponent::PostEditUndo()
 	VOXEL_FUNCTION_COUNTER();
 
 	Super::PostEditUndo();
-
-	FixupParameterOverrides();
 
 	if (IsValid(this))
 	{
@@ -152,36 +127,7 @@ void UVoxelComponent::PostEditUndo()
 		}
 	}
 }
-
-void UVoxelComponent::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
-{
-	Super::PostEditChangeProperty(PropertyChangedEvent);
-
-	if (PropertyChangedEvent.GetMemberPropertyName() == GET_OWN_MEMBER_NAME(Graph_NewProperty))
-	{
-		NotifyGraphChanged();
-
-		if (IsRuntimeCreated())
-		{
-			QueueRecreate();
-		}
-	}
-}
 #endif
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-bool UVoxelComponent::ShouldForceEnableOverride(const FVoxelParameterPath& Path) const
-{
-	return true;
-}
-
-FVoxelParameterOverrides& UVoxelComponent::GetParameterOverrides()
-{
-	return ParameterOverrides;
-}
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -222,7 +168,7 @@ void UVoxelComponent::CreateRuntime()
 		*this,
 		*this,
 		{},
-		this);
+		*ParameterContainer);
 
 	OnRuntimeCreated.Broadcast();
 }
@@ -249,18 +195,12 @@ void UVoxelComponent::DestroyRuntime()
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-void UVoxelComponent::SetGraph(UVoxelGraph* NewGraph)
+UVoxelGraphInterface* UVoxelComponent::GetGraph() const
 {
-	if (Graph == NewGraph)
-	{
-		return;
-	}
-	Graph = NewGraph;
+	return ParameterContainer->GetTypedProvider<UVoxelGraphInterface>();
+}
 
-	NotifyGraphChanged();
-
-	if (IsRuntimeCreated())
-	{
-		QueueRecreate();
-	}
+void UVoxelComponent::SetGraph(UVoxelGraphInterface* NewGraph)
+{
+	ParameterContainer->SetProvider(NewGraph);
 }

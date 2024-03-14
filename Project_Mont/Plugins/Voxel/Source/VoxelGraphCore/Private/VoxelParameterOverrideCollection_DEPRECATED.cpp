@@ -1,15 +1,11 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelParameterOverrideCollection_DEPRECATED.h"
-#include "VoxelParameterOverridesOwner.h"
-#include "Channel/VoxelChannelAsset_DEPRECATED.h"
+#include "VoxelParameterContainer.h"
+#include "VoxelChannelAsset_DEPRECATED.h"
 
-void FVoxelParameterOverrideCollection_DEPRECATED::MigrateTo(IVoxelParameterOverridesOwner& OverridesOwner)
+void FVoxelParameterOverrideCollection_DEPRECATED::MigrateTo(UVoxelParameterContainer& ParameterContainer)
 {
-	VOXEL_FUNCTION_COUNTER();
-
-	TMap<FVoxelParameterPath, FVoxelParameterValueOverride>& PathToValueOverride = OverridesOwner.GetPathToValueOverride();
-
 	// If all parameters are disabled, this is likely an old file
 	// Enable all parameters by default
 	bool bEnableAll = true;
@@ -24,15 +20,13 @@ void FVoxelParameterOverrideCollection_DEPRECATED::MigrateTo(IVoxelParameterOver
 	for (const FVoxelParameterOverride_DEPRECATED& Parameter : Parameters)
 	{
 		FVoxelParameterPath Path;
-		Path.Guids.Add(Parameter.Parameter.DeprecatedGuid);
+		Path.Guids.Add(Parameter.Parameter.Guid);
 
 		FVoxelParameterValueOverride ValueOverride;
 		ValueOverride.bEnable = bEnableAll ? true : Parameter.bEnable;
-		ValueOverride.Value = Parameter.ValueOverride;
-#if WITH_EDITOR
 		ValueOverride.CachedName = Parameter.Parameter.Name;
-		ValueOverride.CachedCategory = Parameter.Parameter.Category;
-#endif
+		ValueOverride.CachedCategory = FName(Parameter.Parameter.Category);
+		ValueOverride.Value = Parameter.ValueOverride;
 
 		if (ValueOverride.Value.Is<UVoxelChannelAsset_DEPRECATED>())
 		{
@@ -42,28 +36,29 @@ void FVoxelParameterOverrideCollection_DEPRECATED::MigrateTo(IVoxelParameterOver
 			}
 		}
 
-		ensure(!PathToValueOverride.Contains(Path));
-		PathToValueOverride.Add(Path, ValueOverride);
+		ensure(!ParameterContainer.ValueOverrides.Contains(Path));
+		ParameterContainer.ValueOverrides.Add(Path, ValueOverride);
 	}
 
-	OverridesOwner.FixupParameterOverrides();
+	ParameterContainer.Fixup();
 
 	if (bEnableAll)
 	{
 		// Disable any unneeded override
 
-		for (auto& It : PathToValueOverride)
+		for (auto& It : ParameterContainer.ValueOverrides)
 		{
 			It.Value.bEnable = false;
 		}
 
-		OverridesOwner.FixupParameterOverrides();
+		ParameterContainer.Fixup();
 
-		for (auto& It : PathToValueOverride)
+		for (auto& It : ParameterContainer.ValueOverrides)
 		{
 			It.Value.bEnable = true;
 		}
 	}
 
 	Parameters = {};
+	Categories = {};
 }

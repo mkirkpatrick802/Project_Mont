@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -7,13 +7,12 @@
 #include "VoxelFutureValue.generated.h"
 
 class FVoxelQuery;
+class FVoxelTaskGroup;
 class FVoxelFutureValueStateImpl;
+struct FVoxelTask;
 
 template<typename, typename = void>
 class TVoxelFutureValue;
-
-template<typename>
-class TVoxelFutureValueState;
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -31,13 +30,24 @@ using FVoxelDummyFutureValue = TVoxelFutureValue<FVoxelFutureValueDummyStruct>;
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-class VOXELGRAPHCORE_API FVoxelFutureValueState
+enum class EVoxelTaskThread : uint8
+{
+	GameThread,
+	RenderThread,
+	AsyncThread
+};
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+class VOXELGRAPHCORE_API IVoxelFutureValueState
 {
 public:
 	const FVoxelPinType Type;
 	const bool bHasComplexState;
 
-	FORCEINLINE explicit FVoxelFutureValueState(const FVoxelRuntimePinValue& Value)
+	FORCEINLINE explicit IVoxelFutureValueState(const FVoxelRuntimePinValue& Value)
 		: Type(Value.GetType())
 		, bHasComplexState(false)
 		, bIsComplete(true)
@@ -45,9 +55,9 @@ public:
 	{
 	}
 
-	FORCEINLINE bool IsComplete(const std::memory_order MemoryOrder = std::memory_order_seq_cst) const
+	FORCEINLINE bool IsComplete() const
 	{
-		return bIsComplete.Get(MemoryOrder);
+		return bIsComplete.Load();
 	}
 	FORCEINLINE const FVoxelRuntimePinValue& GetValue_CheckCompleted() const
 	{
@@ -61,13 +71,67 @@ protected:
 	TVoxelAtomic<bool> bIsComplete = false;
 	FVoxelRuntimePinValue Value;
 
-	FORCEINLINE explicit FVoxelFutureValueState(const FVoxelPinType& Type)
+	FORCEINLINE explicit IVoxelFutureValueState(const FVoxelPinType& Type)
 		: Type(Type)
 		, bHasComplexState(true)
 	{
 	}
 };
-checkStatic(sizeof(FVoxelFutureValueState) == 64);
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+class VOXELGRAPHCORE_API FVoxelFutureValueStateImpl
+	: public IVoxelFutureValueState
+	, public TSharedFromThis<FVoxelFutureValueStateImpl>
+{
+public:
+	FORCEINLINE explicit FVoxelFutureValueStateImpl(const FVoxelPinType& Type)
+		: IVoxelFutureValueState(Type)
+	{
+	}
+	~FVoxelFutureValueStateImpl();
+	UE_NONCOPYABLE(FVoxelFutureValueStateImpl);
+
+	void AddDependentTask(FVoxelTask& Task);
+	void AddLinkedState(const TSharedRef<FVoxelFutureValueStateImpl>& State);
+
+	void SetValue(const FVoxelRuntimePinValue& NewValue);
+
+private:
+	struct FDependentTask
+	{
+		TWeakPtr<FVoxelTaskGroup> WeakGroup;
+		FVoxelTask* Task = nullptr;
+	};
+	using FAllocator = TVoxelInlineAllocator<8>;
+
+	FVoxelFastCriticalSection CriticalSection;
+	TVoxelArray<FDependentTask, FAllocator> DependentTasks;
+	TVoxelArray<TSharedPtr<FVoxelFutureValueStateImpl>, FAllocator> LinkedStates;
+};
+
+template<typename T>
+class TVoxelFutureValueState : public FVoxelFutureValueStateImpl
+{
+public:
+	TVoxelFutureValueState()
+		: FVoxelFutureValueStateImpl(FVoxelPinType::Make<T>())
+	{
+	}
+
+	void SetValue(const TSharedRef<const T>& NewValue)
+	{
+		FVoxelFutureValueStateImpl::SetValue(FVoxelRuntimePinValue::Make(NewValue));
+	}
+};
+
+FORCEINLINE FVoxelFutureValueStateImpl& IVoxelFutureValueState::GetStateImpl()
+{
+	checkVoxelSlow(bHasComplexState);
+	return static_cast<FVoxelFutureValueStateImpl&>(*this);
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -84,10 +148,10 @@ public:
 	{
 		if (Value.IsValid())
 		{
-			State = MakeVoxelShared<FVoxelFutureValueState>(Value);
+			State = MakeVoxelShared<IVoxelFutureValueState>(Value);
 		}
 	}
-	explicit FVoxelFutureValue(const TSharedRef<FVoxelFutureValueState>& State)
+	explicit FVoxelFutureValue(const TSharedRef<IVoxelFutureValueState>& State)
 		: State(State)
 	{
 	}
@@ -124,11 +188,11 @@ public:
 	}
 
 public:
-	static FVoxelDummyFutureValue MakeDummy(FName DebugName);
+	static FVoxelDummyFutureValue MakeDummy();
 	void MarkDummyAsCompleted() const;
 
 private:
-	TSharedPtr<FVoxelFutureValueState> State;
+	TSharedPtr<IVoxelFutureValueState> State;
 
 	friend class FVoxelTaskFactory;
 };
@@ -150,7 +214,7 @@ public:
 		: FVoxelFutureValue(Value)
 	{
 	}
-	template<typename OtherType, typename = std::enable_if_t<TIsDerivedFrom<OtherType, T>::Value && !std::is_same_v<OtherType, T>>>
+	template<typename OtherType, typename = typename TEnableIf<TIsDerivedFrom<OtherType, T>::Value && !std::is_same_v<OtherType, T>>::Type>
 	FORCEINLINE TVoxelFutureValueImpl(const TVoxelFutureValueImpl<OtherType>& Value)
 		: FVoxelFutureValue(FVoxelFutureValue(Value))
 	{
@@ -168,45 +232,45 @@ public:
 
 	template<
 		typename OtherType,
-		typename = std::enable_if_t<std::is_same_v<OtherType, typename TVoxelBufferInnerType<T>::Type>>,
+		typename = typename TEnableIf<std::is_same_v<OtherType, typename TVoxelBufferInnerType<T>::Type>>::Type,
 		typename = void>
 	FORCEINLINE TVoxelFutureValueImpl(const OtherType& Value)
 		: TVoxelFutureValueImpl(T(Value))
 	{
 	}
-	template<typename OtherType, typename = std::enable_if_t<TIsDerivedFrom<OtherType, T>::Value>>
+	template<typename OtherType, typename = typename TEnableIf<TIsDerivedFrom<OtherType, T>::Value>::Type>
 	FORCEINLINE TVoxelFutureValueImpl(const OtherType& Value)
 		: FVoxelFutureValue(FVoxelRuntimePinValue::Make(Value))
 	{
 	}
-	template<typename OtherType, typename = std::enable_if_t<TIsDerivedFrom<OtherType, T>::Value>>
+	template<typename OtherType, typename = typename TEnableIf<TIsDerivedFrom<OtherType, T>::Value>::Type>
 	FORCEINLINE TVoxelFutureValueImpl(const TSharedPtr<OtherType>& Value)
 		: FVoxelFutureValue(Value.IsValid() ? FVoxelRuntimePinValue::Make(Value.ToSharedRef()) : FVoxelRuntimePinValue())
 	{
 	}
-	template<typename OtherType, typename = std::enable_if_t<TIsDerivedFrom<OtherType, T>::Value>>
+	template<typename OtherType, typename = typename TEnableIf<TIsDerivedFrom<OtherType, T>::Value>::Type>
 	FORCEINLINE TVoxelFutureValueImpl(const TSharedPtr<const OtherType>& Value)
 		: FVoxelFutureValue(Value.IsValid() ? FVoxelRuntimePinValue::Make(Value.ToSharedRef()) : FVoxelRuntimePinValue())
 	{
 	}
-	template<typename OtherType, typename = std::enable_if_t<TIsDerivedFrom<OtherType, T>::Value>>
+	template<typename OtherType, typename = typename TEnableIf<TIsDerivedFrom<OtherType, T>::Value>::Type>
 	FORCEINLINE TVoxelFutureValueImpl(const TSharedRef<OtherType>& Value)
 		: FVoxelFutureValue(FVoxelRuntimePinValue::Make(Value))
 	{
 	}
-	template<typename OtherType, typename = std::enable_if_t<TIsDerivedFrom<OtherType, T>::Value>>
+	template<typename OtherType, typename = typename TEnableIf<TIsDerivedFrom<OtherType, T>::Value>::Type>
 	FORCEINLINE TVoxelFutureValueImpl(const TSharedRef<const OtherType>& Value)
 		: FVoxelFutureValue(FVoxelRuntimePinValue::Make(Value))
 	{
 	}
 
 public:
-	template<typename OtherType, typename = std::enable_if_t<TIsDerivedFrom<OtherType, T>::Value && !std::is_same_v<OtherType, T>>>
+	template<typename OtherType, typename = typename TEnableIf<TIsDerivedFrom<OtherType, T>::Value && !std::is_same_v<OtherType, T>>::Type>
 	FORCEINLINE auto Get_CheckCompleted() const -> decltype(auto)
 	{
 		return FVoxelFutureValue::Get_CheckCompleted<OtherType>();
 	}
-	template<typename OtherType, typename = std::enable_if_t<TIsDerivedFrom<OtherType, T>::Value && !std::is_same_v<OtherType, T>>>
+	template<typename OtherType, typename = typename TEnableIf<TIsDerivedFrom<OtherType, T>::Value && !std::is_same_v<OtherType, T>>::Type>
 	FORCEINLINE TSharedRef<const OtherType> GetShared_CheckCompleted() const
 	{
 		return FVoxelFutureValue::GetShared_CheckCompleted<OtherType>();
@@ -228,7 +292,7 @@ public:
 ///////////////////////////////////////////////////////////////////////////////
 
 template<typename T>
-class TVoxelFutureValue<T, std::enable_if_t<!std::is_same_v<T, void>>> : public TVoxelFutureValueImpl<T>
+class TVoxelFutureValue<T, typename TEnableIf<!std::is_same_v<T, void>>::Type> : public TVoxelFutureValueImpl<T>
 {
 public:
 	using TVoxelFutureValueImpl<T>::TVoxelFutureValueImpl;

@@ -1,41 +1,25 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelEditorMinimal.h"
+#include "VoxelGraph.h"
 #include "VoxelPinType.h"
+#include "VoxelParameter.h"
 
-struct FSelectorItemRow;
-typedef STreeView<TSharedPtr<FSelectorItemRow>> SItemsTreeView;
-
-struct FVoxelSelectorItem
-{
-	FGuid Guid;
-	FName Name;
-	FVoxelPinType Type;
-	FString Category;
-
-	FVoxelSelectorItem() = default;
-	FVoxelSelectorItem(const FGuid Guid, const FName Name, const FVoxelPinType& Type, const FString& Category)
-		: Guid(Guid)
-		, Name(Name)
-		, Type(Type)
-		, Category(Category)
-	{}
-	FVoxelSelectorItem(const FGuid Guid, const FName Name, const FVoxelPinType& Type)
-		: Guid(Guid)
-		, Name(Name)
-		, Type(Type)
-	{}
-};
+struct FSelectorParameterRow;
+typedef STreeView<TSharedPtr<FSelectorParameterRow>> SParameterTreeView;
 
 class SVoxelGraphParameterSelector : public SCompoundWidget
 {
 public:
+	DECLARE_DELEGATE_OneParam(FOnParameterChanged, const FVoxelParameter&)
+
+public:
 	VOXEL_SLATE_ARGS()
 	{
-		SLATE_ATTRIBUTE(TArray<FVoxelSelectorItem>, Items)
-		SLATE_EVENT(TDelegate<void(const FVoxelSelectorItem&)>, OnItemChanged)
+		SLATE_ARGUMENT(TWeakInterfacePtr<IVoxelParameterProvider>, ParameterProvider)
+		SLATE_EVENT(FOnParameterChanged, OnParameterChanged)
 		SLATE_EVENT(FSimpleDelegate, OnCloseMenu)
 	};
 
@@ -44,37 +28,40 @@ public:
 public:
 	void ClearSelection() const;
 	TSharedPtr<SWidget> GetWidgetToFocus() const;
-	void Refresh();
+	void UpdateParameterProvider(const TWeakInterfacePtr<IVoxelParameterProvider>& ParameterProvider);
+	FVoxelParameter GetUpdatedParameter(const FVoxelParameter& TargetParameter) const;
 
 private:
-	TSharedRef<ITableRow> GenerateItemTreeRow(TSharedPtr<FSelectorItemRow> RowItem, const TSharedRef<STableViewBase>& OwnerTable) const;
-	void OnItemSelectionChanged(TSharedPtr<FSelectorItemRow> Selection, ESelectInfo::Type SelectInfo) const;
-	void GetItemChildren(TSharedPtr<FSelectorItemRow> ItemRow, TArray<TSharedPtr<FSelectorItemRow>>& ChildrenRows) const;
+	TSharedRef<ITableRow> GenerateParameterTreeRow(TSharedPtr<FSelectorParameterRow> RowItem, const TSharedRef<STableViewBase>& OwnerTable) const;
+	void OnParameterSelectionChanged(TSharedPtr<FSelectorParameterRow> Selection, ESelectInfo::Type SelectInfo) const;
+	void GetParameterChildren(TSharedPtr<FSelectorParameterRow> ParameterRow, TArray<TSharedPtr<FSelectorParameterRow>>& ChildrenRows) const;
 
 	void OnFilterTextChanged(const FText& NewText);
 	void OnFilterTextCommitted(const FText& NewText, ETextCommit::Type CommitInfo) const;
 
 private:
 	void GetChildrenMatchingSearch(const FText& InSearchText);
-	void FillItemsList();
+	void FillParametersList();
+	const FSlateBrush* GetIcon(const FVoxelPinType& PinType) const;
+	FLinearColor GetColor(const FVoxelPinType& PinType) const;
 	TArray<FString> GetCategoryChain(const FString& Category) const;
 
 private:
-	TSharedPtr<SItemsTreeView> ItemsTreeView;
+	TSharedPtr<SParameterTreeView> ParametersTreeView;
 	TSharedPtr<SSearchBox> FilterTextBox;
 
 private:
-	TDelegate<void(const FVoxelSelectorItem&)> OnItemChanged;
+	TWeakInterfacePtr<IVoxelParameterProvider> CachedParameterProvider;
+	FOnParameterChanged OnParameterChanged;
 	FSimpleDelegate OnCloseMenu;
-	TAttribute<TArray<FVoxelSelectorItem>> Items;
 
 private:
 	FText SearchText;
 
-	TArray<TSharedPtr<FSelectorItemRow>> ItemsList;
-	TArray<TSharedPtr<FSelectorItemRow>> FilteredItemsList;
-	TWeakPtr<FSelectorItemRow> AutoExpandedRow;
+	TArray<TSharedPtr<FSelectorParameterRow>> ParametersList;
+	TArray<TSharedPtr<FSelectorParameterRow>> FilteredParametersList;
+	TWeakPtr<FSelectorParameterRow> AutoExpandedRow;
 
-	int32 FilteredItemsCount = 0;
-	int32 TotalItemsCount = 0;
+	int32 FilteredParametersCount = 0;
+	int32 TotalParametersCount = 0;
 };

@@ -1,4 +1,4 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "Material/MaterialExpressionSampleVoxelParameter_Texture1D.h"
 #include "TextureResource.h"
@@ -9,7 +9,7 @@ void FVoxelMaterialParameterData_Texture1D::CacheParameters(
 	const FName Name,
 	FCachedParameters& InOutParameters) const
 {
-	InOutParameters.TextureParameters.Add_EnsureNew(Name, Texture);
+	InOutParameters.TextureParameters.Add(Name, Texture);
 }
 
 ///////////////////////////////////////////////////////////////////////////////

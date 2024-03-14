@@ -1,15 +1,16 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelMinimal.isph"
 
-export uniform int32 VoxelBufferStorage_CountBits(
-	const uniform bool Values[],
+export void VoxelBufferStorage_FixupSignBit(
+	uniform float Distances[],
 	const uniform int32 Num)
 {
-	uniform int32 Result = 0;
 	FOREACH(Index, 0, Num)
 	{
-		Result += popcnt(Values[Index]);
+		if (intbits(Distances[Index]) == 0x80000000)
+		{
+			Distances[Index] = 0;
+		}
 	}
-	return Result;
 }

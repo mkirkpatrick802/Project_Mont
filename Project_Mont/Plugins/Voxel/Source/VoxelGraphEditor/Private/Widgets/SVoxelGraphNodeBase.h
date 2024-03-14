@@ -1,10 +1,10 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelEditorMinimal.h"
 #include "SGraphNode.h"
-#include "Nodes/VoxelGraphNode.h"
+#include "VoxelGraphNodeBase.h"
 
 class SVoxelGraphNodeBase : public SGraphNode
 {
@@ -13,11 +13,11 @@ public:
 	{
 	};
 
-	void Construct(const FArguments& InArgs, UVoxelGraphNode* InNode);
+	void Construct(const FArguments& InArgs, UVoxelGraphNodeBase* InNode);
 
-	UVoxelGraphNode& GetVoxelBaseNode() const
+	UVoxelGraphNodeBase& GetVoxelBaseNode() const
 	{
-		return *CastChecked<UVoxelGraphNode>(GraphNode);
+		return *CastChecked<UVoxelGraphNodeBase>(GraphNode);
 	}
 
 protected:

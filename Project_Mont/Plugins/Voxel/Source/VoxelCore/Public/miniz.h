@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 /* miniz.c 2.2.0 - public domain deflate/inflate, zlib-subset, ZIP reading/writing/appending, PNG writing
    See "unlicense" statement at the end of this file.
@@ -117,24 +117,18 @@
 #include "VoxelMinimal.h"
 
 #define MINIZ_EXPORT VOXELCORE_API
-
-// Slow
-#define MINIZ_DISABLE_ZIP_READER_CRC32_CHECKS
+#define MINIZ_NO_ZLIB_COMPATIBLE_NAMES 1
 
 /* Defines to completely disable specific portions of miniz.c:
    If all macros here are defined the only functionality remaining will be CRC-32, adler-32, tinfl, and tdefl. */
 
 /* Define MINIZ_NO_STDIO to disable all usage and any functions which rely on stdio for file I/O. */
-// BEGIN VOXEL
-#define MINIZ_NO_STDIO
-// END VOXEL
+/*#define MINIZ_NO_STDIO */
 
 /* If MINIZ_NO_TIME is specified then the ZIP archive functions will not be able to get the current time, or */
 /* get/set file times, and the C run-time funcs that get/set times won't be called. */
 /* The current downside is the times written to your archives will be from 1979. */
-// BEGIN VOXEL
-#define MINIZ_NO_TIME
-//END VOXEL
+/*#define MINIZ_NO_TIME */
 
 /* Define MINIZ_NO_ARCHIVE_APIS to disable all ZIP archive API's. */
 /*#define MINIZ_NO_ARCHIVE_APIS */
@@ -143,27 +137,26 @@
 /*#define MINIZ_NO_ARCHIVE_WRITING_APIS */
 
 /* Define MINIZ_NO_ZLIB_APIS to remove all ZLIB-style compression/decompression API's. */
-// BEGIN VOXEL
-#define MINIZ_NO_ZLIB_APIS
-// END VOXEL
+/*#define MINIZ_NO_ZLIB_APIS */
 
 /* Define MINIZ_NO_ZLIB_COMPATIBLE_NAME to disable zlib names, to prevent conflicts against stock zlib. */
-// BEGIN VOXEL
-#define MINIZ_NO_ZLIB_COMPATIBLE_NAMES
-// END VOXEL
+/*#define MINIZ_NO_ZLIB_COMPATIBLE_NAMES */
 
 /* Define MINIZ_NO_MALLOC to disable all calls to malloc, free, and realloc.
    Note if MINIZ_NO_MALLOC is defined then the user must always provide custom user alloc/free/realloc
    callbacks to the zlib and archive API's, and a few stand-alone helper API's which don't provide custom user
    functions (such as tdefl_compress_mem_to_heap() and tinfl_decompress_mem_to_heap()) won't work. */
-// BEGIN VOXEL
-#define MINIZ_NO_MALLOC
-// END VOXEL
+/*#define MINIZ_NO_MALLOC */
 
-#if (defined(__TINYC__) && (defined(__linux) || defined(__linux__)))
-/* TODO: Work around "error: include file 'sys\utime.h' when compiling with tcc on Linux */
+// BEGIN VOXEL
+// Disabled the time functionality by default to ensure platform compatibility
 #define MINIZ_NO_TIME
-#endif
+
+//#if (defined(__TINYC__) && (defined(__linux) || defined(__linux__)))
+/* TODO: Work around "error: include file 'sys\utime.h' when compiling with tcc on Linux */
+//#define MINIZ_NO_TIME
+//#endif
+//END VOXEL
 
 #include <stddef.h>
 
@@ -542,9 +535,7 @@ typedef struct mz_dummy_time_t_tag
 #define MZ_TIME_T time_t
 #endif
 
-// BEGIN VOXEL
-#define MZ_ASSERT(x) check(x)
-// END VOXEL
+#define MZ_ASSERT(x) assert(x)
 
 #ifdef MINIZ_NO_MALLOC
 #define MZ_MALLOC(x) NULL

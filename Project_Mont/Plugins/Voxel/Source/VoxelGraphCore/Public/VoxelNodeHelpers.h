@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -46,7 +46,9 @@ public:
 			std::is_same_v<PinType, FBodyInstance> &&
 			std::is_same_v<ValueType, ECollisionEnabled::Type>)
 		{
-			return FVoxelNodeDefaultValueHelper::MakeBodyInstance(Value);
+			FBodyInstance BodyInstance;
+			BodyInstance.SetCollisionEnabled(Value);
+			return FVoxelPinValue::Make(BodyInstance).ExportToString();
 		}
 		else
 		{
@@ -57,9 +59,50 @@ public:
 
 private:
 	static FString MakeObject(const FVoxelPinType& RuntimeType, const FString& Path);
-	static FString MakeBodyInstance(ECollisionEnabled::Type CollisionEnabled);
 };
 #endif
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+struct FVoxelNodeAliases
+{
+	template<typename T>
+	using TValue = ::TVoxelFutureValue<T>;
+
+	template<typename T>
+	using TVoxelFutureValue [[deprecated]] = TValue<T>;
+};
+
+struct VOXELGRAPHCORE_API IVoxelNodeInterface
+{
+	IVoxelNodeInterface() = default;
+	virtual ~IVoxelNodeInterface() = default;
+
+	virtual const FVoxelGraphNodeRef& GetNodeRef() const = 0;
+};
+
+struct VOXELGRAPHCORE_API FVoxelNodeHelpers
+{
+	static void RaiseQueryError(const FVoxelGraphNodeRef& Node, const UScriptStruct* QueryType);
+	static void RaiseBufferError(const FVoxelGraphNodeRef& Node);
+
+	template<typename T>
+	static void RaiseQueryError(const FVoxelGraphNodeRef& Node)
+	{
+		FVoxelNodeHelpers::RaiseQueryError(Node, StaticStructFast<T>());
+	}
+
+	static void RaiseQueryError(const IVoxelNodeInterface& Node, const UScriptStruct* QueryType)
+	{
+		RaiseQueryError(Node.GetNodeRef(), QueryType);
+	}
+	static void RaiseBufferError(const IVoxelNodeInterface& Node)
+	{
+		RaiseBufferError(Node.GetNodeRef());
+	}
+};
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -74,6 +117,7 @@ private:
 		\
 		FORCEINLINE static FVoxelFutureValue _Compute(const FVoxelNode& Node, const FVoxelQuery& Query) \
 		{ \
+			const FVoxelQueryScope Scope(Query); \
 			const NodeName& TypedNode = CastChecked<NodeName>(Node); \
 			const FVoxelNodeRuntime::FPinData& PinData = Node.GetNodeRuntime().GetPinData(TypedNode.PinName ## Pin); \
 			return static_cast<const NodeName ## _ ## PinName&>(TypedNode)._ComputeImpl( \
@@ -91,8 +135,7 @@ private:
 		RegisterVoxelNodeComputePtr( \
 			NodeName::StaticStruct(), \
 			#PinName, \
-			&NodeName ## _ ## PinName::_Compute, \
-			__LINE__); \
+			&NodeName ## _ ## PinName::_Compute); \
 	} \
 	NodeName ## _ ## PinName::ReturnType \
 	NodeName ## _ ## PinName::_ComputeImpl( \
@@ -107,17 +150,13 @@ private:
 #define FindVoxelQueryParameter(Type, Name) \
 	checkStatic(TIsDerivedFrom<Type, FVoxelQueryParameter>::Value); \
 	const Type* Ptr_ ## Name = Query.GetParameters().Find<Type>(); \
-	if (!Ptr_ ## Name) { RaiseQueryError<Type>(); return {}; } \
+	if (!Ptr_ ## Name) { RaiseQueryError(*this, Type::StaticStruct()); return {}; } \
 	const TSharedRef<const Type> Name = CastChecked<const Type>(Ptr_ ## Name->AsShared());
-
-#define FindOptionalVoxelQueryParameter(Type, Name) \
-	checkStatic(TIsDerivedFrom<Type, FVoxelQueryParameter>::Value); \
-	const TSharedPtr<const Type> Name = Query.GetParameters().FindShared<Type>();
 
 #define CheckVoxelBuffersNum(...) \
 	if (!FVoxelBufferAccessor(__VA_ARGS__).IsValid()) \
 	{ \
-		RaiseBufferError(); \
+		RaiseBufferError(*this); \
 		return {}; \
 	}
 
@@ -146,7 +185,7 @@ struct TVoxelNodeLambdaArg<FVoxelFutureValue>
 };
 
 template<typename T>
-struct TVoxelNodeLambdaArg<TVoxelFutureValue<T>, std::enable_if_t<VoxelPassByValue<T>>>
+struct TVoxelNodeLambdaArg<TVoxelFutureValue<T>, typename TEnableIf<VoxelPassByValue<T>>::Type>
 {
 	static auto Get(const TVoxelFutureValue<T>& Arg) -> decltype(auto)
 	{
@@ -154,7 +193,7 @@ struct TVoxelNodeLambdaArg<TVoxelFutureValue<T>, std::enable_if_t<VoxelPassByVal
 	}
 };
 template<typename T>
-struct TVoxelNodeLambdaArg<TVoxelFutureValue<T>, std::enable_if_t<!VoxelPassByValue<T>>>
+struct TVoxelNodeLambdaArg<TVoxelFutureValue<T>, typename TEnableIf<!VoxelPassByValue<T>>::Type>
 {
 	static TSharedRef<const T> Get(const TVoxelFutureValue<T>& Arg)
 	{
@@ -163,7 +202,7 @@ struct TVoxelNodeLambdaArg<TVoxelFutureValue<T>, std::enable_if_t<!VoxelPassByVa
 };
 
 template<typename T>
-struct TVoxelNodeLambdaArg<TVoxelArray<TVoxelFutureValue<T>>, std::enable_if_t<VoxelPassByValue<T>>>
+struct TVoxelNodeLambdaArg<TVoxelArray<TVoxelFutureValue<T>>, typename TEnableIf<VoxelPassByValue<T>>::Type>
 {
 	static TVoxelArray<T> Get(const TVoxelArray<TVoxelFutureValue<T>>& Arg)
 	{
@@ -177,7 +216,7 @@ struct TVoxelNodeLambdaArg<TVoxelArray<TVoxelFutureValue<T>>, std::enable_if_t<V
 	}
 };
 template<typename T>
-struct TVoxelNodeLambdaArg<TVoxelArray<TVoxelFutureValue<T>>, std::enable_if_t<!VoxelPassByValue<T>>>
+struct TVoxelNodeLambdaArg<TVoxelArray<TVoxelFutureValue<T>>, typename TEnableIf<!VoxelPassByValue<T>>::Type>
 {
 	static TVoxelArray<TSharedRef<const T>> Get(const TVoxelArray<TVoxelFutureValue<T>>& Arg)
 	{
@@ -197,48 +236,56 @@ struct TVoxelNodeLambdaArgType
 	using Type = VOXEL_GET_TYPE(TVoxelNodeLambdaArg<T>::Get(DeclVal<T>()));
 };
 
-template<typename ReturnType, typename... ArgTypes>
+template<typename ReturnType, EVoxelTaskThread Thread, typename... ArgTypes>
 class TVoxelNodeOnComplete
 {
 public:
-	const FVoxelVirtualStruct& This;
 	const FVoxelGraphNodeRef NodeRef;
 	const FVoxelQuery& Query;
 	const FVoxelPinType Type;
 	const FName StatName;
 	TTuple<ArgTypes...> Args;
+#if VOXEL_DEBUG
+	TVoxelUniqueFunction<void()> CheckIsReferenced_Debug;
+#endif
 
-	using FDependencies = TVoxelInlineArray<FVoxelFutureValue, 16>;
+	using FDependencies = TVoxelArray<FVoxelFutureValue, TVoxelInlineAllocator<16>>;
 	FDependencies Dependencies;
 
 	template<typename ThisType>
-	FORCEINLINE TVoxelNodeOnComplete(
+	TVoxelNodeOnComplete(
 		const ThisType* This,
 		const FVoxelQuery& Query,
 		const FVoxelPinType& Type,
 		const FName StatName,
 		const ArgTypes&... Args)
-		: This(*This)
-		, NodeRef(This->GetNodeRef())
+		: NodeRef(This->GetNodeRef())
 		, Query(Query)
 		, Type(Type)
 		, StatName(StatName)
 		, Args(Args...)
 	{
+#if VOXEL_DEBUG
+		CheckIsReferenced_Debug = [This]
+		{
+			checkVoxelSlow(FVoxelTaskReferencer::Get().IsReferenced(This));
+		};
+#endif
+
 		if constexpr (!std::is_same_v<ReturnType, void>)
 		{
-			ensureVoxelSlow(Type.Is<ReturnType>());
+			ensure(Type.Is<ReturnType>());
 		}
 		VOXEL_FOLD_EXPRESSION(TVoxelNodeOnComplete::AddDependencies(Dependencies, Args));
 	}
 
 public:
-	FORCEINLINE static void AddDependencies(FDependencies& InDependencies, const FVoxelFutureValue& Value)
+	static void AddDependencies(FDependencies& InDependencies, const FVoxelFutureValue& Value)
 	{
 		InDependencies.Add(Value);
 	}
-	template<typename OtherType, typename = std::enable_if_t<TIsDerivedFrom<OtherType, FVoxelFutureValue>::Value>>
-	FORCEINLINE static void AddDependencies(FDependencies& InDependencies, const TVoxelArray<OtherType>& Values)
+	template<typename OtherType, typename = typename TEnableIf<TIsDerivedFrom<OtherType, FVoxelFutureValue>::Value>::Type>
+	static void AddDependencies(FDependencies& InDependencies, const TVoxelArray<OtherType>& Values)
 	{
 		for (const FVoxelFutureValue& Value : Values)
 		{
@@ -247,36 +294,36 @@ public:
 	}
 
 	template<typename OtherType>
-	FORCEINLINE static void AddDependencies(FDependencies&, const TSharedRef<OtherType>&)
+	static void AddDependencies(FDependencies&, const TSharedRef<OtherType>&)
 	{
 	}
 	template<typename OtherType>
-	FORCEINLINE static void AddDependencies(FDependencies&, const TSharedPtr<OtherType>&)
+	static void AddDependencies(FDependencies&, const TSharedPtr<OtherType>&)
 	{
 	}
 	template<typename OtherType>
-	FORCEINLINE static void AddDependencies(FDependencies&, const TVoxelArray<TSharedRef<OtherType>>&)
+	static void AddDependencies(FDependencies&, const TVoxelArray<TSharedRef<OtherType>>&)
 	{
 	}
 	template<typename OtherType>
-	FORCEINLINE static void AddDependencies(FDependencies&, const TVoxelArray<TSharedPtr<OtherType>>&)
+	static void AddDependencies(FDependencies&, const TVoxelArray<TSharedPtr<OtherType>>&)
 	{
 	}
-	template<typename OtherType, typename = std::enable_if_t<TIsTriviallyDestructible<OtherType>::Value>>
-	FORCEINLINE static void AddDependencies(FDependencies&, OtherType)
+	template<typename OtherType, typename = typename TEnableIf<TIsTriviallyDestructible<OtherType>::Value>::Type>
+	static void AddDependencies(FDependencies&, OtherType)
 	{
 	}
-	FORCEINLINE static void AddDependencies(FDependencies&, const FVoxelQuery&)
+	static void AddDependencies(FDependencies&, const FVoxelQuery&)
 	{
 	}
-	FORCEINLINE static void AddDependencies(FDependencies&, const FVoxelBuffer&)
+	static void AddDependencies(FDependencies&, const FVoxelBuffer&)
 	{
 	}
-	FORCEINLINE static void AddDependencies(FDependencies&, const FVoxelTransformRef&)
+	static void AddDependencies(FDependencies&, const FVoxelTransformRef&)
 	{
 	}
 	template<typename Body>
-	FORCEINLINE static void AddDependencies(FDependencies&, const TFunction<Body>&)
+	static void AddDependencies(FDependencies&, const TFunction<Body>&)
 	{
 	}
 	template<typename OtherType>
@@ -294,19 +341,31 @@ private:
 	FORCEINLINE TVoxelFutureValueType<ReturnType> Execute(LambdaType&& Lambda, TIntegerSequence<uint32, ArgIndices...>)
 	{
 		return TVoxelFutureValueType<ReturnType>(
-			MakeVoxelTaskImpl(StatName)
+			MakeVoxelTask(StatName)
+			.Thread(Thread)
 			.Dependencies(Dependencies)
 			.Execute(Type, [
-				This = &This,
+#if VOXEL_DEBUG
+				CheckIsReferenced_Debug = MoveTemp(CheckIsReferenced_Debug),
+#endif
 				Query = Query.EnterScope(NodeRef),
 				Args = MoveTemp(Args),
 				Lambda = MoveTemp(Lambda)]
 			{
-				checkVoxelSlow(FVoxelTaskReferencer::Get().IsReferenced(This));
+#if VOXEL_DEBUG
+				CheckIsReferenced_Debug();
+#endif
 
 				const FVoxelQueryScope Scope(Query);
 
-				return Lambda(Query, TVoxelNodeLambdaArg<ArgTypes>::Get(Args.template Get<ArgIndices>())...);
+				if constexpr (Thread == EVoxelTaskThread::RenderThread)
+				{
+					return Lambda(Query, TVoxelNodeLambdaArg<ArgTypes>::Get(Args.template Get<ArgIndices>())..., FVoxelRDGBuilderScope::Get());
+				}
+				else
+				{
+					return Lambda(Query, TVoxelNodeLambdaArg<ArgTypes>::Get(Args.template Get<ArgIndices>())...);
+				}
 			}));
 	}
 };
@@ -324,15 +383,23 @@ private:
 
 #define VOXEL_ON_COMPLETE_IMPL_CHECK(Data) \
 	{ \
-		TVoxelNodeOnComplete<void>::FDependencies Dependencies; \
-		TVoxelNodeOnComplete<void>::AddDependencies(Dependencies, Data); \
+		TVoxelNodeOnComplete<void, EVoxelTaskThread::AsyncThread>::FDependencies Dependencies; \
+		TVoxelNodeOnComplete<void, EVoxelTaskThread::AsyncThread>::AddDependencies(Dependencies, Data); \
 	}
 
 #define VOXEL_ON_COMPLETE_IMPL_DECLTYPE(Data) , std::remove_const_t<VOXEL_GET_TYPE(Data)>
 #define VOXEL_ON_COMPLETE_IMPL_LAMBDA_ARGS(Data) , const TVoxelNodeLambdaArgType<std::remove_const_t<VOXEL_GET_TYPE(Data)>>::Type& Data
 
-#define VOXEL_ON_COMPLETE(...) \
+#define VOXEL_ON_COMPLETE_IMPL_AsyncThread
+#define VOXEL_ON_COMPLETE_IMPL_GameThread
+#define VOXEL_ON_COMPLETE_IMPL_RenderThread , FRDGBuilder& GraphBuilder
+
+#define VOXEL_ON_COMPLETE_IMPL(Thread, ...) \
 	(INTELLISENSE_ONLY([__VA_ARGS__] { VOXEL_FOREACH(VOXEL_ON_COMPLETE_IMPL_CHECK, DeclVal<FVoxelFutureValue>(), ##__VA_ARGS__); },) \
-	TVoxelNodeOnComplete<decltype(ReturnInnerType()) VOXEL_FOREACH(VOXEL_ON_COMPLETE_IMPL_DECLTYPE, ##__VA_ARGS__)>(this, Query, ReturnPinType, ReturnPinStatName, ##__VA_ARGS__)) + \
-	[this, ReturnPinType = ReturnPinType, ReturnPinStatName = ReturnPinStatName](const FVoxelQuery& Query VOXEL_FOREACH(VOXEL_ON_COMPLETE_IMPL_LAMBDA_ARGS, ##__VA_ARGS__)) \
+	TVoxelNodeOnComplete<decltype(ReturnInnerType()), EVoxelTaskThread::Thread VOXEL_FOREACH(VOXEL_ON_COMPLETE_IMPL_DECLTYPE, ##__VA_ARGS__)>(this, Query, ReturnPinType, ReturnPinStatName, ##__VA_ARGS__)) + \
+	[this, ReturnPinType = ReturnPinType, ReturnPinStatName = ReturnPinStatName](const FVoxelQuery& Query VOXEL_FOREACH(VOXEL_ON_COMPLETE_IMPL_LAMBDA_ARGS, ##__VA_ARGS__) VOXEL_ON_COMPLETE_IMPL_ ## Thread) \
 		-> TVoxelFutureValueType<decltype(ReturnInnerType())>
+
+#define VOXEL_ON_COMPLETE(...) VOXEL_ON_COMPLETE_IMPL(AsyncThread, ##__VA_ARGS__)
+#define VOXEL_ON_COMPLETE_GAME_THREAD(...) VOXEL_ON_COMPLETE_IMPL(GameThread, ##__VA_ARGS__)
+#define VOXEL_ON_COMPLETE_RENDER_THREAD(...) VOXEL_ON_COMPLETE_IMPL(RenderThread, ##__VA_ARGS__)

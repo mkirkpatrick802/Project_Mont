@@ -1,4 +1,4 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "SVoxelCurveKeySelector.h"
 #include "CurveEditor.h"
@@ -160,11 +160,11 @@ FReply SVoxelCurveKeySelector::AddKeyClicked()
 			// If there's a single key, add the new key at the same value, but time + 1.
 			TArray<FKeyHandle> KeyHandles;
 			CurveModel->GetKeys(*CurveEditor.Get(), TNumericLimits<double>::Lowest(), TNumericLimits<double>::Max(), TNumericLimits<double>::Lowest(), TNumericLimits<double>::Max(), KeyHandles);
-
+			
 			TArray<FKeyPosition> KeyPositions;
 			KeyPositions.AddDefaulted();
 			CurveModel->GetKeyPositions(KeyHandles, KeyPositions);
-
+					
 			NewKeyPosition.InputValue = KeyPositions[0].InputValue + 1;
 			NewKeyPosition.OutputValue = KeyPositions[0].OutputValue;
 			return;
@@ -399,7 +399,7 @@ void SVoxelCurveKeySelector::GetActiveCurveModelAndSelectedKeys(TOptional<FCurve
 	const TMap<FCurveEditorTreeItemID, ECurveEditorTreeSelectionState>& CurveTreeSelection = CurveEditor->GetTree()->GetSelection();
 	if (CurveTreeSelection.Num() > 0)
 	{
-		const TVoxelArrayView<const FCurveModelID> CurveModelIds = CurveEditor->GetTreeItem(CurveTreeItemId).GetOrCreateCurves(CurveEditor.Get());
+		const TArrayView<const FCurveModelID> CurveModelIds = CurveEditor->GetTreeItem(CurveTreeItemId).GetOrCreateCurves(CurveEditor.Get());
 		if (CurveModelIds.Num() == 1)
 		{
 			OutActiveCurveModelId = CurveModelIds[0];
@@ -416,7 +416,7 @@ void SVoxelCurveKeySelector::GetActiveCurveModelAndSelectedKeys(TOptional<FCurve
 	const FCurveEditorSelection& CurveEditorSelection = CurveEditor->GetSelection();
 	if (!CurveEditorSelection.IsEmpty())
 	{
-		const TVoxelArrayView<const FCurveModelID> CurveModelIds = CurveEditor->GetTreeItem(CurveTreeItemId).GetCurves();
+		const TArrayView<const FCurveModelID> CurveModelIds = CurveEditor->GetTreeItem(CurveTreeItemId).GetCurves();
 		if (CurveModelIds.Num() == 1)
 		{
 			if (const FKeyHandleSet* SelectedKeyHandleSet = CurveEditorSelection.GetAll().Find(CurveModelIds[0]))
@@ -432,7 +432,7 @@ void SVoxelCurveKeySelector::GetActiveCurveModelAndSelectedKeys(TOptional<FCurve
 	const TSet<FCurveModelID>& PinnedCurveIds = CurveEditor->GetPinnedCurves();
 	if (PinnedCurveIds.Num() > 0)
 	{
-		const TVoxelArrayView<const FCurveModelID> CurveModelIds = CurveEditor->GetTreeItem(CurveTreeItemId).GetOrCreateCurves(CurveEditor.Get());
+		const TArrayView<const FCurveModelID> CurveModelIds = CurveEditor->GetTreeItem(CurveTreeItemId).GetOrCreateCurves(CurveEditor.Get());
 		if (CurveModelIds.Num() == 1 &&
 			PinnedCurveIds.Contains(CurveModelIds[0]))
 		{
@@ -473,7 +473,7 @@ void SVoxelCurveKeySelector::GetOrderedActiveCurveModelIds(TArray<FCurveModelID>
 {
 	if (CurveEditor->GetTreeSelection().Num() > 0)
 	{
-		const TVoxelArrayView<const FCurveModelID> CurveModelIds = CurveEditor->GetTreeItem(CurveTreeItemId).GetOrCreateCurves(CurveEditor.Get());
+		const TArrayView<const FCurveModelID> CurveModelIds = CurveEditor->GetTreeItem(CurveTreeItemId).GetOrCreateCurves(CurveEditor.Get());
 		if (CurveModelIds.Num() == 1)
 		{
 			OutOrderedActiveCurveModelIds.Add(CurveModelIds[0]);
@@ -481,10 +481,10 @@ void SVoxelCurveKeySelector::GetOrderedActiveCurveModelIds(TArray<FCurveModelID>
 		return;
 	}
 
-	const TVoxelArrayView<const FCurveModelID> CurveModelIds = CurveEditor->GetTreeItem(CurveTreeItemId).GetCurves();
+	const TArrayView<const FCurveModelID> CurveModelIds = CurveEditor->GetTreeItem(CurveTreeItemId).GetCurves();
 	if (CurveModelIds.Num() == 1 &&
 		CurveEditor->IsCurvePinned(CurveModelIds[0]))
 	{
 		OutOrderedActiveCurveModelIds.Add(CurveModelIds[0]);
-	}
+	}	
 }

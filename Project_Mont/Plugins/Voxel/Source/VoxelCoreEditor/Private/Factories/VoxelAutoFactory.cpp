@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "Factories/VoxelAutoFactory.h"
 
@@ -55,7 +55,7 @@ bool UVoxelAutoImportFactory::FactoryCanImport(const FString& Filename)
 	return FPaths::GetExtension(Filename) == Extension;
 }
 
-UObject* UVoxelAutoImportFactory::FactoryCreateFile(UClass* InClass, UObject* InParent, const FName InName, const EObjectFlags Flags, const FString& Filename, const TCHAR* Parms, FFeedbackContext* Warn, bool& bOutOperationCanceled)
+UObject* UVoxelAutoImportFactory::FactoryCreateFile(UClass* InClass, UObject* InParent, FName InName, EObjectFlags Flags, const FString& Filename, const TCHAR* Parms, FFeedbackContext* Warn, bool& bOutOperationCanceled)
 {
 	ensure(Flags & RF_Transactional);
 
@@ -137,7 +137,7 @@ void FVoxelAutoFactoryImpl::RegisterImportFactory(const FImportFactory& ImportFa
 	Factory->ReimportFunction = ImportFactory.ReimportFunction;
 }
 
-void FVoxelAutoFactoryImpl::RegisterFactoryImpl(UClass* Class, const int32 Index, const FString& Prefix)
+void FVoxelAutoFactoryImpl::RegisterFactoryImpl(UClass* Class, int32 Index, const FString& Prefix)
 {
 	const FString ClassName = "/Script/VoxelCoreEditor." + Prefix + FString::FromInt(Index);
 	const TSubclassOf<UVoxelFactory> FactoryClass = FindObject<UClass>(nullptr, *ClassName);

@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelDeveloperSettings.h"
 #include "Misc/ConfigCacheIni.h"
@@ -31,10 +31,6 @@ void UVoxelDeveloperSettings::PostCDOContruct()
 	Super::PostCDOContruct();
 
 	UE::ConfigUtilities::ApplyCVarSettingsFromIni(*GetClass()->GetPathName(), *GEngineIni, ECVF_SetByProjectSetting);
-
-#if WITH_EDITOR
-	ImportConsoleVariableValues();
-#endif
 }
 
 #if WITH_EDITOR

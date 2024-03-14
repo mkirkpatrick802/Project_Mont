@@ -1,20 +1,20 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "K2Node_VoxelGraphParameterBase.h"
+
 #include "VoxelGraph.h"
-#include "VoxelGraphTracker.h"
-#include "VoxelParameterView.h"
-#include "VoxelGraphParametersView.h"
-#include "Widgets/SVoxelPinTypeSelector.h"
+#include "Widgets/SVoxelGraphPinTypeSelector.h"
 
 #include "ToolMenu.h"
 #include "KismetCompiler.h"
+#include "ToolMenuSection.h"
 #include "BlueprintNodeSpawner.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "BlueprintActionDatabaseRegistrar.h"
+#include "VoxelParameterView.h"
 
-const FName UK2Node_VoxelGraphParameterBase::AssetPinName = "Asset";
-const FName UK2Node_VoxelGraphParameterBase::ParameterPinName = "Parameter";
+const FName UK2Node_VoxelGraphParameterBase::AssetPinName("Asset");
+const FName UK2Node_VoxelGraphParameterBase::ParameterPinName("Parameter");
 
 UK2Node_VoxelGraphParameterBase::UK2Node_VoxelGraphParameterBase()
 {
@@ -30,7 +30,7 @@ void UK2Node_VoxelGraphParameterBase::AllocateDefaultPins()
 		ParameterNamePin->bHidden = true;
 	}
 
-	CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Interface, UVoxelGraph::StaticClass(), AssetPinName);
+	CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Interface, UVoxelParameterProvider::StaticClass(), AssetPinName);
 
 	UEdGraphPin* ParameterPin = CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Name, ParameterPinName);
 	ParameterPin->DefaultValue = CachedParameter.GetValue();
@@ -70,30 +70,37 @@ void UK2Node_VoxelGraphParameterBase::PinDefaultValueChanged(UEdGraphPin* Pin)
 			return;
 		}
 
+		FVoxelGraphBlueprintParameter NewParameter = CachedParameter;
+
 		FGuid ParameterGuid;
 		if (FGuid::ParseExact(Pin->DefaultValue, EGuidFormats::Digits, ParameterGuid))
 		{
-			if (ensure(CachedParameterOverridesOwner))
+			const TSharedPtr<IVoxelParameterRootView> ParameterRootView = CachedParameterProvider->GetParameterView();
+			if (!ensure(ParameterRootView))
 			{
-				if (const TSharedPtr<FVoxelGraphParametersView> ParametersView = CachedParameterOverridesOwner->GetParametersView())
-				{
-					if (const FVoxelParameterView* ParameterView = ParametersView->FindByGuid(ParameterGuid))
-					{
-						SetParameter(FVoxelGraphBlueprintParameter(ParameterGuid, ParameterView->GetParameter()));
-						return;
-					}
-				}
+				return;
 			}
 
-			FVoxelGraphBlueprintParameter InvalidParameter = CachedParameter;
-			InvalidParameter.bIsValid = false;
-			SetParameter(InvalidParameter);
-			return;
+			if (const IVoxelParameterView* ParameterView = ParameterRootView->FindByGuid(ParameterGuid))
+			{
+				SetParameter(FVoxelGraphBlueprintParameter(ParameterView->GetAsParameter()));
+				return;
+			}
+			else
+			{
+				FVoxelGraphBlueprintParameter InvalidParameter = CachedParameter;
+				InvalidParameter.bIsValid = false;
+
+				SetParameter(InvalidParameter);
+				return;
+			}
+		}
+		else
+		{
+			NewParameter.Name = *Pin->DefaultValue;
 		}
 
-		FVoxelGraphBlueprintParameter NewParameter = CachedParameter;
 		NewParameter.Guid = {};
-		NewParameter.Name = *Pin->DefaultValue;
 		NewParameter.bIsValid = true;
 		SetParameter(NewParameter);
 		return;
@@ -103,21 +110,23 @@ void UK2Node_VoxelGraphParameterBase::PinDefaultValueChanged(UEdGraphPin* Pin)
 	{
 		const FVoxelTransaction Transaction(this, "Set asset reference");
 
-		if (Pin->DefaultObject != CachedParameterOverridesOwner.GetObject())
+		if (Pin->DefaultObject != CachedParameterProvider.GetObject())
 		{
-			OnParameterLayoutChangedPtr.Reset();
-
-			if (const IVoxelParameterOverridesObjectOwner* ParameterOverridesOwner = Cast<IVoxelParameterOverridesObjectOwner>(Pin->DefaultObject))
+			if (IVoxelParameterProvider* NewProvider = Cast<IVoxelParameterProvider>(Pin->DefaultObject))
 			{
-				OnParameterLayoutChangedPtr = MakeSharedVoid();
-				ParameterOverridesOwner->OnParameterLayoutChanged.Add(MakeWeakPtrDelegate(OnParameterLayoutChangedPtr, MakeWeakObjectPtrLambda(this, [this]
+				OnGraphChangedHandleOwnerPtr = MakeSharedVoid();
+				NewProvider->AddOnChanged(MakeWeakPtrDelegate(OnGraphChangedHandleOwnerPtr, [this]
 				{
 					FixupParameter();
-				})));
+				}));
+			}
+			else
+			{
+				OnGraphChangedHandleOwnerPtr.Reset();
 			}
 		}
 
-		CachedParameterOverridesOwner = Pin->DefaultObject;
+		CachedParameterProvider = Pin->DefaultObject;
 
 		const UEdGraphPin* ParameterPin = FindPin(ParameterPinName);
 		if (!ensure(ParameterPin) ||
@@ -157,13 +166,17 @@ void UK2Node_VoxelGraphParameterBase::ExpandNode(FKismetCompilerContext& Compile
 		CompilerContext.MovePinLinksToIntermediate(*ParameterPin, *NamePin);
 	}
 	else if (
-		CachedParameterOverridesOwner &&
+		CachedParameterProvider &&
 		CachedParameter.Guid.IsValid() &&
-		!CachedParameterOverridesOwner.GetObject()->HasAnyFlags(RF_NeedLoad | RF_NeedPostLoad))
+		!CachedParameterProvider.GetObject()->HasAnyFlags(RF_NeedLoad | RF_NeedPostLoad))
 	{
-		const TSharedPtr<FVoxelGraphParametersView> ParametersView = CachedParameterOverridesOwner->GetParametersView();
-		if (!ParametersView ||
-			!ParametersView->FindByGuid(CachedParameter.Guid))
+		const TSharedPtr<IVoxelParameterRootView> ParameterRootView = CachedParameterProvider->GetParameterView();
+		if (!ensure(ParameterRootView))
+		{
+			return;
+		}
+
+		if (!ParameterRootView->FindByGuid(CachedParameter.Guid))
 		{
 			CompilerContext.MessageLog.Error(*FString("Could not find a variable named \"" + CachedParameter.Name.ToString() + "\" @@"), this);
 			CachedParameter.bIsValid = false;
@@ -340,9 +353,9 @@ void UK2Node_VoxelGraphParameterBase::FixupParameter()
 		return;
 	}
 
-	if (!CachedParameterOverridesOwner)
+	if (!CachedParameterProvider)
 	{
-		OnParameterLayoutChangedPtr.Reset();
+		OnGraphChangedHandleOwnerPtr.Reset();
 
 		const FVoxelTransaction Transaction(this, "Change Parameter Pin Value");
 		GetSchema()->TrySetDefaultValue(*ParameterPin, CachedParameter.Name.ToString());
@@ -350,49 +363,41 @@ void UK2Node_VoxelGraphParameterBase::FixupParameter()
 	}
 
 	// Wait for graph to fully load
-	if (CachedParameterOverridesOwner.GetObject()->HasAnyFlags(RF_NeedLoad | RF_NeedPostLoad))
+	if (CachedParameterProvider.GetObject()->HasAnyFlags(RF_NeedLoad | RF_NeedPostLoad))
 	{
 		return;
 	}
 
-	const UVoxelGraph* Graph = CachedParameterOverridesOwner->GetGraph();
-	if (!Graph)
+	const TSharedPtr<IVoxelParameterRootView> ParameterRootView = CachedParameterProvider->GetParameterView();
+	if (!ensure(ParameterRootView))
 	{
-		OnParameterLayoutChangedPtr.Reset();
-
-		const FVoxelTransaction Transaction(this, "Change Parameter Pin Value");
-		GetSchema()->TrySetDefaultValue(*ParameterPin, CachedParameter.Name.ToString());
 		return;
 	}
-	const TSharedRef<FVoxelGraphParametersView> ParametersView = CachedParameterOverridesOwner->GetParametersView_ValidGraph();
 
-	FGuid ExistingParameterGuid;
 	TOptional<FVoxelParameter> ExistingParameter;
 	if (CachedParameter.Guid.IsValid())
 	{
-		if (const FVoxelParameterView* ParameterView = ParametersView->FindByGuid(CachedParameter.Guid))
+		if (const IVoxelParameterView* ParameterView = ParameterRootView->FindByGuid(CachedParameter.Guid))
 		{
-			ExistingParameterGuid = ParameterView->GetGuid();
-			ExistingParameter = ParameterView->GetParameter();
+			ExistingParameter = ParameterView->GetAsParameter();
 		}
 	}
 	else
 	{
-		if (const FVoxelParameterView* ParameterView = ParametersView->FindByName(CachedParameter.Name))
+		if (const IVoxelParameterView* ParameterView = ParameterRootView->FindByName(CachedParameter.Name))
 		{
-			ExistingParameterGuid = ParameterView->GetGuid();
-			ExistingParameter = ParameterView->GetParameter();
+			ExistingParameter = ParameterView->GetAsParameter();
 		}
 	}
 
 	if (ExistingParameter)
 	{
-		if (CachedParameter.Guid != ExistingParameterGuid ||
+		if (CachedParameter.Guid != ExistingParameter->Guid ||
 			CachedParameter.Name != ExistingParameter->Name ||
 			CachedParameter.Type != ExistingParameter->Type)
 		{
 			const FVoxelTransaction Transaction(this, "Change Parameter Pin Value");
-			GetSchema()->TrySetDefaultValue(*ParameterPin, ExistingParameterGuid.ToString());
+			GetSchema()->TrySetDefaultValue(*ParameterPin, ExistingParameter->Guid.ToString());
 		}
 	}
 	else
@@ -401,13 +406,13 @@ void UK2Node_VoxelGraphParameterBase::FixupParameter()
 		GetSchema()->TrySetDefaultValue(*ParameterPin, CachedParameter.Guid.ToString());
 	}
 
-	if (!OnParameterLayoutChangedPtr)
+	if (!OnGraphChangedHandleOwnerPtr)
 	{
-		OnParameterLayoutChangedPtr = MakeSharedVoid();
-		CachedParameterOverridesOwner->OnParameterLayoutChanged.Add(MakeWeakPtrDelegate(OnParameterLayoutChangedPtr, MakeWeakObjectPtrLambda(this, [this]
+		OnGraphChangedHandleOwnerPtr = MakeSharedVoid();
+		CachedParameterProvider->AddOnChanged(MakeWeakPtrDelegate(OnGraphChangedHandleOwnerPtr, [this]
 		{
 			FixupParameter();
-		})));
+		}));
 	}
 }
 

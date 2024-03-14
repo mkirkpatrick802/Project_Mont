@@ -1,9 +1,8 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelCoreMinimal.h"
-#include "UObject/StructOnScope.h"
 #include "VoxelMinimal/VoxelInstancedStruct.h"
 
 template<typename T>
@@ -46,17 +45,7 @@ public:
 			StructMemory = InstancedStruct.GetPtr<T>();
 		}
 	}
-	FORCEINLINE TVoxelStructView(const FStructOnScope& StructOnScope)
-	{
-		ScriptStruct = ConstCast(CastChecked<UScriptStruct>(StructOnScope.GetStruct(), ECastCheckedType::NullAllowed));
-		StructMemory = reinterpret_cast<T*>(ConstCast(StructOnScope.GetStructMemory()));
-
-		if constexpr (!std::is_void_v<T>)
-		{
-			checkVoxelSlow(IsA<T>());
-		}
-	}
-	template<typename OtherType, typename = std::enable_if_t<
+	template<typename OtherType, typename = typename TEnableIf<
 		!std::is_same_v<T, OtherType>
 		&&
 		(
@@ -66,10 +55,10 @@ public:
 		&&
 		TOr
 		<
-			TIntegralConstant<bool, std::is_void_v<T> || std::is_void_v<OtherType>>,
+			TVoxelIntegralConstant<bool, std::is_void_v<T> || std::is_void_v<OtherType>>,
 			TIsDerivedFrom<OtherType, T>
 		>::Value
-		>>
+		>::Type>
 	FORCEINLINE TVoxelStructView(const TVoxelStructView<OtherType>& Other)
 	{
 		ScriptStruct = Other.GetStruct();
@@ -139,16 +128,6 @@ public:
 public:
 	FORCEINLINE UScriptStruct* GetStruct() const
 	{
-#if VOXEL_DEBUG
-		if constexpr (std::is_void_v<T> || TIsDerivedFrom<T, FVoxelVirtualStruct>::Value)
-		{
-			if (ScriptStruct &&
-				ScriptStruct->IsChildOf(StaticStructFast<FVoxelVirtualStruct>()))
-			{
-				checkVoxelSlow(ScriptStruct == Get<FVoxelVirtualStruct>().GetStruct());
-			}
-		}
-#endif
 		return ScriptStruct;
 	}
 	FORCEINLINE T* GetMemory() const
@@ -165,11 +144,6 @@ public:
 	template<typename OtherType>
 	FORCEINLINE bool IsA() const
 	{
-		checkVoxelSlow(
-			!IsValid() ||
-			!ScriptStruct->IsChildOf(StaticStructFast<FVoxelVirtualStruct>()) ||
-			reinterpret_cast<const FVoxelVirtualStruct*>(StructMemory)->GetStruct() == ScriptStruct);
-
 		return
 			IsValid() &&
 			ScriptStruct->IsChildOf(StaticStructFast<OtherType>());

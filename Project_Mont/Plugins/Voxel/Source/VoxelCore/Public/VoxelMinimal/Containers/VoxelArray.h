@@ -1,10 +1,8 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelCoreMinimal.h"
-#include "Templates/MakeUnsigned.h"
-#include "VoxelMinimal/VoxelMemory.h"
 
 template<typename InElementType, typename InAllocator = FVoxelAllocator>
 class TVoxelArray : public TArray<InElementType, InAllocator>
@@ -15,26 +13,22 @@ public:
 	using typename Super::ElementType;
 	using typename Super::AllocatorType;
 	using Super::GetData;
-	using Super::IsValidIndex;
+	using Super::CheckInvariants;
 	using Super::Shrink;
 	using Super::ArrayNum;
 	using Super::ArrayMax;
-	using Super::SwapMemory;
 	using Super::AllocatorInstance;
 	using Super::Num;
 	using Super::Super;
 
 	using USizeType = typename TMakeUnsigned<SizeType>::Type;
 
-	// Copy constructors are inherited on MSVC, but implementing them manually deletes all the other inherited constructors
-#if !defined(_MSC_VER) || _MSC_VER > 1929 || PLATFORM_COMPILER_CLANG
-#ifndef __RESHARPER__
+#if !defined(_MSC_VER) || _MSC_VER > 1929 || PLATFORM_COMPILER_CLANG // Copy constructors are inherited on MSVC, but implementing them manually deletes all the other inherited constructors
 	template<typename OtherElementType, typename OtherAllocator>
 	FORCEINLINE explicit TVoxelArray(const TArray<OtherElementType, OtherAllocator>& Other)
 		: Super(Other)
 	{
 	}
-#endif
 #endif
 
 	template<typename OtherAllocator>
@@ -45,18 +39,19 @@ public:
 	}
 
 public:
-	FORCEINLINE void CheckInvariants() const
-	{
-		checkVoxelSlow((ArrayNum >= 0) && (ArrayMax >= ArrayNum));
-	}
 	FORCEINLINE void RangeCheck(SizeType Index) const
 	{
 		CheckInvariants();
-		checkVoxelSlow((Index >= 0) && (Index < ArrayNum));
+
+		// Template property, branch will be optimized out
+		if (AllocatorType::RequireRangeCheck)
+		{
+			checkfVoxelSlow((Index >= 0) & (Index < ArrayNum), TEXT("Array index out of bounds: %i from an array of size %i"), Index, ArrayNum); // & for one branch
+		}
 	}
-	FORCEINLINE void CheckAddress(const ElementType* Address) const
+	FORCEINLINE void CheckAddress(const ElementType* Addr) const
 	{
-		checkVoxelSlow(Address < GetData() || Address >= (GetData() + ArrayMax));
+		checkfVoxelSlow(Addr < GetData() || Addr >= (GetData() + ArrayMax), TEXT("Attempting to use a container element (%p) which already comes from the container being modified (%p, ArrayMax: %d, ArrayNum: %d, SizeofElement: %d)!"), Addr, GetData(), ArrayMax, ArrayNum, sizeof(ElementType));
 	}
 
 public:
@@ -66,13 +61,18 @@ public:
 		return ReinterpretCastRef<TArray<InElementType>>(*this);
 	}
 
-	FORCEINLINE ElementType Pop()
+	FORCEINLINE ElementType Pop(const bool bAllowShrinking = true)
 	{
 		RangeCheck(0);
-		ElementType Result = MoveTemp(GetData()[ArrayNum - 1]);
+		ElementType Result = MoveTempIfPossible(GetData()[ArrayNum - 1]);
 
 		DestructItem(GetData() + ArrayNum - 1);
 		ArrayNum--;
+
+		if (bAllowShrinking)
+		{
+			Shrink();
+		}
 
 		return Result;
 	}
@@ -111,18 +111,6 @@ public:
 	}
 
 	template<typename... ArgsType>
-	FORCEINLINE SizeType Emplace_NoGrow(ArgsType&&... Args)
-	{
-		checkVoxelSlow(ArrayNum < ArrayMax);
-
-		const SizeType Index = ArrayNum++;
-
-		ElementType* Ptr = GetData() + Index;
-		new (Ptr) ElementType(Forward<ArgsType>(Args)...);
-		return Index;
-	}
-
-	template<typename... ArgsType>
 	FORCEINLINE SizeType Emplace(ArgsType&&... Args)
 	{
 		const SizeType Index = AddUninitialized();
@@ -136,17 +124,6 @@ public:
 		ElementType* Ptr = GetData() + Index;
 		new (Ptr) ElementType(Forward<ArgsType>(Args)...);
 		return *Ptr;
-	}
-
-	FORCEINLINE ElementType& Last(SizeType IndexFromTheEnd = 0)
-	{
-		RangeCheck(ArrayNum - IndexFromTheEnd - 1);
-		return GetData()[ArrayNum - IndexFromTheEnd - 1];
-	}
-	FORCEINLINE const ElementType& Last(SizeType IndexFromTheEnd = 0) const
-	{
-		RangeCheck(ArrayNum - IndexFromTheEnd - 1);
-		return GetData()[ArrayNum - IndexFromTheEnd - 1];
 	}
 
 	FORCEINLINE SizeType Find(const ElementType& Item) const
@@ -202,84 +179,16 @@ public:
 		}
 		return OldNum;
 	}
-	FORCEINLINE void Reserve(const SizeType Number)
-	{
-		checkVoxelSlow(Number >= 0);
-
-		if (Number > ArrayMax)
-		{
-			this->ResizeTo(Number);
-		}
-	}
-
-public:
-	FORCEINLINE void RemoveAt(SizeType Index)
-	{
-		RemoveAt(Index, 1);
-	}
-	template<typename CountType>
-	FORCEINLINE void RemoveAt(SizeType Index, CountType Count)
-	{
-		checkStatic(!std::is_same_v<CountType, bool>);
-		checkVoxelSlow(Count > 0);
-
-		RangeCheck(Index);
-		RangeCheck(Index + Count - 1);
-
-		DestructItems(GetData() + Index, Count);
-
-		const SizeType NumToMove = ArrayNum - (Index + Count);
-		if (NumToMove)
-		{
-			FMemory::Memmove
-			(
-				GetData() + Index,
-				GetData() + Index + Count,
-				NumToMove * sizeof(ElementType)
-			);
-		}
-		ArrayNum -= Count;
-	}
-	FORCEINLINE void RemoveAtSwap(SizeType Index)
-	{
-		RangeCheck(Index);
-
-		DestructItem(GetData() + Index);
-
-		if (Index != ArrayNum - 1)
-		{
-			FMemory::Memcpy
-			(
-				GetData() + Index,
-				GetData() + ArrayNum - 1,
-				sizeof(ElementType)
-			);
-		}
-
-		ArrayNum--;
-	}
 
 private:
-	FORCENOINLINE void ResizeGrow(const SizeType OldNum)
+	FORCENOINLINE void ResizeGrow(SizeType OldNum)
 	{
 		checkVoxelSlow(OldNum < ArrayNum);
 
 		ArrayMax = this->AllocatorCalculateSlackGrow(ArrayNum, ArrayMax);
 		this->AllocatorResizeAllocation(OldNum, ArrayMax);
 	}
-	FORCENOINLINE void ResizeTo(SizeType NewMax)
-	{
-		if (NewMax)
-		{
-			NewMax = this->AllocatorCalculateSlackReserve(NewMax);
-		}
-		if (NewMax != ArrayMax)
-		{
-			ArrayMax = NewMax;
-			this->AllocatorResizeAllocation(ArrayNum, ArrayMax);
-		}
-	}
-	FORCENOINLINE void AllocatorResizeAllocation(const SizeType CurrentArrayNum, const SizeType NewArrayMax)
+	void AllocatorResizeAllocation(SizeType CurrentArrayNum, SizeType NewArrayMax)
 	{
 		VOXEL_FUNCTION_COUNTER_NUM(NewArrayMax, 1024);
 
@@ -292,7 +201,7 @@ private:
 			AllocatorInstance.ResizeAllocation(CurrentArrayNum, NewArrayMax, sizeof(ElementType));
 		}
 	}
-	FORCEINLINE SizeType AllocatorCalculateSlackGrow(const SizeType CurrentArrayNum, const SizeType NewArrayMax)
+	SizeType AllocatorCalculateSlackGrow(SizeType CurrentArrayNum, SizeType NewArrayMax)
 	{
 		if constexpr (TAllocatorTraits<AllocatorType>::SupportsElementAlignment)
 		{
@@ -303,23 +212,26 @@ private:
 			return AllocatorInstance.CalculateSlackGrow(CurrentArrayNum, NewArrayMax, sizeof(ElementType));
 		}
 	}
-	FORCEINLINE SizeType AllocatorCalculateSlackReserve(const SizeType NewArrayMax)
-	{
-		if constexpr (TAllocatorTraits<AllocatorType>::SupportsElementAlignment)
-		{
-			return AllocatorInstance.CalculateSlackReserve(NewArrayMax, sizeof(ElementType), alignof(ElementType));
-		}
-		else
-		{
-			return AllocatorInstance.CalculateSlackReserve(NewArrayMax, sizeof(ElementType));
-		}
-	}
 
 public:
-	FORCEINLINE void Swap(const SizeType FirstIndexToSwap, const SizeType SecondIndexToSwap)
+	FORCEINLINE void SwapMemory(SizeType FirstIndexToSwap, SizeType SecondIndexToSwap)
 	{
-		checkVoxelSlow(IsValidIndex(FirstIndexToSwap));
-		checkVoxelSlow(IsValidIndex(SecondIndexToSwap));
+		// FMemory::Memswap is not inlined
+
+		checkStatic(TIsTriviallyDestructible<ElementType>::Value);
+
+		ElementType& A = (*this)[FirstIndexToSwap];
+		ElementType& B = (*this)[SecondIndexToSwap];
+
+		TTypeCompatibleBytes<ElementType> Temp;
+		FMemory::Memcpy(&Temp, &A, sizeof(ElementType));
+		FMemory::Memcpy(&A, &B, sizeof(ElementType));
+		FMemory::Memcpy(&B, &Temp, sizeof(ElementType));
+	}
+	FORCEINLINE void Swap(SizeType FirstIndexToSwap, SizeType SecondIndexToSwap)
+	{
+		checkVoxelSlow((FirstIndexToSwap >= 0) && (SecondIndexToSwap >= 0));
+		checkVoxelSlow((ArrayNum > FirstIndexToSwap) && (ArrayNum > SecondIndexToSwap));
 		this->SwapMemory(FirstIndexToSwap, SecondIndexToSwap);
 	}
 
@@ -368,12 +280,6 @@ FORCEINLINE TVoxelArray<To, Allocator>& ReinterpretCastVoxelArray(TVoxelArray<El
 	static_assert(sizeof(To) == sizeof(ElementType), "");
 	return reinterpret_cast<TVoxelArray<To, Allocator>&>(Array);
 }
-template<typename To, typename ElementType, typename Allocator>
-FORCEINLINE TVoxelArray<To, Allocator>&& ReinterpretCastVoxelArray(TVoxelArray<ElementType, Allocator>&& Array)
-{
-	static_assert(sizeof(To) == sizeof(ElementType), "");
-	return reinterpret_cast<TVoxelArray<To, Allocator>&&>(Array);
-}
 
 template<typename To, typename ElementType, typename Allocator>
 FORCEINLINE const TVoxelArray<To, Allocator>& ReinterpretCastVoxelArray(const TVoxelArray<ElementType, Allocator>& Array)
@@ -386,14 +292,14 @@ FORCEINLINE const TVoxelArray<To, Allocator>& ReinterpretCastVoxelArray(const TV
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-template<typename ToType, typename ToAllocator, typename FromType, typename Allocator, typename = std::enable_if_t<sizeof(FromType) != sizeof(ToType)>>
+template<typename ToType, typename ToAllocator, typename FromType, typename Allocator, typename = typename TEnableIf<sizeof(FromType) != sizeof(ToType)>::Type>
 TVoxelArray<ToType, ToAllocator> ReinterpretCastVoxelArray_Copy(const TVoxelArray<FromType, Allocator>& Array)
 {
 	const int64 NumBytes = Array.Num() * sizeof(FromType);
 	check(NumBytes % sizeof(ToType) == 0);
 	return TVoxelArray<ToType, Allocator>(reinterpret_cast<const ToType*>(Array.GetData()), NumBytes / sizeof(ToType));
 }
-template<typename ToType, typename FromType, typename Allocator, typename = std::enable_if_t<sizeof(FromType) != sizeof(ToType)>>
+template<typename ToType, typename FromType, typename Allocator, typename = typename TEnableIf<sizeof(FromType) != sizeof(ToType)>::Type>
 TVoxelArray<ToType, Allocator> ReinterpretCastVoxelArray_Copy(const TVoxelArray<FromType, Allocator>& Array)
 {
 	return ReinterpretCastVoxelArray_Copy<ToType, Allocator>(Array);
@@ -424,9 +330,6 @@ using TVoxelArray64 = TVoxelArray<T, FVoxelAllocator64>;
 // No runtime checks, but same allocator as TArray
 template<typename T>
 using TCompatibleVoxelArray = TVoxelArray<T, FDefaultAllocator>;
-
-template<typename T, int32 NumInlineElements>
-using TVoxelInlineArray = TVoxelArray<T, TVoxelInlineAllocator<NumInlineElements>>;
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////

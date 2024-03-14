@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -6,119 +6,90 @@
 #include "VoxelPinValue.h"
 
 #if WITH_EDITOR
-
 class VOXELGRAPHCORE_API IVoxelNodeDefinition : public TSharedFromThis<IVoxelNodeDefinition>
 {
 public:
-	class FCategoryNode;
-	class FVariadicPinNode;
-
-	class VOXELGRAPHCORE_API FNode : public TSharedFromThis<FNode>
+	enum class ENodeState
 	{
-	public:
-		enum class EType
-		{
-			Category,
-			VariadicPin,
-			Pin,
-		};
+		Pin,
+		ArrayCategory,
+		Category
+	};
 
-		const EType Type;
+	struct FNode
+	{
+		const ENodeState NodeState;
 		const FName Name;
-		const TWeakPtr<FNode> WeakParent;
-
-		virtual ~FNode() = default;
-
-		bool IsCategory() const
-		{
-			return Type == EType::Category;
-		}
-		bool IsVariadicPin() const
-		{
-			return Type == EType::VariadicPin;
-		}
-		bool IsPin() const
-		{
-			return Type == EType::Pin;
-		}
-
-		const TArray<TSharedRef<FNode>>& GetChildren() const
-		{
-			return Children;
-		}
-		const TArray<FName>& GetPath() const
-		{
-			return PrivatePath;
-		}
-		FName GetConcatenatedPath() const
-		{
-			return PrivateConcatenatedPath;
-		}
-		bool IsInput() const
-		{
-			return bPrivateIsInput;
-		}
-
-		static TSharedRef<FCategoryNode> MakeRoot(bool bIsInput);
-
-	protected:
+		const TArray<FName> Path;
 		TArray<TSharedRef<FNode>> Children;
-		TArray<FName> PrivatePath;
-		FName PrivateConcatenatedPath;
-		bool bPrivateIsInput = false;
-
-		FNode(
-			EType Type,
-			FName Name,
-			const TSharedPtr<FNode>& Parent);
-
-		friend FCategoryNode;
-		friend FVariadicPinNode;
-	};
-
-	class VOXELGRAPHCORE_API FVariadicPinNode : public FNode
-	{
-	public:
-		TSharedRef<FNode> AddPin(FName PinName);
 
 	private:
-		TSet<FName> AddedPins;
-
-		FVariadicPinNode(
-			const FName Name,
-			const TSharedRef<FNode>& Parent)
-			: FNode(EType::VariadicPin, Name, Parent)
+		explicit FNode(ENodeState NodeState, const FName Name, const TArray<FName>& Path)
+			: NodeState(NodeState)
+			, Name(Name)
+			, Path(Path)
 		{
 		}
 
-		friend class FCategoryNode;
-	};
-
-	class VOXELGRAPHCORE_API FCategoryNode : public FNode
-	{
 	public:
-		TSharedRef<FCategoryNode> FindOrAddCategory(const FString& Category);
-		TSharedRef<FCategoryNode> FindOrAddCategory(const TArray<FName>& Path);
-
-		TSharedRef<FVariadicPinNode> AddVariadicPin(FName VariadicPinName);
-		TSharedRef<FNode> AddPin(FName PinName);
-
-	private:
-		TMap<FName, TSharedPtr<FCategoryNode>> CategoryNameToNode;
-		TSet<FName> AddedPins;
-		TSet<FName> AddedVariadicPins;
-
-		FCategoryNode(
-			const FName Name,
-			const TSharedPtr<FNode>& Parent)
-			: FNode(EType::Category, Name, Parent)
+		FName GetFullPath() const
 		{
+			if (Path.Num() == 0)
+			{
+				return {};
+			}
+
+			FString ResultPath = Path[0].ToString();
+			for (int32 Index = 1; Index < Path.Num(); Index++)
+			{
+				ResultPath += "|" + Path[Index].ToString();
+			}
+
+			return FName(ResultPath);
 		}
 
-		friend class FNode;
+		static TSharedRef<FNode> MakePin(const FName Name, const TArray<FName>& Path)
+		{
+			return MakeVoxelShareable(new (GVoxelMemory) FNode(ENodeState::Pin, Name, Path));
+		}
+		static TSharedRef<FNode> MakeArrayCategory(const FName Name, const TArray<FName>& Path)
+		{
+			return MakeVoxelShareable(new (GVoxelMemory) FNode(ENodeState::ArrayCategory, Name, Path));
+		}
+		static TSharedRef<FNode> MakeCategory(const FName Name, const TArray<FName>& Path)
+		{
+			return MakeVoxelShareable(new (GVoxelMemory) FNode(ENodeState::Category, Name, Path));
+		}
+
+		static TArray<FName> MakePath(const FString& RawPath)
+		{
+			TArray<FString> StringsPath;
+			RawPath.ParseIntoArray(StringsPath, TEXT("|"));
+
+			TArray<FName> Result;
+			for (const FString& Element : StringsPath)
+			{
+				Result.Add(FName(Element));
+			}
+
+			return Result;
+		}
+		static TArray<FName> MakePath(const FString& RawPath, const FName ArrayName)
+		{
+			TArray<FString> StringsPath;
+			RawPath.ParseIntoArray(StringsPath, TEXT("|"));
+			StringsPath.Add(ArrayName.ToString());
+
+			TArray<FName> Result;
+			for (const FString& Element : StringsPath)
+			{
+				Result.Add(FName(Element));
+			}
+
+			return Result;
+		}
 	};
 
-public:
 	IVoxelNodeDefinition() = default;
 	virtual ~IVoxelNodeDefinition() = default;
 
@@ -136,11 +107,11 @@ public:
 	virtual bool CanRemoveInputPin() const { return false; }
 	virtual void RemoveInputPin() VOXEL_PURE_VIRTUAL();
 
-	virtual bool Variadic_CanAddPinTo(FName VariadicPinName) const { return false; }
-	virtual FName Variadic_AddPinTo(FName VariadicPinName) VOXEL_PURE_VIRTUAL({});
+	virtual bool CanAddToCategory(FName Category) const { return false; }
+	virtual void AddToCategory(FName Category) VOXEL_PURE_VIRTUAL();
 
-	virtual bool Variadic_CanRemovePinFrom(FName VariadicPinName) const { return false; }
-	virtual void Variadic_RemovePinFrom(FName VariadicPinName) VOXEL_PURE_VIRTUAL();
+	virtual bool CanRemoveFromCategory(FName Category) const { return false; }
+	virtual void RemoveFromCategory(FName Category) VOXEL_PURE_VIRTUAL();
 
 	virtual bool CanRemoveSelectedPin(FName PinName) const { return false; }
 	virtual void RemoveSelectedPin(FName PinName) VOXEL_PURE_VIRTUAL();
@@ -150,7 +121,5 @@ public:
 
 	virtual bool IsPinVisible(const UEdGraphPin* Pin, const UEdGraphNode* Node) { return true; }
 	virtual bool OnPinDefaultValueChanged(FName PinName, const FVoxelPinValue& NewDefaultValue) { return false; }
-
-	virtual void ExposePin(FName PinName) {}
 };
 #endif

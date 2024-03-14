@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelISPCNodeImpl.h"
 #include "VoxelISPCNodeHelpers.h"
@@ -57,7 +57,7 @@ VOXEL_RUN_ON_STARTUP_GAME(VoxelNodeISPC)
 		const TArray<UScriptStruct*>& Structs = It.Value;
 
 		FString CppFile;
-		CppFile += "// Copyright Voxel Plugin SAS. All Rights Reserved.\n";
+		CppFile += "// Copyright Voxel Plugin, Inc. All Rights Reserved.\n";
 		CppFile += "\n";
 		CppFile += "#include \"VoxelISPCNodeHelpers.h\"\n\n";
 
@@ -68,7 +68,7 @@ VOXEL_RUN_ON_STARTUP_GAME(VoxelNodeISPC)
 
 		for (UScriptStruct* Struct : Structs)
 		{
-			const TSharedRef<FVoxelISPCNode> Node = MakeSharedStruct<FVoxelISPCNode>(Struct);
+			TVoxelInstancedStruct<FVoxelISPCNode> Node(Struct);
 
 			for (const FVoxelPin& Pin : Node->GetPins())
 			{
@@ -93,7 +93,7 @@ VOXEL_RUN_ON_STARTUP_GAME(VoxelNodeISPC)
 		}
 
 		FString ISPCFile;
-		ISPCFile += "// Copyright Voxel Plugin SAS. All Rights Reserved.\n";
+		ISPCFile += "// Copyright Voxel Plugin, Inc. All Rights Reserved.\n";
 		ISPCFile += "\n";
 		ISPCFile += "#include \"VoxelISPCNodeHelpers.isph\"\n";
 

@@ -1,10 +1,10 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "Point/VoxelPointSet.h"
 #include "VoxelNode.h"
 #include "VoxelBufferBuilder.h"
+#include "VoxelBufferUtilities.h"
 #include "VoxelPositionQueryParameter.h"
-#include "Utilities/VoxelBufferGatherer.h"
 
 const FName FVoxelPointAttributes::Id = "Id";
 const FName FVoxelPointAttributes::Mesh = "Mesh";
@@ -14,6 +14,7 @@ const FName FVoxelPointAttributes::Scale = "Scale";
 const FName FVoxelPointAttributes::Normal = "Normal";
 const FName FVoxelPointAttributes::CustomData = "CustomData";
 const FName FVoxelPointAttributes::ParentCustomData = MakeParent("CustomData");
+const FName FVoxelPointAttributes::ActorClass = MakeActor("Class");
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -54,7 +55,7 @@ void FVoxelPointAttributes::AddDefaulted(
 
 void FVoxelPointSet::SetNum(const int32 NewNum)
 {
-	ensureVoxelSlow(NewNum > 0);
+	ensure(NewNum > 0);
 	ensure(PrivateNum == 0);
 	ensure(Attributes.Num() == 0);
 	PrivateNum = NewNum;
@@ -69,7 +70,7 @@ void FVoxelPointSet::Add(const FName Name, const TSharedRef<const FVoxelBuffer>&
 		return;
 	}
 
-	Attributes.FindOrAdd(Name) = Buffer;
+	Attributes.Add(Name, Buffer);
 }
 
 FVoxelQuery FVoxelPointSet::MakeQuery(const FVoxelQuery& Query) const
@@ -113,12 +114,12 @@ TSharedRef<FVoxelPointSet> FVoxelPointSet::Gather(const FVoxelInt32Buffer& Indic
 		return MakeVoxelShared<FVoxelPointSet>();
 	}
 
-	const TSharedRef<FVoxelPointSet> Result = MakeVoxelShared<FVoxelPointSet>();
+	const TSharedRef<FVoxelPointSet> Result = MakeVoxelShared<FVoxelPointSet>();;
 	Result->SetNum(Indices.Num());
 
 	for (const auto& It : Attributes)
 	{
-		Result->Add(It.Key, FVoxelBufferGatherer::Gather(*It.Value, Indices));
+		Result->Add(It.Key, FVoxelBufferUtilities::Gather(*It.Value, Indices));
 	}
 
 	return Result;
@@ -170,7 +171,7 @@ int64 FVoxelPointSet::GetAllocatedSize() const
 	return AllocatedSize;
 }
 
-const TVoxelSet<FVoxelPointId>& FVoxelPointSet::GetPointIdToIndex() const
+const TVoxelAddOnlySet<FVoxelPointId>& FVoxelPointSet::GetPointIdToIndex() const
 {
 	VOXEL_SCOPE_LOCK(PointIdToIndexCriticalSection);
 

@@ -1,13 +1,11 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "K2Node_GetVoxelGraphParameter.h"
-#include "BlueprintLibrary/VoxelParameterBlueprintLibrary.h"
+#include "FunctionLibrary/VoxelParameterFunctionLibrary.h"
 
 UK2Node_GetVoxelGraphParameter::UK2Node_GetVoxelGraphParameter()
 {
-	FunctionReference.SetExternalMember(
-		GET_FUNCTION_NAME_CHECKED(UVoxelParameterBlueprintLibrary, K2_GetVoxelParameter),
-		UVoxelParameterBlueprintLibrary::StaticClass());
+	FunctionReference.SetExternalMember(GET_FUNCTION_NAME_CHECKED(UVoxelParameterFunctionLibrary, K2_GetVoxelParameter), UVoxelParameterFunctionLibrary::StaticClass());
 }
 
 bool UK2Node_GetVoxelGraphParameter::IsPinWildcard(const UEdGraphPin& Pin) const

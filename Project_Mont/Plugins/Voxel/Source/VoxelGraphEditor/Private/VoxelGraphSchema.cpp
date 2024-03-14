@@ -1,76 +1,493 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelGraphSchema.h"
+#include "VoxelGraph.h"
+#include "VoxelNode.h"
+#include "VoxelEdGraph.h"
 #include "VoxelNodeLibrary.h"
-#include "VoxelGraphToolkit.h"
-#include "VoxelGraphTracker.h"
 #include "VoxelGraphVisuals.h"
-#include "VoxelTerminalGraph.h"
-#include "VoxelGraphSchemaAction.h"
-#include "VoxelGraphContextMenuBuilder.h"
-#include "VoxelGraphContextActionsBuilder.h"
-#include "Nodes/VoxelGraphNode.h"
-#include "Nodes/VoxelGraphNode_Knot.h"
+#include "VoxelGraphToolkit.h"
+#include "VoxelMacroLibrary.h"
+#include "VoxelRuntimeGraph.h"
+#include "VoxelGraphInstance.h"
+#include "VoxelMakeValueNode.h"
+#include "Templates/VoxelOperatorNodes.h"
+#include "Nodes/VoxelGraphKnotNode.h"
+#include "Nodes/VoxelGraphMacroNode.h"
+#include "Nodes/VoxelGraphStructNode.h"
+#include "Nodes/VoxelGraphParameterNode.h"
+#include "Nodes/VoxelGraphLocalVariableNode.h"
+#include "Nodes/VoxelGraphMacroParameterNode.h"
+#include "Widgets/SVoxelGraphPinTypeSelector.h"
+#include "SchemaActions/VoxelGraphExpandMacroSchemaAction.h"
+#include "SchemaActions/VoxelGraphCollapseToMacroSchemaAction.h"
 
-bool UVoxelGraphSchema::ConnectionCausesLoop(const UEdGraphPin* InputPin, const UEdGraphPin* OutputPin) const
+#include "ToolMenu.h"
+
+UEdGraphNode* FVoxelGraphSchemaAction_NewMacroNode::PerformAction(UEdGraph* ParentGraph, UEdGraphPin* FromPin, const FVector2D Location, bool bSelectNewNode)
 {
-	const UEdGraphNode* StartNode = OutputPin->GetOwningNode();
+	const FVoxelTransaction Transaction(ParentGraph, "New graph node");
 
-	TSet<UEdGraphNode*> ProcessedNodes;
+	FGraphNodeCreator<UVoxelGraphMacroNode> NodeCreator(*ParentGraph);
+	UVoxelGraphMacroNode* Node = NodeCreator.CreateUserInvokedNode(bSelectNewNode);
+	Node->GraphInterface = Graph;
+	Node->NodePosX = Location.X;
+	Node->NodePosY = Location.Y;
+	NodeCreator.Finalize();
 
-	TArray<UEdGraphNode*> NodesToProcess;
-	NodesToProcess.Add(InputPin->GetOwningNode());
-
-	while (NodesToProcess.Num() > 0)
+	if (FromPin)
 	{
-		UEdGraphNode* Node = NodesToProcess.Pop(false);
-		if (ProcessedNodes.Contains(Node))
-		{
-			continue;
-		}
-		ProcessedNodes.Add(Node);
+		Node->AutowireNewNode(FromPin);
+	}
 
-		for (const UEdGraphPin* Pin : Node->GetAllPins())
+	return Node;
+}
+
+void FVoxelGraphSchemaAction_NewMacroNode::GetIcon(FSlateIcon& Icon, FLinearColor& Color)
+{
+	static const FSlateIcon MacroIcon("EditorStyle", "GraphEditor.Macro_16x");
+	Icon = MacroIcon;
+}
+
+UEdGraphNode* FVoxelGraphSchemaAction_NewParameterUsage::PerformAction(UEdGraph* ParentGraph, UEdGraphPin* FromPin, const FVector2D Location, bool bSelectNewNode)
+{
+	check(Guid.IsValid());
+	const FVoxelTransaction Transaction(ParentGraph, "Create new variable usage");
+
+	UEdGraphNode* NewNode;
+	if (ParameterType == EVoxelGraphParameterType::Parameter)
+	{
+		FGraphNodeCreator<UVoxelGraphParameterNode> NodeCreator(*ParentGraph);
+		UVoxelGraphParameterNode* Node = NodeCreator.CreateUserInvokedNode(bSelectNewNode);
+		Node->Guid = Guid;
+		Node->NodePosX = Location.X;
+		Node->NodePosY = Location.Y;
+		NodeCreator.Finalize();
+
+		NewNode = Node;
+	}
+	else if (ParameterType == EVoxelGraphParameterType::Input)
+	{
+		FGraphNodeCreator<UVoxelGraphMacroParameterInputNode> NodeCreator(*ParentGraph);
+		UVoxelGraphMacroParameterInputNode* Node = NodeCreator.CreateUserInvokedNode(bSelectNewNode);
+		Node->bExposeDefaultPin = bInput_ExposeDefaultAsPin;
+		Node->Guid = Guid;
+		Node->NodePosX = Location.X;
+		Node->NodePosY = Location.Y;
+		NodeCreator.Finalize();
+
+		NewNode = Node;
+	}
+	else if (ParameterType == EVoxelGraphParameterType::Output)
+	{
+		FGraphNodeCreator<UVoxelGraphMacroParameterOutputNode> NodeCreator(*ParentGraph);
+		UVoxelGraphMacroParameterOutputNode* Node = NodeCreator.CreateUserInvokedNode(bSelectNewNode);
+		Node->Guid = Guid;
+		Node->NodePosX = Location.X;
+		Node->NodePosY = Location.Y;
+		NodeCreator.Finalize();
+
+		NewNode = Node;
+	}
+	else if (ParameterType == EVoxelGraphParameterType::LocalVariable)
+	{
+		if (bLocalVariable_IsDeclaration)
 		{
-			if (Pin->Direction != EGPD_Output)
+			FGraphNodeCreator<UVoxelGraphLocalVariableDeclarationNode> NodeCreator(*ParentGraph);
+			UVoxelGraphLocalVariableDeclarationNode* Node = NodeCreator.CreateUserInvokedNode(bSelectNewNode);
+			Node->Guid = Guid;
+			Node->NodePosX = Location.X;
+			Node->NodePosY = Location.Y;
+			NodeCreator.Finalize();
+
+			NewNode = Node;
+		}
+		else
+		{
+			FGraphNodeCreator<UVoxelGraphLocalVariableUsageNode> NodeCreator(*ParentGraph);
+			UVoxelGraphLocalVariableUsageNode* Node = NodeCreator.CreateUserInvokedNode(bSelectNewNode);
+			Node->Guid = Guid;
+			Node->NodePosX = Location.X;
+			Node->NodePosY = Location.Y;
+			NodeCreator.Finalize();
+
+			NewNode = Node;
+		}
+	}
+	else
+	{
+		ensure(false);
+		return nullptr;
+	}
+
+	if (FromPin)
+	{
+		NewNode->AutowireNewNode(FromPin);
+	}
+
+	return NewNode;
+}
+
+void FVoxelGraphSchemaAction_NewParameterUsage::GetIcon(FSlateIcon& Icon, FLinearColor& Color)
+{
+	Icon = FVoxelGraphVisuals::GetPinIcon(PinType);
+	Color = FVoxelGraphVisuals::GetPinColor(PinType);
+}
+
+UEdGraphNode* FVoxelGraphSchemaAction_NewParameter::PerformAction(UEdGraph* ParentGraph, UEdGraphPin* FromPin, const FVector2D Location, bool bSelectNewNode)
+{
+	const FVoxelTransaction Transaction(ParentGraph, "Create new " + UEnum::GetDisplayValueAsText(ParameterType).ToString());
+
+	const TSharedPtr<FVoxelGraphToolkit> Toolkit = UVoxelGraphSchema::GetToolkit(ParentGraph);
+	if (!ensure(Toolkit))
+	{
+		return nullptr;
+	}
+
+	UVoxelGraph* Graph = Toolkit->Asset->FindGraph(ParentGraph);
+	if (!ensure(Graph))
+	{
+		return nullptr;
+	}
+
+	FVoxelGraphParameter NewParameter;
+	NewParameter.Guid = FGuid::NewGuid();
+	NewParameter.ParameterType = ParameterType;
+	NewParameter.Category = TargetCategory;
+
+	if (FromPin)
+	{
+		const FString PinName = FromPin->GetDisplayName().ToString();
+		if (!PinName.TrimStartAndEnd().IsEmpty())
+		{
+			NewParameter.Name = *PinName;
+		}
+		NewParameter.Type = FromPin->PinType;
+
+		if (NewParameter.Type.HasPinDefaultValue())
+		{
+			NewParameter.DefaultValue = FVoxelPinValue::MakeFromPinDefaultValue(*FromPin);
+		}
+
+		if (ParameterType == EVoxelGraphParameterType::Parameter &&
+			!NewParameter.Type.IsBufferArray())
+		{
+			NewParameter.Type = NewParameter.Type.GetInnerType();
+		}
+	}
+	else
+	{
+		NewParameter.Type = FVoxelPinType::Make<float>();
+		NewParameter.Fixup(nullptr);
+	}
+
+	if (!ParameterName.IsNone())
+	{
+		NewParameter.Name = ParameterName;
+	}
+
+	UVoxelGraphNode* ResultNode;
+	{
+		const FVoxelTransaction GraphTransaction(Graph);
+
+		Graph->Parameters.Add(NewParameter);
+
+		if (ParameterType == EVoxelGraphParameterType::Parameter)
+		{
+			FGraphNodeCreator<UVoxelGraphParameterNode> NodeCreator(*ParentGraph);
+			UVoxelGraphParameterNode* Node = NodeCreator.CreateUserInvokedNode(bSelectNewNode);
+			Node->Guid = NewParameter.Guid;
+			Node->NodePosX = Location.X;
+			Node->NodePosY = Location.Y;
+			NodeCreator.Finalize();
+
+			ResultNode = Node;
+		}
+		else if (ParameterType == EVoxelGraphParameterType::Input)
+		{
+			FGraphNodeCreator<UVoxelGraphMacroParameterInputNode> NodeCreator(*ParentGraph);
+			UVoxelGraphMacroParameterInputNode* Node = NodeCreator.CreateUserInvokedNode(bSelectNewNode);
+			Node->Guid = NewParameter.Guid;
+			Node->NodePosX = Location.X;
+			Node->NodePosY = Location.Y;
+			NodeCreator.Finalize();
+
+			ResultNode = Node;
+		}
+		else if (ParameterType == EVoxelGraphParameterType::Output)
+		{
+			FGraphNodeCreator<UVoxelGraphMacroParameterOutputNode> NodeCreator(*ParentGraph);
+			UVoxelGraphMacroParameterOutputNode* Node = NodeCreator.CreateUserInvokedNode(bSelectNewNode);
+			Node->Guid = NewParameter.Guid;
+			Node->NodePosX = Location.X;
+			Node->NodePosY = Location.Y;
+			NodeCreator.Finalize();
+
+			ResultNode = Node;
+		}
+		else if (ParameterType == EVoxelGraphParameterType::LocalVariable)
+		{
+			FGraphNodeCreator<UVoxelGraphLocalVariableDeclarationNode> NodeCreator(*ParentGraph);
+			UVoxelGraphLocalVariableDeclarationNode* Node = NodeCreator.CreateUserInvokedNode(bSelectNewNode);
+			Node->Guid = NewParameter.Guid;
+			Node->NodePosX = Location.X;
+			Node->NodePosY = Location.Y;
+			NodeCreator.Finalize();
+
+			// Local Variables don't use DefaultValue, just apply it to the pin
+			if (NewParameter.Type.HasPinDefaultValue())
 			{
-				continue;
+				UEdGraphPin& InputPin = *Node->GetInputPin(0);
+				NewParameter.DefaultValue.ApplyToPinDefaultValue(InputPin);
+				NewParameter.DefaultValue = {};
+				NewParameter.Fixup(nullptr);
 			}
 
-			for (const UEdGraphPin* LinkedToPin : Pin->LinkedTo)
+			ResultNode = Node;
+		}
+		else
+		{
+			ensure(false);
+			return nullptr;
+		}
+
+		if (FromPin)
+		{
+			if (FromPin->GetOwningNode()->GetGraph() == ParentGraph)
 			{
-				check(LinkedToPin->Direction == EGPD_Input);
+				ResultNode->AutowireNewNode(FromPin);
+			}
 
-				UEdGraphNode* NewNode = LinkedToPin->GetOwningNode();
-				ensure(NewNode);
-
-				if (StartNode == NewNode)
+			switch (ParameterType)
+			{
+			default: check(false);
+			case EVoxelGraphParameterType::Parameter: break;
+			case EVoxelGraphParameterType::Output: break;
+			case EVoxelGraphParameterType::Input: break;
+			case EVoxelGraphParameterType::LocalVariable:
+			{
+				if (ResultNode->GetInputPins().Num() > 0)
 				{
-					return true;
+					UEdGraphPin* InputPin = ResultNode->GetInputPin(0);
+					InputPin->DefaultObject = FromPin->DefaultObject;
+					InputPin->DefaultValue = FromPin->DefaultValue;
+					InputPin->DefaultTextValue = FromPin->DefaultTextValue;
 				}
-				NodesToProcess.Add(NewNode);
+			}
+			break;
 			}
 		}
 	}
 
-	return false;
+	Toolkit->SelectParameter(Graph, NewParameter.Guid, true, true);
+
+	return ResultNode;
 }
 
-bool UVoxelGraphSchema::CanCreateAutomaticConversionNode(const UEdGraphPin* PinA, const UEdGraphPin* PinB) const
+UEdGraphNode* FVoxelGraphSchemaAction_NewInlineMacro::PerformAction(UEdGraph* ParentGraph, UEdGraphPin* FromPin, const FVector2D Location, bool bSelectNewNode)
 {
-	const UEdGraphPin* InputPin = nullptr;
-	const UEdGraphPin* OutputPin = nullptr;
-	if (!CategorizePinsByDirection(PinA, PinB, InputPin, OutputPin))
+	const TSharedPtr<FVoxelGraphToolkit> Toolkit = UVoxelGraphSchema::GetToolkit(ParentGraph);
+	if (!ensure(Toolkit))
 	{
-		return false;
+		return nullptr;
 	}
 
-	return FindCastAction(OutputPin->PinType, InputPin->PinType).IsValid();
+	FName NewMacroName = "NewMacro";
+
+	TSet<FName> UsedNames;
+	for (const UVoxelGraph* InlineMacro : Toolkit->Asset->InlineMacros)
+	{
+		UsedNames.Add(*InlineMacro->GetGraphName());
+	}
+
+	while (UsedNames.Contains(NewMacroName))
+	{
+		NewMacroName.SetNumber(NewMacroName.GetNumber() + 1);
+	}
+
+	{
+		const FVoxelTransaction Transaction(ParentGraph, "Create new inline macro");
+
+		EObjectFlags Flags = RF_Transactional;
+		if (Toolkit->bIsMacroLibrary)
+		{
+			Flags |= RF_Public;
+		}
+
+		NewMacro = NewObject<UVoxelGraph>(Toolkit->Asset, NAME_None, Flags);
+		NewMacro->SetGraphName(NewMacroName.ToString());
+		NewMacro->Category = TargetCategory;
+
+		Toolkit->FixupGraph(NewMacro);
+		Toolkit->Asset->InlineMacros.Add(NewMacro);
+	}
+
+	Toolkit->UpdateDetailsView(NewMacro);
+	if (bOpenNewGraph)
+	{
+		Toolkit->OpenGraphAndBringToFront(NewMacro->MainEdGraph, false);
+	}
+	Toolkit->SelectMember(NewMacro, true, true);
+
+	return nullptr;
 }
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+UEdGraphNode* FVoxelGraphSchemaAction_NewStructNode::PerformAction(UEdGraph* ParentGraph, UEdGraphPin* FromPin, const FVector2D Location, bool bSelectNewNode)
+{
+	const FVoxelTransaction Transaction(ParentGraph, "New graph node");
+
+	FGraphNodeCreator<UVoxelGraphStructNode> NodeCreator(*ParentGraph);
+	UVoxelGraphStructNode* StructNode = NodeCreator.CreateUserInvokedNode(bSelectNewNode);
+	StructNode->Struct = *Node;
+	StructNode->NodePosX = Location.X;
+	StructNode->NodePosY = Location.Y;
+	NodeCreator.Finalize();
+
+	if (!FromPin)
+	{
+		return StructNode;
+	}
+
+	const FVoxelPinType PinType(FromPin->PinType);
+	StructNode->AutowireNewNode(FromPin);
+
+	UEdGraphPin* LinkedPin = nullptr;
+	for (UEdGraphPin* Pin : FromPin->LinkedTo)
+	{
+		if (Pin->GetOwningNode() == StructNode)
+		{
+			LinkedPin = Pin;
+			break;
+		}
+	}
+
+	if (!LinkedPin)
+	{
+		return StructNode;
+	}
+
+	FVoxelPinTypeSet PromotionTypes;
+	if (!ensure(LinkedPin) ||
+		!StructNode->CanPromotePin(*LinkedPin, PromotionTypes))
+	{
+		return StructNode;
+	}
+
+	if (!PromotionTypes.Contains(PinType))
+	{
+		return StructNode;
+	}
+
+	StructNode->PromotePin(*LinkedPin, PinType);
+
+	return StructNode;
+}
+
+void FVoxelGraphSchemaAction_NewStructNode::GetIcon(FSlateIcon& Icon, FLinearColor& Color)
+{
+	if (!ensure(Node))
+	{
+		return;
+	}
+
+	static FSlateIcon StructIcon("EditorStyle", "Kismet.AllClasses.FunctionIcon");
+
+	const FString NodeIcon = Node->GetMetadataContainer().GetMetaData(STATIC_FNAME("NodeIcon"));
+	const FString NodeIconColor = Node->GetMetadataContainer().GetMetaData(STATIC_FNAME("NodeIconColor"));
+
+	if (!NodeIcon.IsEmpty())
+	{
+		Icon = FVoxelGraphVisuals::GetNodeIcon(NodeIcon);
+	}
+	else
+	{
+		Icon = StructIcon;
+	}
+
+	if (!NodeIconColor.IsEmpty())
+	{
+		Color = FVoxelGraphVisuals::GetNodeColor(NodeIconColor);
+	}
+	else
+	{
+		Color = GetDefault<UGraphEditorSettings>()->FunctionCallNodeTitleColor;
+	}
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+UEdGraphNode* FVoxelGraphSchemaAction_NewPromotableStructNode::PerformAction(UEdGraph* ParentGraph, UEdGraphPin* FromPin, const FVector2D Location, bool bSelectNewNode)
+{
+	const FVoxelTransaction Transaction(ParentGraph, "New graph node");
+
+	FGraphNodeCreator<UVoxelGraphStructNode> NodeCreator(*ParentGraph);
+	UVoxelGraphStructNode* StructNode = NodeCreator.CreateUserInvokedNode(bSelectNewNode);
+	StructNode->Struct = *Node;
+	StructNode->NodePosX = Location.X;
+	StructNode->NodePosY = Location.Y;
+	NodeCreator.Finalize();
+
+	if (FromPin)
+	{
+		for (UEdGraphPin* InputPin : StructNode->GetInputPins())
+		{
+			if (PinTypes.Num() == 0)
+			{
+				break;
+			}
+
+			StructNode->PromotePin(*InputPin, PinTypes.Pop());
+		}
+
+		StructNode->AutowireNewNode(FromPin);
+	}
+
+	return StructNode;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+UEdGraphNode* FVoxelGraphSchemaAction_NewKnotNode::PerformAction(UEdGraph* ParentGraph, UEdGraphPin* FromPin, const FVector2D Location, bool bSelectNewNode)
+{
+	const FVoxelTransaction Transaction(ParentGraph, "New reroute node");
+
+	FGraphNodeCreator<UVoxelGraphKnotNode> NodeCreator(*ParentGraph);
+	UVoxelGraphKnotNode* Node = NodeCreator.CreateUserInvokedNode(bSelectNewNode);
+	Node->NodePosX = Location.X;
+	Node->NodePosY = Location.Y;
+	NodeCreator.Finalize();
+
+	if (FromPin)
+	{
+		Node->AutowireNewNode(FromPin);
+	}
+
+	Node->PropagatePinType();
+
+	return Node;
+}
+
+void FVoxelGraphSchemaAction_NewKnotNode::GetIcon(FSlateIcon& Icon, FLinearColor& Color)
+{
+	static const FSlateIcon KnotIcon = FSlateIcon("EditorStyle", "GraphEditor.Default_16x");
+	Icon = KnotIcon;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
 
 TSharedPtr<FEdGraphSchemaAction> UVoxelGraphSchema::FindCastAction(const FEdGraphPinType& From, const FEdGraphPinType& To) const
 {
-	const TSharedPtr<const FVoxelNode> CastNode = FVoxelNodeLibrary::FindCastNode(From, To);
+	const FVoxelNode* CastNode = FVoxelNodeLibrary::FindCastNode(From, To);
 	if (!CastNode)
 	{
 		return nullptr;
@@ -81,207 +498,19 @@ TSharedPtr<FEdGraphSchemaAction> UVoxelGraphSchema::FindCastAction(const FEdGrap
 	return Action;
 }
 
-bool UVoxelGraphSchema::TryGetPromotionType(
-	const UEdGraphPin& Pin,
-	const FVoxelPinType& TargetType,
-	FVoxelPinType& OutType,
-	FString& OutAdditionalText)
+TOptional<FPinConnectionResponse> UVoxelGraphSchema::GetCanCreateConnectionOverride(const UEdGraphPin* PinA, const UEdGraphPin* PinB) const
 {
-	OutType = {};
-
-	const UVoxelGraphNode* Node = Cast<UVoxelGraphNode>(Pin.GetOwningNode());
-	if (!ensure(Node))
-	{
-		return false;
-	}
-
-	FVoxelPinTypeSet Types;
-	if (!Node->CanPromotePin(Pin, Types))
-	{
-		return false;
-	}
-
-	OutAdditionalText = Node->GetPinPromotionWarning(Pin, TargetType);
-
-	const FVoxelPinType CurrentType(Pin.PinType);
-
-	const auto TryType = [&](const FVoxelPinType& NewType)
-		{
-			if (!OutType.IsValid() &&
-				Types.Contains(NewType))
-			{
-				OutType = NewType;
-			}
-		};
-
-	if (Pin.Direction == EGPD_Input)
-	{
-		// We're an input pin, we can implicitly promote to buffer
-
-		if (CurrentType.IsBuffer())
-		{
-			// If we're currently a buffer, try to preserve that
-			TryType(TargetType.GetBufferType());
-			TryType(TargetType);
-		}
-		else
-		{
-			// Otherwise try the raw type first
-			TryType(TargetType);
-			TryType(TargetType.GetBufferType());
-		}
-	}
-	else
-	{
-		// We're an output pin, we can never implicitly promote
-		TryType(TargetType);
-	}
-
-	return OutType.IsValid();
-}
-
-bool UVoxelGraphSchema::CreatePromotedConnectionSafe(UEdGraphPin*& PinA, UEdGraphPin*& PinB) const
-{
-	const auto TryPromote = [&](UEdGraphPin& PinToPromote, const UEdGraphPin& OtherPin)
-	{
-		FString AdditionalText;
-		FVoxelPinType Type;
-		if (!TryGetPromotionType(PinToPromote, OtherPin.PinType, Type, AdditionalText))
-		{
-			return false;
-		}
-
-		UVoxelGraphNode* Node = CastChecked<UVoxelGraphNode>(PinToPromote.GetOwningNode());
-
-		const FName PinAName = PinA->GetFName();
-		const FName PinBName = PinB->GetFName();
-		const UVoxelGraphNode* NodeA = CastChecked<UVoxelGraphNode>(PinA->GetOwningNode());
-		const UVoxelGraphNode* NodeB = CastChecked<UVoxelGraphNode>(PinB->GetOwningNode());
-		{
-			// Tricky: PromotePin might reconstruct the node, invalidating pin pointers
-			Node->PromotePin(PinToPromote, Type);
-		}
-		PinA = NodeA->FindPin(PinAName);
-		PinB = NodeB->FindPin(PinBName);
-
-		return true;
-	};
-
-	if (!TryPromote(*PinB, *PinA) &&
-		!TryPromote(*PinA, *PinB))
-	{
-		return false;
-	}
-
-	if (!ensure(PinA) ||
-		!ensure(PinB) ||
-		!ensure(CanCreateConnection(PinA, PinB).Response != CONNECT_RESPONSE_MAKE_WITH_PROMOTION) ||
-		!ensure(TryCreateConnection(PinA, PinB)))
-	{
-		return false;
-	}
-
-	return true;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-void UVoxelGraphSchema::GetGraphContextActions(FGraphContextMenuBuilder& ContextMenuBuilder) const
-{
-	FVoxelGraphContextActionsBuilder::Build(ContextMenuBuilder);
-}
-
-bool UVoxelGraphSchema::CreateAutomaticConversionNodeAndConnections(UEdGraphPin* PinA, UEdGraphPin* PinB) const
-{
-	UEdGraphPin* InputPin = nullptr;
-	UEdGraphPin* OutputPin = nullptr;
-	if (!CategorizePinsByDirection(PinA, PinB, InputPin, OutputPin))
-	{
-		return false;
-	}
-
-	const TSharedPtr<FEdGraphSchemaAction> CastAction = FindCastAction(OutputPin->PinType, InputPin->PinType);
-	if (!CastAction)
-	{
-		return false;
-	}
-
-	const FVoxelTransaction Transaction(InputPin, "Create new graph node");
-
-	FVector2D Position;
-	Position.X = (InputPin->GetOwningNode()->NodePosX + OutputPin->GetOwningNode()->NodePosX) / 2.;
-	Position.Y = (InputPin->GetOwningNode()->NodePosY + OutputPin->GetOwningNode()->NodePosY) / 2.;
-
-	const UEdGraphNode* GraphNode = CastAction->PerformAction(PinA->GetOwningNode()->GetGraph(), nullptr, Position);
-	const UVoxelGraphNode* Node = CastChecked<UVoxelGraphNode>(GraphNode);
-
-	TryCreateConnection(OutputPin, Node->GetInputPin(0));
-	TryCreateConnection(InputPin, Node->GetOutputPin(0));
-
-	return true;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-const FPinConnectionResponse UVoxelGraphSchema::CanCreateConnection(const UEdGraphPin* PinA, const UEdGraphPin* PinB) const
-{
-	// Make sure the pins are not on the same node
-	if (PinA->GetOwningNode() == PinB->GetOwningNode())
-	{
-		return FPinConnectionResponse(CONNECT_RESPONSE_DISALLOW, "Both are on the same node");
-	}
-
-	if (PinA->bOrphanedPin ||
-		PinB->bOrphanedPin)
-	{
-		return FPinConnectionResponse(CONNECT_RESPONSE_DISALLOW, "Cannot make new connections to orphaned pin");
-	}
-
-	if (PinA->bNotConnectable ||
-		PinB->bNotConnectable)
-	{
-		return FPinConnectionResponse(CONNECT_RESPONSE_DISALLOW, "Pins are not connectable");
-	}
-
-	// Compare the directions
 	const UEdGraphPin* InputPin = nullptr;
 	const UEdGraphPin* OutputPin = nullptr;
-
-	if (!CategorizePinsByDirection(PinA, PinB, InputPin, OutputPin))
+	if (!ensure(CategorizePinsByDirection(PinA, PinB, InputPin, OutputPin)))
 	{
-		return FPinConnectionResponse(CONNECT_RESPONSE_DISALLOW, "Directions are not compatible");
-	}
-
-	check(InputPin);
-	check(OutputPin);
-
-	if (ConnectionCausesLoop(InputPin, OutputPin))
-	{
-		return FPinConnectionResponse(CONNECT_RESPONSE_DISALLOW, "Connection would cause loop");
+		return {};
 	}
 
 	if (FVoxelPinType(OutputPin->PinType).CanBeCastedTo_Schema(InputPin->PinType))
 	{
 		// Can connect directly
-		if (InputPin->LinkedTo.Num() > 0)
-		{
-			ECanCreateConnectionResponse Response;
-			if (InputPin == PinA)
-			{
-				Response = CONNECT_RESPONSE_BREAK_OTHERS_A;
-			}
-			else
-			{
-				Response = CONNECT_RESPONSE_BREAK_OTHERS_B;
-			}
-			return FPinConnectionResponse(Response, "Replace existing connections");
-		}
-
-		return FPinConnectionResponse(CONNECT_RESPONSE_MAKE, "");
+		return {};
 	}
 
 	const auto TryConnect = [this](const UEdGraphPin& PinToPromote, const UEdGraphPin& OtherPin)
@@ -334,182 +563,794 @@ const FPinConnectionResponse UVoxelGraphSchema::CanCreateConnection(const UEdGra
 		*FVoxelPinType(InputPin->PinType).ToString()));
 }
 
-bool UVoxelGraphSchema::TryCreateConnection(UEdGraphPin* PinA, UEdGraphPin* PinB) const
+bool UVoxelGraphSchema::CreatePromotedConnectionSafe(UEdGraphPin*& PinA, UEdGraphPin*& PinB) const
 {
-	switch (CanCreateConnection(PinA, PinB).Response)
+	const auto TryPromote = [&](UEdGraphPin& PinToPromote, const UEdGraphPin& OtherPin)
 	{
-	default:
-	{
-		ensure(false);
-		return false;
-	}
-	case CONNECT_RESPONSE_MAKE:
-	{
-		PinA->Modify();
-		PinB->Modify();
-		PinA->MakeLinkTo(PinB);
-	}
-	break;
-	case CONNECT_RESPONSE_BREAK_OTHERS_A:
-	{
-		PinA->Modify();
-		PinB->Modify();
-		PinA->BreakAllPinLinks(true);
-		PinA->MakeLinkTo(PinB);
-	}
-	break;
-	case CONNECT_RESPONSE_BREAK_OTHERS_B:
-	{
-		PinA->Modify();
-		PinB->Modify();
-		PinB->BreakAllPinLinks(true);
-		PinA->MakeLinkTo(PinB);
-	}
-	break;
-	case CONNECT_RESPONSE_BREAK_OTHERS_AB:
-	{
-		PinA->Modify();
-		PinB->Modify();
-		PinA->BreakAllPinLinks(true);
-		PinB->BreakAllPinLinks(true);
-		PinA->MakeLinkTo(PinB);
-	}
-	break;
-	case CONNECT_RESPONSE_MAKE_WITH_CONVERSION_NODE:
-	{
-		if (!CreateAutomaticConversionNodeAndConnections(PinA, PinB))
+		FString AdditionalText;
+		FVoxelPinType Type;
+		if (!TryGetPromotionType(PinToPromote, OtherPin.PinType, Type, AdditionalText))
 		{
 			return false;
 		}
-	}
-	break;
-	case CONNECT_RESPONSE_MAKE_WITH_PROMOTION:
-	{
-		if (!CreatePromotedConnectionSafe(PinA, PinB))
+
+		UVoxelGraphNode* Node = CastChecked<UVoxelGraphNode>(PinToPromote.GetOwningNode());
+
+		const FName PinAName = PinA->GetFName();
+		const FName PinBName = PinB->GetFName();
+		const UVoxelGraphNode* NodeA = CastChecked<UVoxelGraphNode>(PinA->GetOwningNode());
+		const UVoxelGraphNode* NodeB = CastChecked<UVoxelGraphNode>(PinB->GetOwningNode());
 		{
-			return false;
+			// Tricky: PromotePin might reconstruct the node, invalidating pin pointers
+			Node->PromotePin(PinToPromote, Type);
 		}
-	}
-	break;
-	case CONNECT_RESPONSE_DISALLOW:
+		PinA = NodeA->FindPin(PinAName);
+		PinB = NodeB->FindPin(PinBName);
+
+		return true;
+	};
+
+	if (!TryPromote(*PinB, *PinA) &&
+		!TryPromote(*PinA, *PinB))
 	{
 		return false;
-	}
 	}
 
-	PinA->GetOwningNode()->PinConnectionListChanged(PinA);
-	PinB->GetOwningNode()->PinConnectionListChanged(PinB);
+	if (!ensure(PinA) ||
+		!ensure(PinB) ||
+		!ensure(CanCreateConnection(PinA, PinB).Response != CONNECT_RESPONSE_MAKE_WITH_PROMOTION) ||
+		!ensure(TryCreateConnection(PinA, PinB)))
+	{
+		return false;
+	}
 
 	return true;
 }
 
-bool UVoxelGraphSchema::CreatePromotedConnection(UEdGraphPin* PinA, UEdGraphPin* PinB) const
-{
-	// CreatePromotedConnectionSafe should be used
-	ensure(false);
-	return false;
-}
-
-bool UVoxelGraphSchema::DoesDefaultValueMatchAutogenerated(const UEdGraphPin& InPin) const
-{
-	if (Super::DoesDefaultValueMatchAutogenerated(InPin))
-	{
-		return true;
-	}
-
-	if (!FVoxelPinType(InPin.PinType).HasPinDefaultValue())
-	{
-		return true;
-	}
-
-	const FVoxelPinValue Value = FVoxelPinValue::MakeFromPinDefaultValue(InPin);
-	if (!Value.IsObject())
-	{
-		return false;
-	}
-
-	if (!Value.GetObject() &&
-		!FSoftObjectPtr(InPin.AutogeneratedDefaultValue).LoadSynchronous())
-	{
-		// Both null, AutogeneratedDefaultValue was pointing to a now deleted asset
-		return true;
-	}
-
-	return false;
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-TSharedPtr<FEdGraphSchemaAction> UVoxelGraphSchema::GetCreateCommentAction() const
+void UVoxelGraphSchema::GetGraphContextActions(FGraphContextMenuBuilder& ContextMenuBuilder) const
 {
-	return MakeVoxelShared<FVoxelGraphSchemaAction_NewComment>();
-}
+	VOXEL_FUNCTION_COUNTER();
 
-int32 UVoxelGraphSchema::GetNodeSelectionCount(const UEdGraph* Graph) const
-{
-	const TSharedPtr<SGraphEditor> GraphEditor = FVoxelGraphToolkit::Get(Graph)->GetActiveGraphEditor();
-	if (!ensure(GraphEditor))
-	{
-		return 0;
-	}
+	constexpr int32 SectionId_Macros = 0;
+	constexpr int32 SectionId_Operators = 0;
+	constexpr int32 SectionId_StructNodes = 0;
+	constexpr int32 SectionId_ShortList = 1;
+	constexpr int32 SectionId_InlineMacros = 2;
+	constexpr int32 SectionId_Parameters = 2;
 
-	return GraphEditor->GetNumberOfSelectedNodes();
-}
-
-void UVoxelGraphSchema::GetContextMenuActions(UToolMenu* Menu, UGraphNodeContextMenuContext* Context) const
-{
-	if (!ensure(Menu) ||
-		!ensure(Context))
+	const TSharedPtr<FVoxelGraphToolkit> Toolkit = GetToolkit(ContextMenuBuilder.CurrentGraph);
+	if (!ensure(Toolkit))
 	{
 		return;
 	}
 
-	FVoxelGraphContextMenuBuilder::Build(*Menu, *Context);
-}
+	Super::GetGraphContextActions(ContextMenuBuilder);
 
-void UVoxelGraphSchema::ResetPinToAutogeneratedDefaultValue(UEdGraphPin* Pin, const bool bCallModifyCallbacks) const
-{
-	const FVoxelPinType Type(Pin->PinType);
+	ContextMenuBuilder.AddAction(MakeVoxelShared<FVoxelGraphSchemaAction_NewKnotNode>(
+		FText(),
+		INVTEXT("Add reroute node"),
+		INVTEXT("Create a reroute node"),
+		0));
 
-	const FVoxelTransaction Transaction(Pin, "Reset pin to default");
+	FARFilter Filter;
+	Filter.ClassPaths.Add(UVoxelGraph::StaticClass()->GetClassPathName());
+	Filter.ClassPaths.Add(UVoxelGraphInstance::StaticClass()->GetClassPathName());
+	Filter.ClassPaths.Add(UVoxelMacroLibrary::StaticClass()->GetClassPathName());
 
-	// Type will be invalid when migrating orphaned pins
-	if (!Type.IsValid() ||
-		!Type.HasPinDefaultValue())
+	const IAssetRegistry& AssetRegistry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry").Get();
+
+	TArray<FAssetData> AssetDatas;
+	AssetRegistry.GetAssets(Filter, AssetDatas);
+
+	TArray<UVoxelGraphInterface*> GraphInterfaces;
+	TArray<UVoxelMacroLibrary*> MacroLibraries;
+	for (const FAssetData& AssetData : AssetDatas)
 	{
-		Pin->ResetDefaultValue();
-		ensure(Pin->AutogeneratedDefaultValue.IsEmpty());
-	}
-	else if (Type.GetPinDefaultValueType().IsObject())
-	{
-		Pin->DefaultValue = {};
-
-		if (Pin->AutogeneratedDefaultValue.IsEmpty())
+		UObject* Asset = AssetData.GetAsset();
+		if (!ensure(Asset))
 		{
-			Pin->DefaultObject = nullptr;
+			continue;
+		}
+
+		if (Asset->IsA<UVoxelMacroLibrary>())
+		{
+			MacroLibraries.Add(CastChecked<UVoxelMacroLibrary>(Asset));
+		}
+		else if (ensure(Asset->IsA<UVoxelGraphInterface>()))
+		{
+			GraphInterfaces.Add(CastChecked<UVoxelGraphInterface>(Asset));
+		}
+	}
+
+	const auto AddMacro = [&](UVoxelGraphInterface* GraphInterface, const FString& Category, int32 SectionId)
+	{
+		const UVoxelGraph* Graph = GraphInterface->GetGraph();
+		if (!Graph)
+		{
+			return;
+		}
+
+		if (ContextMenuBuilder.FromPin)
+		{
+			bool bHasMatch = false;
+
+			for (const FVoxelGraphParameter& Parameter : Graph->Parameters)
+			{
+				if (ContextMenuBuilder.FromPin->PinType == Parameter.Type &&
+					(ContextMenuBuilder.FromPin->Direction == EGPD_Output) == (Parameter.ParameterType == EVoxelGraphParameterType::Input))
+				{
+					bHasMatch = true;
+					break;
+				}
+			}
+
+			if (!bHasMatch)
+			{
+				return;
+			}
+		}
+
+		const TSharedRef<FVoxelGraphSchemaAction_NewMacroNode> Action = MakeVoxelShared<FVoxelGraphSchemaAction_NewMacroNode>(
+			FText::FromString(Category),
+			FText::FromString(GraphInterface->GetGraphName()),
+			FText::FromString(Graph->Tooltip),
+			SectionId);
+
+		Action->Graph = GraphInterface;
+
+		ContextMenuBuilder.AddAction(Action);
+	};
+
+	for (UVoxelMacroLibrary* MacroLibrary : MacroLibraries)
+	{
+		for (UVoxelGraph* Graph : MacroLibrary->Graph->InlineMacros)
+		{
+			if (!Graph->bExposeToLibrary)
+			{
+				continue;
+			}
+
+			AddMacro(Graph, Graph->Category, SectionId_Macros);
+		}
+	}
+
+	for (UVoxelGraphInterface* GraphInterface : GraphInterfaces)
+	{
+		const UVoxelGraph* Graph = GraphInterface->GetGraph();
+		if (!Graph)
+		{
+			continue;
+		}
+
+		AddMacro(GraphInterface, Graph->Category, SectionId_Macros);
+	}
+
+	for (UVoxelGraph* Graph : Toolkit->Asset->InlineMacros)
+	{
+		AddMacro(Graph, "Macros", SectionId_InlineMacros);
+	}
+
+	{
+		const TSharedRef<FVoxelGraphSchemaAction_NewMacroNode> Action = MakeVoxelShared<FVoxelGraphSchemaAction_NewMacroNode>(
+			INVTEXT("Misc"),
+			INVTEXT("Call Graph"),
+			INVTEXT(""),
+			SectionId_Macros);
+
+		ContextMenuBuilder.AddAction(Action);
+	}
+
+	TArray<TSharedPtr<FEdGraphSchemaAction>> ShortListActions_Forced;
+	TArray<TSharedPtr<FEdGraphSchemaAction>> ShortListActions_ExactMatches;
+	TArray<TSharedPtr<FEdGraphSchemaAction>> ShortListActions_Parameters;
+	ON_SCOPE_EXIT
+	{
+		for (const TSharedPtr<FEdGraphSchemaAction>& Action : ShortListActions_Forced)
+		{
+			ContextMenuBuilder.AddAction(Action);
+		}
+
+		if (ShortListActions_ExactMatches.Num() < 10)
+		{
+			for (const TSharedPtr<FEdGraphSchemaAction>& Action : ShortListActions_ExactMatches)
+			{
+				ContextMenuBuilder.AddAction(Action);
+			}
+		}
+
+		for (const TSharedPtr<FEdGraphSchemaAction>& Action : ShortListActions_Parameters)
+		{
+			ContextMenuBuilder.AddAction(Action);
+		}
+	};
+
+	for (const FVoxelNode* Node : FVoxelNodeLibrary::GetNodes())
+	{
+		UObject* Outer = Toolkit->Asset->GetOuter();
+		if (!ensure(Outer))
+		{
+			continue;
+		}
+
+		bool bIsExactMatch = true;
+		FVoxelPinTypeSet PromotionTypes;
+
+		const bool bHasPinMatch = !ContextMenuBuilder.FromPin || INLINE_LAMBDA
+		{
+			const UEdGraphPin& FromPin = *ContextMenuBuilder.FromPin;
+
+			FVoxelPinTypeSet FromPinPromotionTypes;
+			if (const UVoxelGraphNode* ThisNode = Cast<UVoxelGraphNode>(FromPin.GetOwningNode()))
+			{
+				if (!ThisNode->CanPromotePin(FromPin, FromPinPromotionTypes))
+				{
+					FromPinPromotionTypes.Add(FromPin.PinType);
+				}
+			}
+
+			for (const FVoxelPin& ToPin : Node->GetPins())
+			{
+				if (FromPin.Direction == (ToPin.bIsInput ? EGPD_Input : EGPD_Output))
+				{
+					continue;
+				}
+
+				FVoxelPinTypeSet ToPinPromotionTypes;
+				if (ToPin.IsPromotable())
+				{
+					ToPinPromotionTypes = Node->GetPromotionTypes(ToPin);
+				}
+				else
+				{
+					ToPinPromotionTypes.Add(ToPin.GetType());
+				}
+
+				if (ToPinPromotionTypes.GetSetType() == EVoxelPinTypeSetType::All)
+				{
+					PromotionTypes = ToPinPromotionTypes;
+					bIsExactMatch = false;
+					return true;
+				}
+
+				for (const FVoxelPinType& Type : ToPinPromotionTypes.GetTypes())
+				{
+					for (const FVoxelPinType& FromType : FromPinPromotionTypes.GetTypes())
+					{
+						if (FromPin.Direction == EGPD_Input && Type.CanBeCastedTo_Schema(FromType))
+						{
+							PromotionTypes = ToPinPromotionTypes;
+							return true;
+						}
+						if (FromPin.Direction == EGPD_Output && FromType.CanBeCastedTo_Schema(Type))
+						{
+							PromotionTypes = ToPinPromotionTypes;
+							return true;
+						}
+					}
+				}
+			}
+
+			return false;
+		};
+
+		if (!bHasPinMatch)
+		{
+			continue;
+		}
+
+		FString Keywords;
+		Node->GetMetadataContainer().GetStringMetaDataHierarchical(STATIC_FNAME("Keywords"), &Keywords);
+		Keywords += Node->GetMetadataContainer().GetMetaData(STATIC_FNAME("CompactNodeTitle"));
+
+		if (Node->GetMetadataContainer().HasMetaDataHierarchical(STATIC_FNAME("NativeMakeFunc")))
+		{
+			Keywords += "construct build";
+		}
+		if (Node->GetMetadataContainer().HasMetaDataHierarchical(STATIC_FNAME("Autocast")))
+		{
+			Keywords += "cast convert";
+		}
+
+		FString DisplayName = Node->GetDisplayName();
+		Keywords += DisplayName;
+		DisplayName.ReplaceInline(TEXT("\n"), TEXT(" "));
+
+		if (ContextMenuBuilder.FromPin &&
+			Node->GetMetadataContainer().HasMetaData(STATIC_FNAME("Operator")))
+		{
+			const FString Operator = Node->GetMetadataContainer().GetMetaData(STATIC_FNAME("Operator"));
+
+			TMap<FVoxelPinType, TSet<FVoxelPinType>> Permutations = CollectOperatorPermutations(*Node, *ContextMenuBuilder.FromPin, PromotionTypes);
+			for (const auto& PermutationIt : Permutations)
+			{
+				FVoxelPinType InnerType = PermutationIt.Key.GetInnerType();
+				for (const FVoxelPinType& SecondType : PermutationIt.Value)
+				{
+					FVoxelPinType SecondInnerType = SecondType.GetInnerType();
+
+					const TSharedRef<FVoxelGraphSchemaAction_NewPromotableStructNode> Action = MakeVoxelShared<FVoxelGraphSchemaAction_NewPromotableStructNode>(
+						FText::FromString(Node->GetCategory()),
+						FText::FromString(InnerType.ToString() + " " + Operator + " " + SecondInnerType.ToString()),
+						FText::FromString(Node->GetTooltip()),
+						SectionId_Operators,
+						FText::FromString(Keywords + " " + InnerType.ToString() + " " + SecondInnerType.ToString()));
+
+					Action->PinTypes = { SecondType, PermutationIt.Key };
+					Action->Node = Node;
+
+					ContextMenuBuilder.AddAction(Action);
+				}
+			}
 		}
 		else
 		{
-			Pin->DefaultObject = LoadObject<UObject>(nullptr, *Pin->AutogeneratedDefaultValue);
-			ensure(Pin->DefaultObject);
+			const TSharedRef<FVoxelGraphSchemaAction_NewStructNode> Action = MakeVoxelShared<FVoxelGraphSchemaAction_NewStructNode>(
+				FText::FromString(Node->GetCategory()),
+				FText::FromString(DisplayName),
+				FText::FromString(Node->GetTooltip()),
+				SectionId_StructNodes,
+				FText::FromString(Keywords));
+
+			Action->Node = Node;
+
+			ContextMenuBuilder.AddAction(Action);
+
+			const TSharedRef<FVoxelGraphSchemaAction_NewStructNode> ShortListAction = MakeVoxelShared<FVoxelGraphSchemaAction_NewStructNode>(
+				FText(),
+				FText::FromString(DisplayName),
+				FText::FromString(Node->GetTooltip()),
+				SectionId_ShortList,
+				FText::FromString(Keywords));
+
+			ShortListAction->Node = Node;
+
+			if (Node->GetMetadataContainer().HasMetaDataHierarchical(STATIC_FNAME("ShowInRootShortList")) ||
+				(ContextMenuBuilder.FromPin && Node->GetMetadataContainer().HasMetaDataHierarchical(STATIC_FNAME("ShowInShortList"))))
+			{
+				ShortListActions_Forced.Add(ShortListAction);
+			}
+			else if (ContextMenuBuilder.FromPin && bIsExactMatch)
+			{
+				ShortListActions_ExactMatches.Add(ShortListAction);
+			}
 		}
 	}
-	else
+
+	const auto CreateNewParameterUsageAction = [&](const FVoxelGraphParameter& Parameter, const bool bDeclaration)
 	{
-		Pin->DefaultValue = Pin->AutogeneratedDefaultValue;
-		Pin->DefaultObject = nullptr;
+		const FString Prefix = bDeclaration ? "Set" : "Get";
+
+		const FString TypeName = UEnum::GetDisplayValueAsText(Parameter.ParameterType).ToString();
+
+		const FText Tooltip = FText::FromString(Prefix + " " + Parameter.Name.ToString() + " (" + TypeName + ")");
+
+		const TSharedRef<FVoxelGraphSchemaAction_NewParameterUsage> Action = MakeVoxelShared<FVoxelGraphSchemaAction_NewParameterUsage>(
+			FText::FromString(TypeName),
+			FText::FromString(Prefix + " " + Parameter.Name.ToString()),
+			Tooltip,
+			SectionId_Parameters);
+
+		Action->Guid = Parameter.Guid;
+		Action->ParameterType = Parameter.ParameterType;
+		Action->bLocalVariable_IsDeclaration = bDeclaration;
+		Action->PinType = Parameter.Type.GetEdGraphPinType();
+
+		if (ContextMenuBuilder.FromPin)
+		{
+			const TSharedRef<FVoxelGraphSchemaAction_NewParameterUsage> ShortListAction = MakeVoxelShared<FVoxelGraphSchemaAction_NewParameterUsage>(
+				FText(),
+				FText::FromString(Prefix + " " + Parameter.Name.ToString()),
+				Tooltip,
+				SectionId_ShortList);
+
+			ShortListAction->Guid = Parameter.Guid;
+			ShortListAction->ParameterType = Parameter.ParameterType;
+			ShortListAction->bLocalVariable_IsDeclaration = bDeclaration;
+			ShortListAction->PinType = Parameter.Type.GetEdGraphPinType();
+
+			ShortListActions_Parameters.Add(ShortListAction);
+		}
+
+		return Action;
+	};
+
+	const auto CheckUsage = [](const FGraphContextMenuBuilder& MenuBuilder, const FVoxelGraphParameter& Parameter, const EEdGraphPinDirection Direction)
+	{
+		if (!MenuBuilder.FromPin)
+		{
+			return true;
+		}
+
+		if (MenuBuilder.FromPin->Direction != Direction)
+		{
+			return false;
+		}
+
+		if (Parameter.Type == MenuBuilder.FromPin->PinType)
+		{
+			return true;
+		}
+
+		return
+			Direction == EGPD_Input &&
+			Parameter.Type.GetBufferType() == MenuBuilder.FromPin->PinType;
+	};
+
+	UVoxelGraph* VoxelGraph = Toolkit->Asset->FindGraph(ContextMenuBuilder.CurrentGraph);
+	if (!VoxelGraph)
+	{
+		return;
 	}
 
-	if (bCallModifyCallbacks)
+	for (const FVoxelGraphParameter& Parameter : VoxelGraph->Parameters)
 	{
-		Pin->GetOwningNode()->PinDefaultValueChanged(Pin);
+		if (Parameter.ParameterType == EVoxelGraphParameterType::LocalVariable)
+		{
+			if (CheckUsage(ContextMenuBuilder, Parameter, EGPD_Input))
+			{
+				ContextMenuBuilder.AddAction(CreateNewParameterUsageAction(Parameter, false));
+			}
+
+			if (CheckUsage(ContextMenuBuilder, Parameter, EGPD_Output))
+			{
+				ContextMenuBuilder.AddAction(CreateNewParameterUsageAction(Parameter, true));
+			}
+			continue;
+		}
+
+		if (Parameter.ParameterType == EVoxelGraphParameterType::Parameter)
+		{
+			if (CheckUsage(ContextMenuBuilder, Parameter, EGPD_Input))
+			{
+				ContextMenuBuilder.AddAction(CreateNewParameterUsageAction(Parameter, false));
+			}
+		}
+	}
+
+	const auto CreateNewParameterAction = [&](const EVoxelGraphParameterType Type, bool const bPromotion)
+	{
+		const FString Prefix = bPromotion ? "Promote to" : "Create new";
+
+		const FString TypeName = UEnum::GetDisplayValueAsText(Type).ToString();
+
+		const TSharedRef<FVoxelGraphSchemaAction_NewParameter> Action = MakeVoxelShared<FVoxelGraphSchemaAction_NewParameter>(
+			INVTEXT(""),
+			FText::FromString(Prefix + " " + TypeName),
+			FText::FromString(Prefix + " " + TypeName),
+			SectionId_Parameters);
+		Action->ParameterType = Type;
+		return Action;
+	};
+
+	const bool bIsPromotion = ContextMenuBuilder.FromPin ? true : false;
+	if (!ContextMenuBuilder.FromPin ||
+		ContextMenuBuilder.FromPin->Direction == EGPD_Input)
+	{
+		ContextMenuBuilder.AddAction(CreateNewParameterAction(EVoxelGraphParameterType::Parameter, bIsPromotion));
+	}
+	if (!ContextMenuBuilder.FromPin ||
+		ContextMenuBuilder.FromPin->Direction == EGPD_Input)
+	{
+		ContextMenuBuilder.AddAction(CreateNewParameterAction(EVoxelGraphParameterType::Input, bIsPromotion));
+	}
+	if (!ContextMenuBuilder.FromPin ||
+		ContextMenuBuilder.FromPin->Direction == EGPD_Output)
+	{
+		ContextMenuBuilder.AddAction(CreateNewParameterAction(EVoxelGraphParameterType::Output, bIsPromotion));
+	}
+	ContextMenuBuilder.AddAction(CreateNewParameterAction(EVoxelGraphParameterType::LocalVariable, bIsPromotion));
+}
+
+void UVoxelGraphSchema::GetContextMenuActions(UToolMenu* Menu, UGraphNodeContextMenuContext* Context) const
+{
+	const TSharedPtr<FVoxelGraphToolkit> Toolkit = GetToolkit(Context->Graph);
+	if (!ensure(Toolkit) ||
+		Toolkit->bIsReadOnly)
+	{
+		return;
+	}
+
+	Super::GetContextMenuActions(Menu, Context);
+
+	if (!Context->Pin &&
+		Context->Graph)
+	{
+		{
+			FToolMenuSection& Section = Menu->FindOrAddSection("VoxelGraphNodeEdit");
+			Section.AddMenuEntry(FGraphEditorCommands::Get().FindReferences);
+		}
+
+		const int32 NodesCount = GetNodeSelectionCount(Context->Graph);
+		if (NodesCount > 0)
+		{
+			FToolMenuSection& Section = Menu->FindOrAddSection("EdGraphSchemaOrganization");
+			Section.AddMenuEntry(
+				"CollapseToMacro",
+				INVTEXT("Collapse to Macro"),
+				INVTEXT("Collapse to Macro"),
+				{},
+				FUIAction(MakeLambdaDelegate([=]
+				{
+					FVoxelGraphSchemaAction_CollapseToMacro Action;
+					if (const UVoxelGraphMacroNode* NewMacroNode = Cast<UVoxelGraphMacroNode>(Action.PerformAction(Cast<UEdGraph>(Context->Graph), nullptr, FVector2D::ZeroVector, true)))
+					{
+						Toolkit->SelectMember(NewMacroNode->GraphInterface, true, true);
+					}
+				}))
+			);
+
+			if (NodesCount == 1 &&
+				Context->Node &&
+				Context->Node->IsA<UVoxelGraphMacroNode>())
+			{
+				Section.AddMenuEntry(
+					"ExpandMacro",
+					INVTEXT("Expand Macro"),
+					INVTEXT("Expand Macro"),
+					{},
+					FUIAction(MakeLambdaDelegate([=]
+					{
+						FVoxelGraphSchemaAction_ExpandMacro Action;
+						Action.PerformAction(Cast<UEdGraph>(Context->Graph), nullptr, FVector2D::ZeroVector, true);
+					}))
+				);
+			}
+		}
+	}
+
+	if (UVoxelGraphNodeBase* Node = ConstCast(Cast<UVoxelGraphNodeBase>(Context->Node.Get())))
+	{
+		FToolMenuSection& DebugSection = Menu->FindOrAddSection("DebugSection");
+		DebugSection.InitSection("DebugSection", INVTEXT("Debug"), FToolMenuInsert({}, EToolMenuInsertType::First));
+
+		if (Node->bEnableDebug)
+		{
+			DebugSection.AddMenuEntry(
+				"StopDebug",
+				INVTEXT("Stop debugging"),
+				INVTEXT("Stop debugging this node"),
+				{},
+				FUIAction(
+					MakeLambdaDelegate([Node]
+					{
+						Node->bEnableDebug = false;
+						OnGraphChanged(Node);
+					})
+				)
+			);
+		}
+		else
+		{
+			DebugSection.AddMenuEntry(
+				"StartDebug",
+				INVTEXT("Debug node"),
+				INVTEXT("Debug this node"),
+				{},
+				FUIAction(
+					MakeLambdaDelegate([Node]
+					{
+						for (const TObjectPtr<UEdGraphNode>& OtherNode : Node->GetGraph()->Nodes)
+						{
+							if (UVoxelGraphNodeBase* OtherVoxelNode = Cast<UVoxelGraphNodeBase>(OtherNode.Get()))
+							{
+								if (OtherVoxelNode->bEnableDebug)
+								{
+									OtherVoxelNode->bEnableDebug = false;
+								}
+							}
+						}
+
+						Node->bEnableDebug = true;
+						OnGraphChanged(Node);
+					})
+				)
+			);
+		}
+	}
+
+	if (UVoxelGraphNodeBase* Node = ConstCast(Cast<UVoxelGraphNodeBase>(Context->Node.Get())))
+	{
+		FToolMenuSection& PreviewSection = Menu->FindOrAddSection("PreviewSection");
+		PreviewSection.InitSection("PreviewSection", INVTEXT("Preview"), FToolMenuInsert({}, EToolMenuInsertType::First));
+
+		if (Node->bEnablePreview)
+		{
+			PreviewSection.AddMenuEntry(
+				"StopPreview",
+				INVTEXT("Stop previewing"),
+				INVTEXT("Stop previewing this node"),
+				{},
+				FUIAction(
+					MakeLambdaDelegate([Node]
+					{
+						const FVoxelTransaction Transaction(Node, "Stop previewing");
+						Node->bEnablePreview = false;
+					})
+				)
+			);
+		}
+		else
+		{
+			PreviewSection.AddMenuEntry(
+				"StartPreview",
+				INVTEXT("Preview node"),
+				INVTEXT("Preview this node"),
+				{},
+				FUIAction(
+					MakeLambdaDelegate([Node]
+					{
+						const FVoxelTransaction Transaction(Node, "Start previewing");
+
+						for (const TObjectPtr<UEdGraphNode>& OtherNode : Node->GetGraph()->Nodes)
+						{
+							if (UVoxelGraphNodeBase* OtherVoxelNode = Cast<UVoxelGraphNodeBase>(OtherNode.Get()))
+							{
+								if (OtherVoxelNode->bEnablePreview)
+								{
+									const FVoxelTransaction OtherTransaction(OtherVoxelNode, "Stop previewing");
+									OtherVoxelNode->bEnablePreview = false;
+								}
+							}
+						}
+
+						Node->bEnablePreview = true;
+					})
+				)
+			);
+		}
+	}
+
+	if (!Context->Pin)
+	{
+		FToolMenuSection& Section = Menu->FindOrAddSection("VoxelGraphNodeEdit");
+		Section.AddMenuEntry(FGraphEditorCommands::Get().FindReferences);
+	}
+
+	const UEdGraphPin* Pin = Context->Pin;
+	if (!Pin ||
+		!ensure(Pin->GetOwningNode()) ||
+		!ensure(Pin->GetOwningNode()->GetGraph()) ||
+		Pin->bOrphanedPin ||
+		Pin->bNotConnectable)
+	{
+		return;
+	}
+
+	FToolMenuSection& Section = Menu->FindOrAddSection("EdGraphSchemaPinActions");
+
+	if (UVoxelGraphNode* Node = Cast<UVoxelGraphNode>(Pin->GetOwningNode()))
+	{
+		FVoxelPinTypeSet Types;
+		if (Node->CanPromotePin(*Pin, Types))
+		{
+			const FVoxelPinType CurrentPinType = Pin->PinType;
+
+			TArray<FVoxelPinType> TypesList = Types.GetTypes().Array();
+			if (TypesList.Num() > 2 ||
+				(TypesList.Num() == 2 && TypesList[0].GetInnerType() != TypesList[1].GetInnerType()))
+			{
+				Section.AddSubMenu(
+					"PromotePin",
+					INVTEXT("Convert pin"),
+					INVTEXT("Convert this pin"),
+					MakeLambdaDelegate([=](const FToolMenuContext&) -> TSharedRef<SWidget>
+					{
+						return
+							SNew(SVoxelPinTypeSelector)
+							.AllowedTypes(Types)
+							.OnTypeChanged_Lambda([=](FVoxelPinType NewType)
+							{
+								const FVoxelTransaction Transaction(Pin, "Convert pin");
+								if (CurrentPinType.IsBuffer())
+								{
+									NewType = NewType.GetBufferType();
+								}
+								Node->PromotePin(ConstCast(*Pin), NewType);
+							})
+							.OnCloseMenu_Lambda([=]
+							{
+								FSlateApplication::Get().ClearAllUserFocus();
+							});
+					})
+				);
+			}
+
+			if (CurrentPinType.IsBuffer() &&
+				Types.Contains(CurrentPinType.GetInnerType()))
+			{
+				Section.AddMenuEntry(
+					"ConvertToUniform",
+					INVTEXT("Convert pin to Uniform"),
+					INVTEXT("Convert pin to Uniform"),
+					{},
+					FUIAction(MakeLambdaDelegate([=]
+					{
+						const FVoxelTransaction Transaction(Pin, "Convert pin to Uniform");
+						Node->PromotePin(ConstCast(*Pin), CurrentPinType.GetInnerType());
+					}))
+				);
+			}
+			else if (
+				!CurrentPinType.IsBuffer() &&
+				Types.Contains(CurrentPinType.GetBufferType()))
+			{
+				Section.AddMenuEntry(
+					"ConvertToBuffer",
+					INVTEXT("Convert pin to Buffer"),
+					INVTEXT("Convert pin to Buffer"),
+					{},
+					FUIAction(MakeLambdaDelegate([=]
+					{
+						const FVoxelTransaction Transaction(Pin, "Convert pin to Buffer");
+						Node->PromotePin(ConstCast(*Pin), CurrentPinType.GetBufferType());
+					}))
+				);
+			}
+		}
+	}
+
+	if (!Pin->bNotConnectable)
+	{
+		if (Pin->Direction == EGPD_Input)
+		{
+			Section.AddMenuEntry(
+				"PromoteToParameter",
+				INVTEXT("Promote to Parameter"),
+				INVTEXT("Promote to Parameter"),
+				{},
+				FUIAction(FExecuteAction::CreateUObject(this, &UVoxelGraphSchema::PromoteToVariable, ConstCast(Pin), EVoxelGraphParameterType::Parameter))
+			);
+		}
+
+		if (Pin->Direction == EGPD_Input)
+		{
+			Section.AddMenuEntry(
+				"PromoteToInput",
+				INVTEXT("Promote to Input"),
+				INVTEXT("Promote to Input"),
+				{},
+				FUIAction(FExecuteAction::CreateUObject(this, &UVoxelGraphSchema::PromoteToVariable, ConstCast(Pin), EVoxelGraphParameterType::Input))
+			);
+		}
+		else
+		{
+			Section.AddMenuEntry(
+				"PromoteToParameter",
+				INVTEXT("Promote to Output"),
+				INVTEXT("Promote to Output"),
+				{},
+				FUIAction(FExecuteAction::CreateUObject(this, &UVoxelGraphSchema::PromoteToVariable, ConstCast(Pin), EVoxelGraphParameterType::Output))
+			);
+		}
+
+		Section.AddMenuEntry(
+			"PromoteToLocalVariable",
+			INVTEXT("Promote to Local Variable"),
+			INVTEXT("Promote to Local Variable"),
+			{},
+			FUIAction(FExecuteAction::CreateUObject(this, &UVoxelGraphSchema::PromoteToVariable, ConstCast(Pin), EVoxelGraphParameterType::LocalVariable))
+		);
+
+		if (Pin->Direction == EGPD_Input)
+		{
+			Section.AddMenuEntry(
+				"MakeValue",
+				INVTEXT("Make Value"),
+				INVTEXT("Make Value"),
+				{},
+				FUIAction(FExecuteAction::CreateUObject(this, &UVoxelGraphSchema::PromoteToMakeValue, ConstCast(Pin)))
+			);
+		}
 	}
 }
 
-void UVoxelGraphSchema::CreateDefaultNodesForGraph(UEdGraph& Graph) const
+FLinearColor UVoxelGraphSchema::GetPinTypeColor(const FEdGraphPinType& PinType) const
 {
+	return FVoxelGraphVisuals::GetPinColor(PinType);
 }
 
 void UVoxelGraphSchema::OnPinConnectionDoubleCicked(UEdGraphPin* PinA, UEdGraphPin* PinB, const FVector2D& GraphPosition) const
@@ -521,7 +1362,7 @@ void UVoxelGraphSchema::OnPinConnectionDoubleCicked(UEdGraphPin* PinA, UEdGraphP
 
 	UEdGraph* ParentGraph = PinA->GetOwningNode()->GetGraph();
 
-	UVoxelGraphNode_Knot* NewKnot = CastChecked<UVoxelGraphNode_Knot>(FVoxelGraphSchemaAction_NewKnotNode().PerformAction(
+	UVoxelGraphKnotNode* NewKnot = CastChecked<UVoxelGraphKnotNode>(FVoxelGraphSchemaAction_NewKnotNode().PerformAction(
 		ParentGraph,
 		nullptr,
 		KnotTopLeft,
@@ -536,47 +1377,11 @@ void UVoxelGraphSchema::OnPinConnectionDoubleCicked(UEdGraphPin* PinA, UEdGraphP
 	NewKnot->PropagatePinType();
 }
 
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-void UVoxelGraphSchema::BreakNodeLinks(UEdGraphNode& TargetNode) const
-{
-	const FVoxelTransaction Transaction(&TargetNode, "Break node Links");
-	Super::BreakNodeLinks(TargetNode);
-}
-
-void UVoxelGraphSchema::BreakPinLinks(UEdGraphPin& TargetPin, const bool bSendsNodeNotification) const
-{
-	const FVoxelTransaction Transaction(&TargetPin, "Break Pin Links");
-	Super::BreakPinLinks(TargetPin, bSendsNodeNotification);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-void UVoxelGraphSchema::TrySetDefaultValue(UEdGraphPin& Pin, const FString& NewDefaultValue, const bool bMarkAsModified) const
-{
-	ensure(!Pin.DefaultObject);
-	Super::TrySetDefaultValue(Pin, NewDefaultValue, bMarkAsModified);
-}
-
-void UVoxelGraphSchema::TrySetDefaultObject(UEdGraphPin& Pin, UObject* NewDefaultObject, const bool bMarkAsModified) const
-{
-	Pin.DefaultValue = {};
-	Super::TrySetDefaultObject(Pin, NewDefaultObject, bMarkAsModified);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
 void UVoxelGraphSchema::GetAssetsGraphHoverMessage(const TArray<FAssetData>& Assets, const UEdGraph* HoverGraph, FString& OutTooltipText, bool& OutOkIcon) const
 {
 	for (const FAssetData& Asset : Assets)
 	{
-		if (!Asset.GetClass()->IsChildOf<UVoxelGraph>())
+		if (!Asset.GetClass()->IsChildOf<UVoxelGraphInterface>())
 		{
 			OutOkIcon = false;
 			return;
@@ -586,46 +1391,192 @@ void UVoxelGraphSchema::GetAssetsGraphHoverMessage(const TArray<FAssetData>& Ass
 	OutOkIcon = true;
 }
 
-void UVoxelGraphSchema::DroppedAssetsOnGraph(const TArray<FAssetData>& Assets, const FVector2D& GraphPosition, UEdGraph* EdGraph) const
+void UVoxelGraphSchema::DroppedAssetsOnGraph(const TArray<FAssetData>& Assets, const FVector2D& GraphPosition, UEdGraph* Graph) const
 {
 	for (const FAssetData& Asset : Assets)
 	{
-		UVoxelGraph* Graph = Cast<UVoxelGraph>(Asset.GetAsset());
-		if (!Graph)
+		if (!Asset.GetClass()->IsChildOf<UVoxelGraphInterface>())
 		{
 			continue;
 		}
 
-		FVoxelGraphSchemaAction_NewCallGraphNode Action;
-		Action.Graph = Graph;
-		Action.PerformAction(EdGraph, nullptr, GraphPosition, true);
+		FVoxelGraphSchemaAction_NewMacroNode Action;
+		Action.Graph = CastChecked<UVoxelGraphInterface>(Asset.GetAsset());
+		Action.PerformAction(Graph, nullptr, GraphPosition, true);
 	}
+}
+
+TSharedPtr<FVoxelGraphToolkit> UVoxelGraphSchema::GetToolkit(const UEdGraph* Graph)
+{
+	return StaticCastSharedPtr<FVoxelGraphToolkit>(Super::GetToolkit(Graph));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-bool UVoxelGraphSchema::ShouldHidePinDefaultValue(UEdGraphPin* Pin) const
+bool UVoxelGraphSchema::TryGetPromotionType(const UEdGraphPin& Pin, const FVoxelPinType& TargetType, FVoxelPinType& OutType, FString& OutAdditionalText) const
 {
-	if (!Pin)
-	{
-		return Super::ShouldHidePinDefaultValue(Pin);
-	}
+	OutType = {};
 
-	const UVoxelGraphNode* VoxelNode = Cast<UVoxelGraphNode>(Pin->GetOwningNode());
-	if (!VoxelNode)
+	const UVoxelGraphNode* Node = Cast<UVoxelGraphNode>(Pin.GetOwningNode());
+	if (!ensure(Node))
 	{
 		return false;
 	}
 
-	return
-		// Hide optional pins default values
-		VoxelNode->IsPinOptional(*Pin) ||
-		VoxelNode->ShouldHidePinDefaultValue(*Pin);
+	FVoxelPinTypeSet Types;
+	if (!Node->CanPromotePin(Pin, Types))
+	{
+		return false;
+	}
+
+	OutAdditionalText = Node->GetPinPromotionWarning(Pin, TargetType);
+
+	const FVoxelPinType CurrentType(Pin.PinType);
+
+	const auto TryType = [&](const FVoxelPinType& NewType)
+	{
+		if (!OutType.IsValid() &&
+			Types.Contains(NewType))
+		{
+			OutType = NewType;
+		}
+	};
+
+	if (Pin.Direction == EGPD_Input)
+	{
+		// We're an input pin, we can implicitly promote to buffer
+
+		if (CurrentType.IsBuffer())
+		{
+			// If we're currently a buffer, try to preserve that
+			TryType(TargetType.GetBufferType());
+			TryType(TargetType);
+		}
+		else
+		{
+			// Otherwise try the raw type first
+			TryType(TargetType);
+			TryType(TargetType.GetBufferType());
+		}
+	}
+	else
+	{
+		// We're an output pin, we can never implicitly promote
+		TryType(TargetType);
+	}
+
+	return OutType.IsValid();
 }
 
-FLinearColor UVoxelGraphSchema::GetPinTypeColor(const FEdGraphPinType& PinType) const
+void UVoxelGraphSchema::PromoteToVariable(UEdGraphPin* Pin, const EVoxelGraphParameterType ParameterType) const
 {
-	return FVoxelGraphVisuals::GetPinColor(PinType);
+	if (!ensure(Pin))
+	{
+		return;
+	}
+
+	FVoxelGraphSchemaAction_NewParameter Action;
+	Action.ParameterType = ParameterType;
+
+	const UEdGraphNode* OwningNode = Pin->GetOwningNode();
+	FVector2D Position;
+	Position.X = Pin->Direction == EGPD_Input ? OwningNode->NodePosX - 200 : OwningNode->NodePosX + 400;
+	Position.Y = OwningNode->NodePosY + 75;
+
+	Action.PerformAction(OwningNode->GetGraph(), Pin, Position, true);
+}
+
+void UVoxelGraphSchema::PromoteToMakeValue(UEdGraphPin* Pin) const
+{
+	if (!ensure(Pin))
+	{
+		return;
+	}
+
+	const FVoxelNode* Node = FVoxelNodeLibrary::GetNodeInstance<FVoxelNode_MakeValue>();
+	if (!ensure(Node))
+	{
+		return;
+	}
+
+	FVoxelGraphSchemaAction_NewStructNode Action;
+	Action.Node = Node;
+
+	const UEdGraphNode* OwningNode = Pin->GetOwningNode();
+	FVector2D Position;
+	Position.X = Pin->Direction == EGPD_Input ? OwningNode->NodePosX - 200 : OwningNode->NodePosX + 400;
+	Position.Y = OwningNode->NodePosY + 75;
+
+	Action.PerformAction(OwningNode->GetGraph(), Pin, Position, true);
+}
+
+TMap<FVoxelPinType, TSet<FVoxelPinType>> UVoxelGraphSchema::CollectOperatorPermutations(const FVoxelNode& Node, const UEdGraphPin& FromPin, const FVoxelPinTypeSet& PromotionTypes)
+{
+	const FVoxelPinType FromPinType = FVoxelPinType(FromPin.PinType);
+	const bool bIsBuffer = FromPinType.IsBuffer();
+
+	if (!PromotionTypes.Contains(FromPinType))
+	{
+		return {};
+	}
+
+	const bool bIsCommutativeOperator = Node.IsA<FVoxelTemplateNode_CommutativeAssociativeOperator>();
+
+	TMap<FVoxelPinType, TSet<FVoxelPinType>> Result;
+	if (FromPin.Direction == EGPD_Output)
+	{
+		for (const FVoxelPinType& Type : PromotionTypes.GetTypes())
+		{
+			if (Type.IsBuffer() != bIsBuffer)
+			{
+				continue;
+			}
+
+			Result.FindOrAdd(FromPinType, {}).Add(Type);
+			if (!bIsCommutativeOperator)
+			{
+				Result.FindOrAdd(Type, {}).Add(FromPinType);
+			}
+		}
+	}
+	else
+	{
+		const int32 FromDimension = FVoxelTemplateNodeUtilities::GetDimension(FromPinType);
+
+		for (const FVoxelPinType& Type : PromotionTypes.GetTypes())
+		{
+			if (Type.IsBuffer() != bIsBuffer ||
+				FromDimension < FVoxelTemplateNodeUtilities::GetDimension(Type))
+			{
+				continue;
+			}
+
+			if (bIsCommutativeOperator)
+			{
+				Result.FindOrAdd(FromPinType, {}).Add(Type);
+				continue;
+			}
+
+			for (const FVoxelPinType& SecondType : PromotionTypes.GetTypes())
+			{
+				if (SecondType.IsBuffer() != bIsBuffer ||
+					FromDimension < FVoxelTemplateNodeUtilities::GetDimension(SecondType))
+				{
+					continue;
+				}
+
+				if (Type != FromPinType &&
+					SecondType != FromPinType)
+				{
+					continue;
+				}
+
+				Result.FindOrAdd(Type, {}).Add(SecondType);
+			}
+		}
+	}
+
+	return Result;
 }

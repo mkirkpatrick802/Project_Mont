@@ -1,12 +1,12 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelEditorMinimal.h"
-#include "Nodes/VoxelRandomNodes.h"
+#include "Templates/VoxelRandomNodes.h"
 
 class FVoxelRandomVectorSettingsCustomization : public IPropertyTypeCustomization
 {
 public:
-	virtual void CustomizeHeader(const TSharedRef<IPropertyHandle> PropertyHandle, FDetailWidgetRow& HeaderRow, IPropertyTypeCustomizationUtils& CustomizationUtils) override
+	virtual void CustomizeHeader(TSharedRef<IPropertyHandle> PropertyHandle, FDetailWidgetRow& HeaderRow, IPropertyTypeCustomizationUtils& CustomizationUtils) override
 	{
 		const TSharedRef<IPropertyHandle> TypeHandle = PropertyHandle->GetChildHandleStatic(FVoxelRandomVectorSettings, Type);
 		HeaderRow
@@ -20,7 +20,7 @@ public:
 		];
 	}
 
-	virtual void CustomizeChildren(const TSharedRef<IPropertyHandle> PropertyHandle, IDetailChildrenBuilder& ChildBuilder, IPropertyTypeCustomizationUtils& CustomizationUtils) override
+	virtual void CustomizeChildren(TSharedRef<IPropertyHandle> PropertyHandle, IDetailChildrenBuilder& ChildBuilder, IPropertyTypeCustomizationUtils& CustomizationUtils) override
 	{
 		const TSharedRef<IPropertyHandle> TypeHandle = PropertyHandle->GetChildHandleStatic(FVoxelRandomVectorSettings, Type);
 		const TSharedRef<IPropertyHandle> RangeXHandle = PropertyHandle->GetChildHandleStatic(FVoxelRandomVectorSettings, RangeX);

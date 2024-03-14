@@ -1,105 +1,178 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelMinimal.isph"
-#include "Material/VoxelMaterialBlendingImpl.isph"
+#include "VoxelSurfaceImpl.isph"
 
 // ReSharper disable CppCStyleCast
 
-export void VoxelSurfaceFunctionLibrary_BlendMaterials(
-	const uniform uint64 BlendingsA[],
-	const uniform bool bConstantBlendingsA,
-	const uniform uint64 BlendingsB[],
-	const uniform bool bConstantBlendingsB,
-	const uniform float BlendAlphas[],
-	const uniform bool bConstantBlendAlphas,
-	const uniform int32 Num,
-	uniform uint64 OutBlending[])
+export void VoxelSurfaceFunctionLibrary_Invert(
+	const uniform float Distance[],
+	uniform float OutDistance[],
+	const uniform int32 Num)
 {
 	FOREACH(Index, 0, Num)
 	{
-		varying int32 Materials[6];
-		varying float Alphas[6];
+		OutDistance[Index] = -Distance[Index];
+	}
+}
 
-		VoxelMaterialBlending_Break(
-			bConstantBlendingsA ? BlendingsA[0] : BlendingsA[Index],
-			Materials[0],
-			Materials[1],
-			Materials[2],
-			Alphas[0],
-			Alphas[1],
-			Alphas[2]);
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
 
-		VoxelMaterialBlending_Break(
-			bConstantBlendingsB ? BlendingsB[0] : BlendingsB[Index],
-			Materials[3],
-			Materials[4],
-			Materials[5],
-			Alphas[3],
-			Alphas[4],
-			Alphas[5]);
+#define StackSize 32
 
-		const varying float StrengthB = clamp(bConstantBlendAlphas ? BlendAlphas[0] : BlendAlphas[Index], 0.f, 1.f);
-		const varying float StrengthA = 1.f - StrengthB;
+FORCEINLINE void AddLayers(
+	const varying int32 Index,
+	const varying float Alpha,
+	const uniform FVoxelSurfaceLayer Layers[],
+	const uniform int32 NumLayers,
+	varying int32 Materials[StackSize],
+	varying float Strengths[StackSize],
+	varying int32& NumWritten)
+{
+	for (uniform int32 LayerIndex = 0; LayerIndex < NumLayers; LayerIndex++)
+	{
+		const uniform FVoxelSurfaceLayer uniform& Layer = Layers[LayerIndex];
 
-		Alphas[0] *= StrengthA;
-		Alphas[1] *= StrengthA;
-		Alphas[2] *= StrengthA;
+		const varying uint16 Material = Layer.bConstantMaterials ? Layer.Materials[0] : Layer.Materials[Index];
+		const varying uint8 StrengthByte = Layer.bConstantStrengths ? Layer.Strengths[0] : Layer.Strengths[Index];
+		const varying float Strength = Alpha * UINT8ToFloat(StrengthByte);
+		check(Material != GVoxelInvalidMaterialId || Strength == 0);
 
-		Alphas[3] *= StrengthB;
-		Alphas[4] *= StrengthB;
-		Alphas[5] *= StrengthB;
+		varying bool Mask = Strength > 0;
 
-		UNROLL
-		for (uniform int32 IndexA = 0; IndexA < 3; IndexA++)
+		if (none(Mask))
 		{
-			UNROLL
-			for (uniform int32 IndexB = 3; IndexB < 6; IndexB++)
+			continue;
+		}
+
+		const uniform int32 MaxNumWritten = reduce_max(NumWritten);
+		for (uniform int32 WriteIndex = 0; WriteIndex < MaxNumWritten; WriteIndex++)
+		{
+			if (WriteIndex < NumWritten &&
+				Materials[WriteIndex] == Material)
 			{
-				if (Materials[IndexA] == Materials[IndexB])
-				{
-					Alphas[IndexA] += Alphas[IndexB];
-					Alphas[IndexB] = 0.f;
-				}
+				Mask = false;
+				Strengths[WriteIndex] += Strength;
 			}
 		}
 
-		// Optimized version of https://bertdobbelaere.github.io/sorting_networks_extended.html#N6L12D5 for 3 outputs
-
-#define SWAP(A, B) \
-		if (Alphas[A] < Alphas[B]) \
-		{ \
-			const varying float AlphaA = Alphas[A]; \
-			Alphas[A] = Alphas[B]; \
-			Alphas[B] = AlphaA; \
-			\
-			const varying float MaterialA = Materials[A]; \
-			Materials[A] = Materials[B]; \
-			Materials[B] = MaterialA; \
+		if (!Mask)
+		{
+			continue;
 		}
 
-		SWAP(0, 5);
-		SWAP(1, 3);
-		SWAP(2, 4);
+		ensure(NumWritten < StackSize);
+		NumWritten = min(StackSize, NumWritten + 1);
 
-		SWAP(1, 2);
-		SWAP(3, 4);
+		const varying int32 WriteIndex = NumWritten - 1;
+		IGNORE_PERF_WARNING
+		Materials[WriteIndex] = Material;
+		IGNORE_PERF_WARNING
+		Strengths[WriteIndex] = Strength;
+	}
+}
 
-		SWAP(0, 3);
-		SWAP(2, 5);
+export void VoxelSurfaceFunctionLibrary_MergeSurfaces(
+	const uniform float Alphas[],
+	const uniform bool bConstantAlpha,
+	const uniform FVoxelSurfaceLayer LayersA[],
+	const uniform FVoxelSurfaceLayer LayersB[],
+	const uniform int32 NumLayersA,
+	const uniform int32 NumLayersB,
+	const uniform int32 Num,
+	uniform FVoxelSurfaceWriteLayer OutLayers[])
+{
+	const uniform int32 OutNumLayers = NumLayersA + NumLayersB;
+	check(OutNumLayers <= StackSize);
 
-		SWAP(0, 1);
-		SWAP(2, 3);
+	FOREACH(Index, 0, Num)
+	{
+		const varying float Alpha = clamp(bConstantAlpha ? Alphas[0] : Alphas[Index], 0.f, 1.f);
+		const varying float StrengthA = 1.f - Alpha;
+		const varying float StrengthB = Alpha;
 
-		SWAP(1, 2);
+		varying int32 Materials[StackSize];
+		varying float Strengths[StackSize];
+		varying int32 NumWritten = 0;
 
-#undef SWAP
+		AddLayers(Index, StrengthA, LayersA, NumLayersA, Materials, Strengths, NumWritten);
+		AddLayers(Index, StrengthB, LayersB, NumLayersB, Materials, Strengths, NumWritten);
 
-		OutBlending[Index] = VoxelMaterialBlending_Make(
-			Materials[0],
-			Materials[1],
-			Materials[2],
-			Alphas[0],
-			Alphas[1],
-			Alphas[2]);
+		const uniform int32 MaxNumWritten = reduce_max(NumWritten);
+		check(MaxNumWritten <= OutNumLayers);
+
+		varying float StrengthSum = 0.f;
+		for (uniform int32 WriteIndex = 0; WriteIndex < MaxNumWritten; WriteIndex++)
+		{
+			if (WriteIndex < NumWritten)
+			{
+				StrengthSum += Strengths[WriteIndex];
+			}
+		}
+
+		if (StrengthSum == 0.f)
+		{
+			StrengthSum = 1.f;
+		}
+
+		for (uniform int32 WriteIndex = 0; WriteIndex < OutNumLayers; WriteIndex++)
+		{
+			OutLayers[WriteIndex].Materials[Index] = WriteIndex < NumWritten ? Materials[WriteIndex] : GVoxelInvalidMaterialId;
+			OutLayers[WriteIndex].Strengths[Index] = WriteIndex < NumWritten ? FloatToUINT8(Strengths[WriteIndex] / StrengthSum) : 0;
+		}
+	}
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+export void VoxelSurfaceFunctionLibrary_MakeSphereSurface(
+	const uniform float PositionX[],
+	const uniform bool bConstantPositionX,
+	const uniform float PositionY[],
+	const uniform bool bConstantPositionY,
+	const uniform float PositionZ[],
+	const uniform bool bConstantPositionZ,
+	const uniform float3& Center,
+	const uniform float Radius,
+	uniform float OutDistance[],
+	const uniform int32 Num)
+{
+	FOREACH(Index, 0, Num)
+	{
+		const varying float3 Position = MakeFloat3(
+			bConstantPositionX ? PositionX[0] : PositionX[Index],
+			bConstantPositionY ? PositionY[0] : PositionY[Index],
+			bConstantPositionZ ? PositionZ[0] : PositionZ[Index]);
+
+		OutDistance[Index] = length(Position - Center) - Radius;
+	}
+}
+
+export void VoxelSurfaceFunctionLibrary_MakeBoxSurface(
+	const uniform float PositionX[],
+	const uniform bool bConstantPositionX,
+	const uniform float PositionY[],
+	const uniform bool bConstantPositionY,
+	const uniform float PositionZ[],
+	const uniform bool bConstantPositionZ,
+	const uniform float3& Center,
+	const uniform float3& Extent,
+	const uniform float Smoothness,
+	uniform float OutDistance[],
+	const uniform int32 Num)
+{
+	FOREACH(Index, 0, Num)
+	{
+		const varying float3 Position = MakeFloat3(
+			bConstantPositionX ? PositionX[0] : PositionX[Index],
+			bConstantPositionY ? PositionY[0] : PositionY[Index],
+			bConstantPositionZ ? PositionZ[0] : PositionZ[Index]);
+
+		const float3 Q = abs(Position - Center) - Extent;
+		OutDistance[Index] = length(max(Q, 0.f)) + min(max(Q.x, max(Q.y, Q.z)), 0.f) - Smoothness;
 	}
 }

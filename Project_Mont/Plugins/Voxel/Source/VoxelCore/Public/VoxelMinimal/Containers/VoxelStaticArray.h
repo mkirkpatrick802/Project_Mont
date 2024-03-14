@@ -1,9 +1,8 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelCoreMinimal.h"
-#include "VoxelMinimal/Containers/VoxelArrayView.h"
 
 template<typename T, int32 Size, int32 Alignment = alignof(T), bool bForceInitToZero = false>
 class alignas(Alignment) TVoxelStaticArray
@@ -16,7 +15,7 @@ public:
 
 	// Default constructor, only valid for complex types
 	// For trivially destructible types you need to choose whether to init them (ForceInit) or not (NoInit)
-	INTELLISENSE_ONLY(template<typename = std::enable_if_t<!bCanNoInit>>)
+	INTELLISENSE_ONLY(template<typename = typename TEnableIf<!bCanNoInit>::Type>)
 	TVoxelStaticArray()
 	{
 		checkStatic(!bCanNoInit);
@@ -33,7 +32,7 @@ public:
 			new (&Element) T{};
 		}
 	}
-	INTELLISENSE_ONLY(template<typename = std::enable_if_t<bCanNoInit>>)
+	INTELLISENSE_ONLY(template<typename = typename TEnableIf<bCanNoInit>::Type>)
 	FORCEINLINE explicit TVoxelStaticArray(ENoInit)
 	{
 		checkStatic(bCanNoInit);
@@ -46,7 +45,7 @@ public:
 #endif
 	}
 
-	INTELLISENSE_ONLY(template<typename = std::enable_if_t<TIsPODType<T>::Value>>)
+	INTELLISENSE_ONLY(template<typename = typename TEnableIf<TIsPODType<T>::Value>::Type>)
 	FORCEINLINE explicit TVoxelStaticArray(T Value)
 	{
 		static_assert(TIsPODType<T>::Value, "This might have unintended consequences");
@@ -56,7 +55,7 @@ public:
 			new (&Element) T(Value);
 		}
 	}
-	template<typename... TArgs, typename = std::enable_if_t<sizeof...(TArgs) == Size && Size != 1>>
+	template<typename... TArgs, typename = typename TEnableIf<sizeof...(TArgs) == Size && Size != 1>::Type>
 	FORCEINLINE TVoxelStaticArray(TArgs... Args)
 	{
 		static_assert(sizeof...(Args) == Size, "");
@@ -116,7 +115,7 @@ public:
 		return sizeof(T);
 	}
 
-	FORCEINLINE bool IsValidIndex(const int32 Index) const
+	FORCEINLINE bool IsValidIndex(int32 Index) const
 	{
 		return 0 <= Index && Index < Num();
 	}
@@ -125,7 +124,7 @@ public:
 	{
 		FMemory::Memzero(GetData(), Size * sizeof(T));
 	}
-	FORCEINLINE void Memset(const uint8 Value)
+	FORCEINLINE void Memset(uint8 Value)
 	{
 		FMemory::Memset(GetData(), Value, Size * sizeof(T));
 	}
@@ -140,7 +139,7 @@ public:
 	}
 
 	template<typename TFrom, typename Allocator>
-	void CopyFromArray(const TArray<TFrom, Allocator>& Array, const bool bInitializeEnd = true)
+	void CopyFromArray(const TArray<TFrom, Allocator>& Array, bool bInitializeEnd = true)
 	{
 		check(Size >= Array.Num());
 		for (int32 Index = 0; Index < Array.Num(); Index++)
@@ -172,13 +171,13 @@ public:
 		return TArray<T>(GetData(), Num());
 	}
 
-	operator TVoxelArrayView<T>()
+	operator TArrayView<T>()
 	{
-		return TVoxelArrayView<T>(GetData(), Num());
+		return TArrayView<T>(GetData(), Num());
 	}
-	operator TVoxelArrayView<const T>() const
+	operator TArrayView<const T>() const
 	{
-		return TVoxelArrayView<const T>(GetData(), Num());
+		return TArrayView<const T>(GetData(), Num());
 	}
 
 	FORCEINLINE T* begin() { return GetData(); }

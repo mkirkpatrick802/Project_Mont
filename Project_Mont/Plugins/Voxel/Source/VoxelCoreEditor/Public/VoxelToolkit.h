@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -68,13 +68,12 @@ public:
 		TFunction<void(FVoxelToolkit&)> ConfigureToolkit;
 	};
 	virtual TArray<FMode> GetModes() const { return {}; }
-	virtual UScriptStruct* GetDefaultMode() const { return nullptr; }
 
 public:
-	static FVoxelToolkit* OpenToolkit(const UObject& Asset, const UScriptStruct* ToolkitStruct);
+	static FVoxelToolkit* OpenToolkit(UObject* Asset, UScriptStruct* ToolkitStruct);
 
 	template<typename T>
-	static T* OpenToolkit(const UObject& Asset)
+	static T* OpenToolkit(UObject* Asset)
 	{
 		return static_cast<T*>(FVoxelToolkit::OpenToolkit(Asset, StaticStructFast<T>()));
 	}

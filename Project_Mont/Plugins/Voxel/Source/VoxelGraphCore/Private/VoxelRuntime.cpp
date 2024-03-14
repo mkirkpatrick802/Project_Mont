@@ -1,33 +1,32 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelRuntime.h"
 #include "VoxelActor.h"
 #include "VoxelQuery.h"
-#include "VoxelGraph.h"
-#include "VoxelGraphExecutor.h"
-#include "VoxelTerminalGraphInstance.h"
-#include "Channel/VoxelChannelManager.h"
-#include "VoxelParameterOverridesRuntime.h"
+#include "VoxelChannel.h"
+#include "VoxelExecNode.h"
+#include "VoxelExecNodes.h"
+#include "VoxelParameterValues.h"
+#include "VoxelParameterContainer.h"
 #include "Application/ThrottleManager.h"
 
 DEFINE_VOXEL_INSTANCE_COUNTER(FVoxelRuntime);
 
 TSharedRef<FVoxelRuntime> FVoxelRuntime::Create(
-	IVoxelRuntimeProvider& RuntimeProvider,
+	UObject& Instance,
 	USceneComponent& RootComponent,
 	const FVoxelRuntimeParameters& RuntimeParameters,
-	const FVoxelParameterOverridesOwnerPtr& OverridesOwner)
+	UVoxelParameterContainer& ParameterContainer)
 {
 	VOXEL_FUNCTION_COUNTER();
-	check(OverridesOwner.IsValid());
 	ensure(CanBeCreated(true));
 
-	UVoxelGraph* Graph = OverridesOwner->GetGraph();
+	UVoxelGraphInterface* Graph = ParameterContainer.GetTypedProvider<UVoxelGraphInterface>();
 	if (!Graph)
 	{
 		// Create a dummy runtime so the IsRuntimeCreated logic in OnProviderChanged
 		// doesn't break when assigning another graph
-		Graph = LoadObject<UVoxelGraph>(nullptr, TEXT("/Voxel/Default/VG_Empty.VG_Empty"));
+		Graph = LoadObject<UVoxelGraphInterface>(nullptr, TEXT("/Voxel/Default/VG_Empty.VG_Empty"));
 	}
 	check(Graph);
 
@@ -41,24 +40,37 @@ TSharedRef<FVoxelRuntime> FVoxelRuntime::Create(
 	FVoxelRuntimeInfoBase RuntimeInfoBase = FVoxelRuntimeInfoBase::MakeFromWorld(World);
 	RuntimeInfoBase.WeakRuntime = Runtime;
 	RuntimeInfoBase.WeakWorld = World;
-	RuntimeInfoBase.WeakRuntimeProvider = &RuntimeProvider;
+	RuntimeInfoBase.WeakInstance = &Instance;
 	RuntimeInfoBase.WeakRootComponent = &RootComponent;
-	RuntimeInfoBase.GraphName = Graph->GetName();
 	RuntimeInfoBase.GraphPath = Graph->GetPathName();
-	RuntimeInfoBase.InstanceName = RootComponent.GetReadableName() + " (" + World->GetName() + ")";
-	RuntimeInfoBase.InstancePath = RootComponent.GetPathName();
+	RuntimeInfoBase.InstanceName = RootComponent.GetPathName();
 	RuntimeInfoBase.Parameters = RuntimeParameters;
 	RuntimeInfoBase.LocalToWorld = FVoxelTransformRef::Make(RootComponent);
-	Runtime->RuntimeInfo = RuntimeInfoBase.MakeRuntimeInfo_RequiresDestroy();
+	Runtime->RuntimeInfo = RuntimeInfoBase.MakeRuntimeInfo();
 
-	const FVoxelTerminalGraphRef TerminalGraphRef(Graph, GVoxelMainTerminalGraphGuid);
-	const TSharedRef<FVoxelTerminalGraphInstance> TerminalGraphInstance = FVoxelTerminalGraphInstance::Make(
-		*Graph,
-		TerminalGraphRef,
+	// Create node runtime last
+
+	const FVoxelGraphNodeRef NodeRef
+	{
+		Graph,
+		// See FCompilerUtilities::AddExecOutput
+		FVoxelNodeNames::ExecuteNodeId,
+	};
+
+	const TSharedRef<FVoxelRootExecuteNode> Node = MakeVoxelShared<FVoxelRootExecuteNode>();
+	Node->InitializeNodeRuntime(NodeRef, false);
+	Node->RemoveEditorData();
+
+	const TSharedPtr<FVoxelExecNodeRuntime> NodeRuntime = Node->CreateSharedExecRuntime(Node);
+	check(NodeRuntime);
+
+	const TSharedRef<FVoxelQueryContext> QueryContext = FVoxelQueryContext::Make(
 		Runtime->RuntimeInfo.ToSharedRef(),
-		FVoxelParameterOverridesRuntime::Create(OverridesOwner));
+		FVoxelParameterValues::Create(&ParameterContainer));
 
-	Runtime->GraphExecutor = FVoxelGraphExecutor::Create_GameThread(TerminalGraphRef, TerminalGraphInstance);
+	NodeRuntime->CallCreate(QueryContext, {});
+
+	Runtime->NodeRuntime = NodeRuntime;
 
 	return Runtime;
 }
@@ -89,7 +101,7 @@ void FVoxelRuntime::Destroy()
 	const USceneComponent* RootComponent = RuntimeInfo->GetRootComponent();
 	LOG_VOXEL(Verbose, "DestroyRuntime %s", RootComponent ? *RootComponent->GetPathName() : TEXT(""));
 
-	GraphExecutor.Reset();
+	NodeRuntime.Reset();
 	RuntimeInfo->Destroy();
 
 	for (const TWeakObjectPtr<USceneComponent> WeakComponent : Components)
@@ -114,31 +126,28 @@ void FVoxelRuntime::Tick()
 {
 	VOXEL_FUNCTION_COUNTER();
 
-	if (!ensure(GraphExecutor))
+	RuntimeInfo->Tick();
+
+	const USceneComponent* RootComponent = RuntimeInfo->GetRootComponent();
+	if (!ensure(RootComponent))
 	{
 		return;
 	}
 
-	RuntimeInfo->Tick();
-	GraphExecutor->Tick(*this);
+	NodeRuntime->Tick(*this);
 }
 
-void FVoxelRuntime::AddReferencedObjects(FReferenceCollector& Collector) const
+void FVoxelRuntime::AddReferencedObjects(FReferenceCollector& Collector)
 {
 	VOXEL_FUNCTION_COUNTER();
 
-	if (!ensure(GraphExecutor))
-	{
-		return;
-	}
-
 	RuntimeInfo->AddReferencedObjects(Collector);
-	GraphExecutor->AddReferencedObjects(Collector);
+	NodeRuntime->AddReferencedObjects(Collector);
 }
 
 FVoxelOptionalBox FVoxelRuntime::GetBounds() const
 {
-	return GraphExecutor->GetBounds();
+	return NodeRuntime->GetBounds();
 }
 
 ///////////////////////////////////////////////////////////////////////////////

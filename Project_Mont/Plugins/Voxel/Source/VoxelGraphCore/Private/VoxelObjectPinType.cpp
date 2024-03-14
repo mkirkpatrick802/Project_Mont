@@ -1,31 +1,36 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelObjectPinType.h"
 
 UObject* FVoxelObjectPinType::GetObject(const FConstVoxelStructView Struct) const
 {
 	const TWeakObjectPtr<UObject> WeakObject = GetWeakObject(Struct);
-	ensureVoxelSlow(WeakObject.IsValid() || WeakObject.IsExplicitlyNull());
+	ensure(WeakObject.IsValid() || WeakObject.IsExplicitlyNull());
 	return WeakObject.Get();
 }
 
-const TVoxelMap<const UScriptStruct*, TSharedPtr<const FVoxelObjectPinType>>& FVoxelObjectPinType::StructToPinType()
+const TVoxelMap<const UScriptStruct*, const FVoxelObjectPinType*>& FVoxelObjectPinType::StructToPinType()
 {
-	static TVoxelMap<const UScriptStruct*, TSharedPtr<const FVoxelObjectPinType>> Map;
+	static TVoxelMap<const UScriptStruct*, const FVoxelObjectPinType*> Map;
 	if (Map.Num() == 0)
 	{
 		VOXEL_FUNCTION_COUNTER();
 
-		for (const UScriptStruct* Struct : GetDerivedStructs<FVoxelObjectPinType>())
+		for (UScriptStruct* StructIt : GetDerivedStructs<FVoxelObjectPinType>())
 		{
-			const TSharedRef<FVoxelObjectPinType> Instance = MakeSharedStruct<FVoxelObjectPinType>(Struct);
-			Map.Add_CheckNew(Instance->GetStruct(), Instance);
-		}
+			TVoxelInstancedStruct<FVoxelObjectPinType> Instance(StructIt);
+			const UScriptStruct* InstanceStruct = Instance->GetStruct();
 
-		Map.Shrink();
+			ensure(!Map.Contains(InstanceStruct));
+			Map.Add(InstanceStruct, Instance.Release());
+		}
 
 		GOnVoxelModuleUnloaded_DoCleanup.AddLambda([]
 		{
+			for (const auto& It : Map)
+			{
+				FVoxelMemory::Delete(It.Value);
+			}
 			Map.Empty();
 		});
 	}

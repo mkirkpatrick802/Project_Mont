@@ -1,14 +1,12 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelEditorMinimal.h"
 #include "VoxelGraph.h"
-#include "VoxelInlineGraph.h"
-#include "FunctionLibrary/VoxelCurveFunctionLibrary.h"
 #include "Customizations/VoxelPinValueCustomizationHelper.h"
 
-VOXEL_CUSTOMIZE_STRUCT_CHILDREN(FVoxelParameter)(const TSharedRef<IPropertyHandle> PropertyHandle, IDetailChildrenBuilder& ChildBuilder, IPropertyTypeCustomizationUtils& CustomizationUtils)
+VOXEL_CUSTOMIZE_STRUCT_CHILDREN(FVoxelParameter)(TSharedRef<IPropertyHandle> PropertyHandle, IDetailChildrenBuilder& ChildBuilder, IPropertyTypeCustomizationUtils& CustomizationUtils)
 {
-	FVoxelEditorUtilities::TrackHandle(PropertyHandle);
+	const TArray<TWeakObjectPtr<UObject>> SelectedObjects = CustomizationUtils.GetPropertyUtilities()->GetSelectedObjects();
 
 	ChildBuilder.AddProperty(PropertyHandle->GetChildHandleStatic(FVoxelParameter, Name));
 
@@ -19,18 +17,29 @@ VOXEL_CUSTOMIZE_STRUCT_CHILDREN(FVoxelParameter)(const TSharedRef<IPropertyHandl
 	}
 	ChildBuilder.AddProperty(TypeHandle);
 
-	const TVoxelArray<TWeakObjectPtr<UVoxelGraph>> Graphs = FVoxelEditorUtilities::GetTypedOuters<UVoxelGraph>(PropertyHandle);
+	FString CategoriesList;
+	if (const FString* InstanceCategoriesList = PropertyHandle->GetInstanceMetaData("CategoriesList"))
+	{
+		CategoriesList = *InstanceCategoriesList;
+	}
+	else
+	{
+		CategoriesList = PropertyHandle->GetMetaData("CategoriesList");
+	}
 
 	// Create category selection
 	{
 		const TSharedRef<IPropertyHandle> CategoryHandle = PropertyHandle->GetChildHandleStatic(FVoxelParameter, Category);
 
-		if (Graphs.Num() == 0)
+		if (CategoriesList.IsEmpty())
 		{
 			ChildBuilder.AddProperty(CategoryHandle);
 		}
 		else
 		{
+			FString Category;
+			CategoryHandle->GetValue(Category);
+
 			ChildBuilder.AddCustomRow(INVTEXT("Category"))
 			.NameContent()
 			[
@@ -42,33 +51,33 @@ VOXEL_CUSTOMIZE_STRUCT_CHILDREN(FVoxelParameter)(const TSharedRef<IPropertyHandl
 				.MinDesiredWidth(125.f)
 				[
 					SNew(SVoxelDetailComboBox<FString>)
-					.RefreshDelegate(this, ChildBuilder)
+					.RefreshDelegate(CategoryHandle, ChildBuilder)
 					.Options_Lambda([=]()
 					{
-						TSet<FString> Categories;
-						for (const TWeakObjectPtr<UVoxelGraph>& WeakGraph : Graphs)
+						TArray<FString> Categories;
+
+						for (TWeakObjectPtr<UObject> Object : SelectedObjects)
 						{
-							const UVoxelGraph* Graph = WeakGraph.Get();
-							if (!ensureVoxelSlow(Graph))
+							if (!ensure(Object.IsValid()))
 							{
 								continue;
 							}
 
-							for (const FGuid& Guid : Graph->GetParameters())
+							UFunction* Function = Object->FindFunction(*CategoriesList);
+							if (!ensure(Function) ||
+								!ensure(!Function->Children) ||
+								!ensure(Function->ParmsSize == sizeof(Categories)))
 							{
-								Categories.Add(Graph->FindParameterChecked(Guid).Category);
+								continue;
 							}
+
+							Object->ProcessEvent(Function, &Categories);
 						}
-						Categories.Remove("");
-						Categories.Add("Default");
-						return Categories.Array();
+
+						Categories.AddUnique("Default");
+						return Categories;
 					})
-					.CurrentOption_Lambda([=]
-					{
-						FString Category;
-						CategoryHandle->GetValue(Category);
-						return Category.IsEmpty() ? "Default" : Category;
-					})
+					.CurrentOption(Category.IsEmpty() ? "Default" : Category)
 					.CanEnterCustomOption(true)
 					.OptionText(MakeLambdaDelegate([](FString Option)
 					{
@@ -85,10 +94,7 @@ VOXEL_CUSTOMIZE_STRUCT_CHILDREN(FVoxelParameter)(const TSharedRef<IPropertyHandl
 
 	ChildBuilder.AddProperty(PropertyHandle->GetChildHandleStatic(FVoxelParameter, Description));
 
-	IDetailCategoryBuilder& DefaultValueCategory = ChildBuilder.GetParentCategory().GetParentLayout().EditCategory("Options", INVTEXT("Options"));
-
-	// Move Options category below all other categories
-	DefaultValueCategory.SetSortOrder(9999);
+	IDetailCategoryBuilder& DefaultValueCategory = ChildBuilder.GetParentCategory().GetParentLayout().EditCategory("Default Value", INVTEXT("Default Value"));
 
 	const auto GetMetaData = [](const TSharedPtr<IPropertyHandle>& Handle)
 	{
@@ -102,12 +108,6 @@ VOXEL_CUSTOMIZE_STRUCT_CHILDREN(FVoxelParameter)(const TSharedRef<IPropertyHandl
 		FVoxelEditorUtilities::SetStructPropertyValue<FVoxelParameter>(Handle, Parameter);
 	};
 
-	FVoxelPinValueCustomizationHelper::CreatePinValueChannelTypeSetter(
-		DefaultValueCategory.AddCustomRow(INVTEXT("Channel Type")),
-		PropertyHandle,
-		GetMetaData,
-		SetMetaData);
-
 	FVoxelPinValueCustomizationHelper::CreatePinValueRangeSetter(
 		DefaultValueCategory.AddCustomRow(INVTEXT("Slider Range")),
 		PropertyHandle,
@@ -115,7 +115,6 @@ VOXEL_CUSTOMIZE_STRUCT_CHILDREN(FVoxelParameter)(const TSharedRef<IPropertyHandl
 		INVTEXT("Allows setting the minimum and maximum values for the UI slider for this variable."),
 		STATIC_FNAME("UIMin"),
 		STATIC_FNAME("UIMax"),
-		FVoxelPinValueCustomizationHelper::IsNumericType,
 		GetMetaData,
 		SetMetaData);
 
@@ -126,101 +125,14 @@ VOXEL_CUSTOMIZE_STRUCT_CHILDREN(FVoxelParameter)(const TSharedRef<IPropertyHandl
 		INVTEXT("The range of values allowed by this variable. Values outside of this will be clamped to the range."),
 		STATIC_FNAME("ClampMin"),
 		STATIC_FNAME("ClampMax"),
-		FVoxelPinValueCustomizationHelper::IsNumericType,
 		GetMetaData,
 		SetMetaData);
 
-	FVoxelPinValueCustomizationHelper::CreatePinValueRangeSetter(
-		DefaultValueCategory.AddCustomRow(INVTEXT("Horizontal UI Range")),
-		PropertyHandle,
-		INVTEXT("Horizontal UI Range"),
-		INVTEXT("The horizontal range of visible curve editor."),
-		STATIC_FNAME("UIHorizontalMin"),
-		STATIC_FNAME("UIHorizontalMax"),
-		[](const FVoxelPinType& Type)
-		{
-			return Type.Is<FVoxelCurve>();
-		},
-		GetMetaData,
-		SetMetaData);
-
-	FVoxelPinValueCustomizationHelper::CreatePinValueRangeSetter(
-		DefaultValueCategory.AddCustomRow(INVTEXT("Vertical UI Range")),
-		PropertyHandle,
-		INVTEXT("Vertical UI Range"),
-		INVTEXT("The vertical range of visible curve editor."),
-		STATIC_FNAME("UIVerticalMin"),
-		STATIC_FNAME("UIVerticalMax"),
-		[](const FVoxelPinType& Type)
-		{
-			return Type.Is<FVoxelCurve>();
-		},
-		GetMetaData,
-		SetMetaData);
-
-	FVoxelPinValueCustomizationHelper::CreatePinValueRangeSetter(
-		DefaultValueCategory.AddCustomRow(INVTEXT("Horizontal Value Clamp")),
-		PropertyHandle,
-		INVTEXT("Horizontal Value Clamp"),
-		INVTEXT("The horizontal range of possible values."),
-		STATIC_FNAME("ClampHorizontalMin"),
-		STATIC_FNAME("ClampHorizontalMax"),
-		[](const FVoxelPinType& Type)
-		{
-			return Type.Is<FVoxelCurve>();
-		},
-		GetMetaData,
-		SetMetaData);
-
-	FVoxelPinValueCustomizationHelper::CreatePinValueRangeSetter(
-		DefaultValueCategory.AddCustomRow(INVTEXT("Vertical Value Clamp")),
-		PropertyHandle,
-		INVTEXT("Vertical Value Clamp"),
-		INVTEXT("The vertical range possible values."),
-		STATIC_FNAME("ClampVerticalMin"),
-		STATIC_FNAME("ClampVerticalMax"),
-		[](const FVoxelPinType& Type)
-		{
-			return Type.Is<FVoxelCurve>();
-		},
-		GetMetaData,
-		SetMetaData);
-
-	FVoxelPinValueCustomizationHelper::CreatePinValueUnitSetter(
-		DefaultValueCategory.AddCustomRow(INVTEXT("Unit")),
-		PropertyHandle,
-		GetMetaData,
-		SetMetaData);
-
-	const FVoxelPinType* Type = FVoxelEditorUtilities::TryGetStructPropertyValue<FVoxelPinType>(TypeHandle);
-	if (!Type ||
-		!Type->Is<FVoxelInlineGraph>())
+	const FVoxelParameter Parameter = FVoxelEditorUtilities::GetStructPropertyValue<FVoxelParameter>(PropertyHandle);
+	const TSharedRef<IPropertyHandle> DefaultValueHandle = PropertyHandle->GetChildHandleStatic(FVoxelParameter, DefaultValue);
+	for (const auto& It : Parameter.MetaData)
 	{
-		return;
+		DefaultValueHandle->SetInstanceMetaData(It.Key, It.Value);
 	}
-
-	ChildBuilder.AddCustomRow(INVTEXT("BaseGraph"))
-	.NameContent()
-	[
-		SNew(SVoxelDetailText)
-		.Text(INVTEXT("Base Graph"))
-	]
-	.ValueContent()
-	[
-		SNew(SObjectPropertyEntryBox)
-		.AllowedClass(UVoxelGraph::StaticClass())
-		.AllowClear(true)
-		.ThumbnailPool(FVoxelEditorUtilities::GetThumbnailPool())
-		.ObjectPath_Lambda([=]
-		{
-			const FVoxelParameter Parameter = FVoxelEditorUtilities::GetStructPropertyValue<FVoxelParameter>(PropertyHandle);
-			return Parameter.MetaData.FindRef("BaseGraph");
-		})
-		.OnObjectChanged_Lambda([=](const FAssetData& NewAssetData)
-		{
-			FVoxelParameter Parameter = FVoxelEditorUtilities::GetStructPropertyValue<FVoxelParameter>(PropertyHandle);
-			Parameter.MetaData.Add("BaseGraph", NewAssetData.GetSoftObjectPath().ToString());
-			FVoxelEditorUtilities::SetStructPropertyValue<FVoxelParameter>(PropertyHandle, Parameter);
-		})
-	];
+	DefaultValueCategory.AddProperty(DefaultValueHandle);
 }

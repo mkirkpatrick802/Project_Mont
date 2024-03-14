@@ -1,13 +1,11 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelMinimal.h"
-#include "VoxelQuery.h"
+#include "VoxelNodeMessages.h"
 #include "VoxelRuntimePinValue.h"
 #include "VoxelFunctionLibrary.generated.h"
-
-struct FVoxelNode_UFunction;
 
 #undef PARAM_PASSED_BY_REF
 #define PARAM_PASSED_BY_REF(ParamName, PropertyType, ParamType) \
@@ -26,15 +24,13 @@ struct FVoxelNode_UFunction;
 	} \
 	ParamType& ParamName = *ParamName##TempPtr; \
 
+struct FVoxelFunctionNode;
+
 #define FindVoxelQueryParameter_Function(Type, Name) \
 	checkStatic(TIsDerivedFrom<Type, FVoxelQueryParameter>::Value); \
 	const Type* Ptr_ ## Name = GetQuery().GetParameters().Find<Type>(); \
 	if (!Ptr_ ## Name) { RaiseQueryError(Type::StaticStruct()); return {}; } \
-	const TSharedRef<const Type> Name = CastChecked<Type>(Ptr_ ## Name->AsShared());
-
-#define FindOptionalVoxelQueryParameter_Function(Type, Name) \
-	checkStatic(TIsDerivedFrom<Type, FVoxelQueryParameter>::Value); \
-	const TSharedPtr<const Type> Name = GetQuery().GetParameters().FindShared<Type>();
+	const TSharedRef<const Type> Name = CastChecked<const Type>(Ptr_ ## Name->AsShared());
 
 #define CheckVoxelBuffersNum_Function(...) \
 	if (!FVoxelBufferAccessor(__VA_ARGS__).IsValid()) \
@@ -119,9 +115,6 @@ public:
 	{
 		const FVoxelGraphNodeRef* NodeRef = nullptr;
 		const FVoxelQuery* Query = nullptr;
-#if VOXEL_DEBUG
-		TConstVoxelArrayView<FName> AllOutputPins_Debug;
-#endif
 	};
 	FORCEINLINE const FContext& GetContext() const
 	{
@@ -135,34 +128,28 @@ public:
 	{
 		return *GetContext().Query;
 	}
-	FORCEINLINE TSharedRef<FVoxelMessageToken> CreateMessageToken() const
+	FORCEINLINE const FVoxelGraphNodeRef& GetMessageArg() const
 	{
-		return GetNodeRef().CreateMessageToken();
+		return GetNodeRef();
 	}
 
 public:
-	static void RaiseQueryErrorStatic(const FVoxelGraphNodeRef& Node, const UScriptStruct* QueryType);
-	static void RaiseBufferErrorStatic(const FVoxelGraphNodeRef& Node);
+	static void RaiseQueryError(const FVoxelGraphNodeRef& Node, const UScriptStruct* QueryType);
+	static void RaiseBufferError(const FVoxelGraphNodeRef& Node);
 
 	template<typename T>
-	static void RaiseQueryErrorStatic(const FVoxelGraphNodeRef& Node)
+	static void RaiseQueryError(const FVoxelGraphNodeRef& Node)
 	{
-		UVoxelFunctionLibrary::RaiseQueryErrorStatic(Node, StaticStructFast<T>());
+		UVoxelFunctionLibrary::RaiseQueryError(Node, StaticStructFast<T>());
 	}
 
-public:
 	void RaiseQueryError(const UScriptStruct* QueryType) const
 	{
-		RaiseQueryErrorStatic(GetNodeRef(), QueryType);
+		RaiseQueryError(GetNodeRef(), QueryType);
 	}
 	void RaiseBufferError() const
 	{
-		RaiseBufferErrorStatic(GetNodeRef());
-	}
-	template<typename T>
-	void RaiseQueryError() const
-	{
-		UVoxelFunctionLibrary::RaiseQueryError<T>(GetNodeRef());
+		RaiseBufferError(GetNodeRef());
 	}
 
 public:
@@ -182,10 +169,10 @@ public:
 		explicit FCachedFunction(const UFunction& Function);
 	};
 	static void Call(
-		const FVoxelNode_UFunction& Node,
+		const FVoxelFunctionNode& Node,
 		const FCachedFunction& CachedFunction,
 		const FVoxelQuery& Query,
-		TConstVoxelArrayView<FVoxelRuntimePinValue*> Values);
+		const TConstVoxelArrayView<FVoxelRuntimePinValue*> Values);
 };
 
 template<typename T>

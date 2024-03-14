@@ -1,9 +1,9 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "SVoxelGraphSelector.h"
+
 #include "VoxelGraph.h"
-#include "VoxelGraphTracker.h"
-#include "Subsystems/AssetEditorSubsystem.h"
+#include "VoxelGraphExecutor.h"
 
 void SVoxelGraphSelector::Construct(const FArguments& InArgs)
 {
@@ -28,12 +28,10 @@ void SVoxelGraphSelector::Construct(const FArguments& InArgs)
 		RebuildList();
 	}));
 
-	// Rebuild whenever a node changed to see if we have a sculpt node now
-	GVoxelGraphTracker->OnTerminalGraphTranslated(FVoxelGraphTracker::MakeAny<UVoxelTerminalGraph>()).Add(
-		FOnVoxelGraphChanged::Make(this, [this]
-		{
-			RebuildList();
-		}));
+	GVoxelGraphExecutorManager->OnGraphChanged.Add(MakeWeakPtrDelegate(this, [this](const UVoxelGraphInterface&)
+	{
+		RebuildList();
+	}));
 
 	FindAllGraphs();
 
@@ -58,57 +56,11 @@ void SVoxelGraphSelector::Construct(const FArguments& InArgs)
 				.SelectionMode(ESelectionMode::Single)
 				.ListItemsSource(&FilteredGraphsList)
 				.OnGenerateRow(this, &SVoxelGraphSelector::OnGenerateRow)
-				.OnSelectionChanged(MakeWeakPtrDelegate(this, [this](TSharedPtr<FVoxelGraphListNode> Node, const ESelectInfo::Type SelectType)
-				{
-					ActiveGraph = Node ? Cast<UVoxelGraph>(Node->Asset.GetAsset()) : nullptr;
-
-					if (SelectType != ESelectInfo::Direct)
-					{
-						OnGraphSelected.ExecuteIfBound(ActiveGraph.Get());
-					}
-				}))
-				.OnMouseButtonDoubleClick(MakeWeakPtrDelegate(this, [](TSharedPtr<FVoxelGraphListNode> Node)
-				{
-					if (!Node)
-					{
-						return;
-					}
-
-					GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(Node->Asset.GetSoftObjectPath());
-				}))
+				.OnSelectionChanged(this, &SVoxelGraphSelector::OnSelectionChanged)
 				.ItemHeight(24.0f)
 			]
 		]
 	];
-
-	if (InArgs._SelectedGraph)
-	{
-		for (const TSharedPtr<FVoxelGraphListNode>& Node : FilteredGraphsList)
-		{
-			if (Node->WeakGraph == InArgs._SelectedGraph)
-			{
-				GraphsListView->SetSelection(Node);
-				break;
-			}
-		}
-	}
-}
-
-void SVoxelGraphSelector::SetSelectedGraph(const UVoxelGraph* Graph)
-{
-	if (!Graph)
-	{
-		return;
-	}
-
-	for (const TSharedPtr<FVoxelGraphListNode>& Node : FilteredGraphsList)
-	{
-		if (Node->WeakGraph == Graph)
-		{
-			GraphsListView->SetSelection(Node);
-			break;
-		}
-	}
 }
 
 void SVoxelGraphSelector::OnSearchChanged(const FText& Text)
@@ -164,7 +116,6 @@ TSharedRef<ITableRow> SVoxelGraphSelector::OnGenerateRow(TSharedPtr<FVoxelGraphL
 				]
 			]
 			+ SHorizontalBox::Slot()
-			.FillWidth(1.f)
 			.Padding(2.5f, 0.f)
 			.VAlign(VAlign_Center)
 			[
@@ -188,25 +139,17 @@ TSharedRef<ITableRow> SVoxelGraphSelector::OnGenerateRow(TSharedPtr<FVoxelGraphL
 					.AutoWrapText(true)
 				]
 			]
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			.Padding(2.f)
-			.VAlign(VAlign_Center)
-			[
-				PropertyCustomizationHelpers::MakeBrowseButton(MakeWeakPtrDelegate(this, [WeakNode = MakeWeakPtr(Node)]
-				{
-					const TSharedPtr<FVoxelGraphListNode> GraphNode = WeakNode.Pin();
-					if (!GraphNode)
-					{
-						return;
-					}
-
-					FSlateApplication::Get().DismissAllMenus();
-					TArray<FAssetData> Assets{ GraphNode->Asset };
-					GEditor->SyncBrowserToObjects(Assets, true);
-				}))
-			]
 		];
+}
+
+void SVoxelGraphSelector::OnSelectionChanged(TSharedPtr<FVoxelGraphListNode> Node, ESelectInfo::Type SelectType)
+{
+	ActiveGraph = Node ? Cast<UVoxelGraph>(Node->Asset.GetAsset()) : nullptr;
+
+	if (SelectType != ESelectInfo::Direct)
+	{
+		OnGraphSelected.ExecuteIfBound(ActiveGraph.Get());
+	}
 }
 
 void SVoxelGraphSelector::FindAllGraphs()
@@ -215,18 +158,26 @@ void SVoxelGraphSelector::FindAllGraphs()
 
 	GraphsList = {};
 
-	UVoxelGraph::LoadAllGraphs();
+	const FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
 
-	ForEachObjectOfClass<UVoxelGraph>([&](UVoxelGraph& Graph)
+	TArray<FAssetData> Assets;
+	AssetRegistryModule.Get().GetAssetsByClass(UVoxelGraph::StaticClass()->GetClassPathName(), Assets);
+
+	for (const FAssetData& Asset : Assets)
 	{
-		if (ensure(IsGraphValid.IsBound()) &&
-			!IsGraphValid.Execute(Graph))
+		UVoxelGraph* Graph = Cast<UVoxelGraph>(Asset.GetAsset());
+		if (!Graph)
 		{
-			return;
+			continue;
 		}
 
-		GraphsList.Add(MakeShared<FVoxelGraphListNode>(Graph));
-	});
+		if (!IsGraphValid.Execute(Graph))
+		{
+			continue;
+		}
+
+		GraphsList.Add(MakeShared<FVoxelGraphListNode>(Asset, Graph));
+	}
 
 	FilterGraphs();
 }
@@ -256,12 +207,6 @@ void SVoxelGraphSelector::RebuildList()
 	VOXEL_FUNCTION_COUNTER();
 
 	FindAllGraphs();
-
-	if (!GraphsListView)
-	{
-		return;
-	}
-
 	GraphsListView->RebuildList();
 
 	for (const TSharedPtr<FVoxelGraphListNode>& Node : FilteredGraphsList)

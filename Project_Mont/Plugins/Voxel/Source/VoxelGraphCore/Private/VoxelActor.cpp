@@ -1,31 +1,41 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelActor.h"
-#include "VoxelGraph.h"
 #include "VoxelRuntime.h"
+#include "VoxelGraphInterface.h"
+#include "VoxelParameterContainer.h"
 #include "Point/VoxelPointStorage.h"
 #include "Sculpt/VoxelSculptStorage.h"
-#include "Sculpt/VoxelExecNode_EditSculptSurface.h"
-#include "VoxelParameterContainer_DEPRECATED.h"
+#include "Sculpt/VoxelEditSculptSurfaceExecNode.h"
 #include "Engine/Texture2D.h"
 #include "Components/BillboardComponent.h"
 
-UVoxelActorRootComponent::UVoxelActorRootComponent()
-{
-	bWantsOnUpdateTransform = true;
-}
-
-void UVoxelActorRootComponent::UpdateBounds()
+bool UVoxelActorRootComponent::MoveComponentImpl(const FVector& Delta, const FQuat& NewRotation, bool bSweep, FHitResult* Hit, EMoveComponentFlags MoveFlags, ETeleportType Teleport)
 {
 	VOXEL_FUNCTION_COUNTER();
 
-	Super::UpdateBounds();
+	const bool bResult = Super::MoveComponentImpl(Delta, NewRotation, bSweep, Hit, MoveFlags, Teleport);
+
+	// Update transform ref so that queries or sculpt tools are accurate
 	FVoxelTransformRef::NotifyTransformChanged(*this);
+
+	return bResult;
 }
 
 AVoxelActor::AVoxelActor()
 {
 	RootComponent = CreateDefaultSubobject<UVoxelActorRootComponent>("Root");
+
+	ParameterContainer = CreateDefaultSubobject<UVoxelParameterContainer>("ParameterContainerComponent");
+	ParameterContainer->bAlwaysEnabled = true;
+	ParameterContainer->OnProviderChanged.AddWeakLambda(this, [this]
+	{
+		if (IsRuntimeCreated())
+		{
+			QueueRecreate();
+		}
+	});
+
 	PointStorageComponent = CreateDefaultSubobject<UVoxelPointStorage>("VoxelPointStorage");
 	SculptStorageComponent = CreateDefaultSubobject<UVoxelSculptStorage>("VoxelSculptStorage");
 
@@ -101,7 +111,7 @@ void AVoxelActor::BeginDestroy()
 	Super::BeginDestroy();
 }
 
-void AVoxelActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
+void AVoxelActor::EndPlay(EEndPlayReason::Type EndPlayReason)
 {
 	VOXEL_FUNCTION_COUNTER();
 
@@ -138,11 +148,10 @@ void AVoxelActor::OnConstruction(const FTransform& Transform)
 		!IsRuntimeCreated() &&
 		GetWorld() &&
 		!GetWorld()->IsGameWorld() &&
-		!IsTemplate() &&
+		!HasAnyFlags(RF_ClassDefaultObject) &&
 		!IsRunningCommandlet())
 	{
-		// Force queue to avoid creating runtime twice on map load
-		bRuntimeCreateQueued = true;
+		QueueCreateRuntime();
 	}
 #endif
 }
@@ -153,6 +162,10 @@ void AVoxelActor::PostLoad()
 
 	Super::PostLoad();
 
+	if (!ParameterContainer)
+	{
+		ParameterContainer = NewObject<UVoxelParameterContainer>(this, "ParameterContainerComponent");
+	}
 	if (!PointStorageComponent)
 	{
 		PointStorageComponent = NewObject<UVoxelPointStorage>(this, "VoxelPointStorage");
@@ -162,26 +175,14 @@ void AVoxelActor::PostLoad()
 		SculptStorageComponent = NewObject<UVoxelSculptStorage>(this, "VoxelSculptStorage");
 	}
 
-	if (UVoxelGraph* OldGraph = Graph_DEPRECATED.LoadSynchronous())
+	if (UVoxelGraphInterface* Graph = Graph_DEPRECATED.LoadSynchronous())
 	{
-		ensure(!Graph);
-		Graph = OldGraph;
+		ensure(!ParameterContainer->Provider);
+		ParameterContainer->Provider = Graph;
+		Graph_DEPRECATED = {};
+
+		ParameterCollection_DEPRECATED.MigrateTo(*ParameterContainer);
 	}
-
-	if (ParameterCollection_DEPRECATED.Parameters.Num() > 0)
-	{
-		ParameterCollection_DEPRECATED.MigrateTo(*this);
-	}
-
-	if (ParameterContainer_DEPRECATED)
-	{
-		ensure(!Graph);
-		Graph = CastEnsured<UVoxelGraph>(ParameterContainer_DEPRECATED->Provider);
-
-		ParameterContainer_DEPRECATED->MigrateTo(ParameterOverrides);
-	}
-
-	FixupParameterOverrides();
 }
 
 void AVoxelActor::PostEditImport()
@@ -190,28 +191,10 @@ void AVoxelActor::PostEditImport()
 
 	Super::PostEditImport();
 
-	FixupParameterOverrides();
-
 	if (IsRuntimeCreated())
 	{
 		QueueRecreate();
 	}
-}
-
-void AVoxelActor::PostInitProperties()
-{
-	VOXEL_FUNCTION_COUNTER();
-
-	Super::PostInitProperties();
-
-	FixupParameterOverrides();
-}
-
-void AVoxelActor::PostCDOContruct()
-{
-	Super::PostCDOContruct();
-
-	FVoxelUtilities::ForceLoadDeprecatedSubobject<UVoxelParameterContainer_DEPRECATED>(this, "ParameterContainerComponent");
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -234,8 +217,6 @@ void AVoxelActor::PostEditUndo()
 	VOXEL_FUNCTION_COUNTER();
 
 	Super::PostEditUndo();
-
-	FixupParameterOverrides();
 
 	if (IsValid(this))
 	{
@@ -291,16 +272,6 @@ void AVoxelActor::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedE
 
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 
-	if (PropertyChangedEvent.GetMemberPropertyName() == GET_OWN_MEMBER_NAME(Graph_NewProperty))
-	{
-		NotifyGraphChanged();
-
-		if (IsRuntimeCreated())
-		{
-			QueueRecreate();
-		}
-	}
-
 	if (Runtime)
 	{
 		for (const TWeakObjectPtr<USceneComponent>& Component : Runtime->GetComponents())
@@ -345,20 +316,6 @@ void AVoxelActor::Tick(const float DeltaTime)
 	{
 		Runtime->Tick();
 	}
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-bool AVoxelActor::ShouldForceEnableOverride(const FVoxelParameterPath& Path) const
-{
-	return true;
-}
-
-FVoxelParameterOverrides& AVoxelActor::GetParameterOverrides()
-{
-	return ParameterOverrides;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -432,7 +389,7 @@ void AVoxelActor::CreateRuntime()
 		*this,
 		*Component,
 		GetRuntimeParameters(),
-		this);
+		*ParameterContainer);
 
 	OnRuntimeCreated.Broadcast();
 }
@@ -459,18 +416,12 @@ void AVoxelActor::DestroyRuntime()
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-void AVoxelActor::SetGraph(UVoxelGraph* NewGraph)
+UVoxelGraphInterface* AVoxelActor::GetGraph() const
 {
-	if (Graph == NewGraph)
-	{
-		return;
-	}
-	Graph = NewGraph;
+	return ParameterContainer->GetTypedProvider<UVoxelGraphInterface>();
+}
 
-	NotifyGraphChanged();
-
-	if (IsRuntimeCreated())
-	{
-		QueueRecreate();
-	}
+void AVoxelActor::SetGraph(UVoxelGraphInterface* NewGraph)
+{
+	ParameterContainer->SetProvider(NewGraph);
 }

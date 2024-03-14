@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -24,31 +24,24 @@ private:
 
 	void SearchTextChanged(const FText& Text);
 
-	TSharedRef<SWidget> CreateTagsFilterBox();
 	TSharedRef<SWidget> CreateContentTilesView();
-	TSharedRef<SWidget> CreateContentDetails();
+	TSharedRef<SWidget> CreateContentDetails(const TSharedPtr<FVoxelExampleContent>& Selection) const;
 
 	TSharedRef<ITableRow> CreateContentSourceIconTile(TSharedPtr<FVoxelExampleContent> Content, const TSharedRef<STableViewBase>& OwnerTable) const;
 
 private:
 	TSharedPtr<SBox> CategoryTabsBox;
-	TSharedPtr<SWrapBox> SelectedContentTagsBox;
+	TSharedPtr<SBox> ContentDetailsBox;
 	TSharedPtr<SSearchBox> SearchBox;
-	TMap<FName, TSharedPtr<STileView<TSharedPtr<FVoxelExampleContent>>>> CategoryToTilesView;
+	TSharedPtr<STileView<TSharedPtr<FVoxelExampleContent>>> ContentTilesView;
 
 	TArray<TSharedPtr<FVoxelExampleContent>> ContentsSourceList;
-	TMap<FName, TArray<TSharedPtr<FVoxelExampleContent>>> CategoryToFilteredList;
-
-	TSet<FName> Categories;
-	TSet<FName> Tags;
-	TSet<FName> VisibleTags;
+	TArray<TSharedPtr<FVoxelExampleContent>> FilteredList;
 
 	TSharedPtr<FVoxelExampleContent> SelectedContent;
 
 	TSharedPtr<FContentSourceTextFilter> Filter;
 
-	void GatherContent();
 	void UpdateFilteredItems();
-	void UpdateContentTags(const TSharedPtr<FVoxelExampleContent>& OldContent) const;
 	void FinalizeDownload(const TArray<uint8>& InData) const;
 };

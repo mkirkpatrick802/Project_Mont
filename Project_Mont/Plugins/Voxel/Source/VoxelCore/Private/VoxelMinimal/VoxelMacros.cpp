@@ -1,12 +1,12 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelMinimal.h"
 #include "Interfaces/IPluginManager.h"
 
 VOXEL_CONSOLE_VARIABLE(
-	VOXELCORE_API, bool, GVoxelProfilerInfiniteLoop, false,
-	"voxel.profiler.InfiniteLoop",
-	".");
+	VOXELCORE_API, bool, GVoxelDisableSlowChecks, false,
+	"voxel.DisableSlowChecks",
+	"Disable slow checks if VOXEL_DEBUG is 1. Does not affect performance.");
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -91,7 +91,7 @@ struct FVoxelRunOnStartupStatics
 
 	FFunctions GameFunctions;
 	FFunctions EditorFunctions;
-	FFunctions EditorCommandletFunctions;
+	FFunctions EditorCookFunctions;
 	FFunctions FirstTickFunctions;
 
 	static FVoxelRunOnStartupStatics& Get()
@@ -111,9 +111,9 @@ FVoxelRunOnStartupPhaseHelper::FVoxelRunOnStartupPhaseHelper(const EVoxelRunOnSt
 	{
 		FVoxelRunOnStartupStatics::Get().EditorFunctions.Add(Priority, MoveTemp(Lambda));
 	}
-	else if (Phase == EVoxelRunOnStartupPhase::EditorCommandlet)
+	else if (Phase == EVoxelRunOnStartupPhase::EditorCook)
 	{
-		FVoxelRunOnStartupStatics::Get().EditorCommandletFunctions.Add(Priority, MoveTemp(Lambda));
+		FVoxelRunOnStartupStatics::Get().EditorCookFunctions.Add(Priority, MoveTemp(Lambda));
 	}
 	else
 	{
@@ -124,7 +124,7 @@ FVoxelRunOnStartupPhaseHelper::FVoxelRunOnStartupPhaseHelper(const EVoxelRunOnSt
 
 FDelayedAutoRegisterHelper GVoxelRunOnStartup_Game(EDelayedRegisterRunPhase::ObjectSystemReady, []
 {
-	IPluginManager::Get().OnLoadingPhaseComplete().AddLambda([](const ELoadingPhase::Type LoadingPhase, const bool bSuccess)
+	IPluginManager::Get().OnLoadingPhaseComplete().AddLambda([](ELoadingPhase::Type LoadingPhase, bool bSuccess)
 	{
 		if (LoadingPhase != ELoadingPhase::PostDefault)
 		{
@@ -132,11 +132,7 @@ FDelayedAutoRegisterHelper GVoxelRunOnStartup_Game(EDelayedRegisterRunPhase::Obj
 		}
 
 		FVoxelRunOnStartupStatics::Get().GameFunctions.Execute();
-
-		if (WITH_EDITOR)
-		{
-			FVoxelRunOnStartupStatics::Get().EditorCommandletFunctions.Execute();
-		}
+		FVoxelRunOnStartupStatics::Get().EditorCookFunctions.Execute();
 	});
 });
 

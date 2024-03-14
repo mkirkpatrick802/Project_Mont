@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -9,10 +9,8 @@ struct FVoxelMaterialDefinitionToolkit;
 class FVoxelMaterialDefinitionParameterSelectionCustomization : public IDetailCustomization
 {
 public:
-	const FGuid Guid;
-
-	explicit FVoxelMaterialDefinitionParameterSelectionCustomization(const FGuid& Guid)
-		: Guid(Guid)
+	explicit FVoxelMaterialDefinitionParameterSelectionCustomization(const FGuid& TargetParameterId)
+		: TargetParameterId(TargetParameterId)
 	{
 	}
 
@@ -21,6 +19,6 @@ public:
 	//~ End IDetailCustomization Interface
 
 private:
-	TSharedPtr<FVoxelStructDetailsWrapper> ParameterWrapper;
-	TSharedPtr<FVoxelInstancedStructDetailsWrapper> ParameterDataWrapper;
+	FGuid TargetParameterId;
+	TSharedPtr<FVoxelStructCustomizationWrapper> Wrapper;
 };

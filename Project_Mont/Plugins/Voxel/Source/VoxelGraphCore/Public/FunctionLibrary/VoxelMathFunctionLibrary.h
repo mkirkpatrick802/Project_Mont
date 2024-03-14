@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -196,11 +196,6 @@ public:
 		const FVoxelQuaternionBuffer& B) const;
 
 public:
-	UFUNCTION(Category = "Math|Transform", meta = (Keywords = "* mul"))
-	FTransform CombineTransform(
-		const FTransform& A,
-		const FTransform& B) const;
-
 	// Transform a position by the supplied transform.
 	// For example, if Transform was an object's transform, this would transform a position from local space to world space.
 	UFUNCTION(Category = "Math|Transform")

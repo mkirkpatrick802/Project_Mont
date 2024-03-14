@@ -1,13 +1,14 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Misc/ScopeExit.h"
 #include "UObject/SoftObjectPtr.h"
+#include "VoxelEngineVersionHelpers.h"
 
 #ifndef INTELLISENSE_PARSER
-#if defined(__INTELLISENSE__) || defined(__RESHARPER__)
+#if defined(__INTELLISENSE__) || defined(__RSCPP_VERSION)
 #define INTELLISENSE_PARSER 1
 #else
 #define INTELLISENSE_PARSER 0
@@ -16,13 +17,10 @@
 
 #if INTELLISENSE_PARSER
 #define VOXEL_DEBUG 1
+#define UE_NODISCARD [[nodiscard]]
 #define RHI_RAYTRACING 1
 #define INTELLISENSE_ONLY(...) __VA_ARGS__
 #define INTELLISENSE_SKIP(...)
-#define INTELLISENSE_SWITCH(True, False) True
-
-// Don't tag unused variables as errors
-#pragma warning(default: 4101)
 
 // Needed for Resharper to detect the printf hidden in the lambda
 #undef UE_LOG
@@ -41,7 +39,6 @@
 #else
 #define INTELLISENSE_ONLY(...)
 #define INTELLISENSE_SKIP(...) __VA_ARGS__
-#define INTELLISENSE_SWITCH(True, False) False
 #endif
 
 // This is defined in the generated.h. It lets you use GetOuterASomeOuter. Resharper/intellisense are confused when it's used, so define it for them
@@ -53,19 +50,24 @@
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-extern VOXELCORE_API bool GVoxelProfilerInfiniteLoop;
+extern VOXELCORE_API bool GVoxelDisableSlowChecks;
 
 #if VOXEL_DEBUG
-#define checkVoxelSlow(x) check(x)
-#define checkfVoxelSlow(x, ...) checkf(x, ##__VA_ARGS__)
-#define ensureVoxelSlow(x) ensure(x)
-#define ensureMsgfVoxelSlow(x, ...) ensureMsgf(x, ##__VA_ARGS__)
-#define ensureVoxelSlowNoSideEffects(x) ensure(x)
-#define ensureMsgfVoxelSlowNoSideEffects(x, ...) ensureMsgf(x, ##__VA_ARGS__)
+#define checkVoxelSlow(x) check((x) || GVoxelDisableSlowChecks)
+#define checkfVoxelSlow(x, ...) checkf((x) || GVoxelDisableSlowChecks, ##__VA_ARGS__)
+#define ensureVoxelSlow(x) ensure((x) || GVoxelDisableSlowChecks)
+#define ensureMsgfVoxelSlow(x, ...) ensureMsgf((x) || GVoxelDisableSlowChecks, ##__VA_ARGS__)
+#define ensureVoxelSlowNoSideEffects(x) ensure((x) || GVoxelDisableSlowChecks)
+#define ensureMsgfVoxelSlowNoSideEffects(x, ...) ensureMsgf((x) || GVoxelDisableSlowChecks, ##__VA_ARGS__)
 #define VOXEL_ASSUME(...) check(__VA_ARGS__)
-#define VOXEL_DEBUG_ONLY(...) __VA_ARGS__
 #undef FORCEINLINE
-#define FORCEINLINE inline
+#define FORCEINLINE FORCEINLINE_DEBUGGABLE_ACTUAL
+#if PLATFORM_WINDOWS
+#define FORCEINLINE_ACTUAL __forceinline
+#else
+#define FORCEINLINE_ACTUAL
+#endif
+#define VOXEL_DEBUG_ONLY(...) __VA_ARGS__
 #else
 #define checkVoxelSlow(x)
 #define checkfVoxelSlow(x, ...)
@@ -75,6 +77,7 @@ extern VOXELCORE_API bool GVoxelProfilerInfiniteLoop;
 #define ensureMsgfVoxelSlowNoSideEffects(...)
 #define VOXEL_ASSUME(...) UE_ASSUME(__VA_ARGS__)
 #define VOXEL_DEBUG_ONLY(...)
+#define FORCEINLINE_ACTUAL FORCEINLINE
 #endif
 
 #if VOXEL_DEBUG
@@ -98,19 +101,11 @@ VOXELCORE_API uint64 VoxelHashString(const FStringView& Name);
 #define VOXEL_STATIC_HELPER_CHECK()
 #endif
 
-template<int32 IndexSize>
-struct TVoxelBytesToUnsignedType;
-
-template<> struct TVoxelBytesToUnsignedType<1>  { using Type = uint8; };
-template<> struct TVoxelBytesToUnsignedType<2> { using Type = uint16; };
-template<> struct TVoxelBytesToUnsignedType<4> { using Type = uint32; };
-template<> struct TVoxelBytesToUnsignedType<8> { using Type = uint64; };
-
 // Zero initialize static and check if it's 0
 // That way the static TLS logic is optimized out and this is compiled to a single mov + test
 // This works only if the initializer is deterministic & can be called multiple times
 #define VOXEL_STATIC_HELPER(InType) \
-	static TVoxelBytesToUnsignedType<sizeof(InType)>::Type StaticRawValue = 0; \
+	static TVoxelTypeForBytes<sizeof(InType)>::Type StaticRawValue = 0; \
 	VOXEL_STATIC_HELPER_CHECK(); \
 	InType& StaticValue = ReinterpretCastRef<InType>(StaticRawValue); \
 	if (!StaticRawValue)
@@ -143,25 +138,10 @@ FORCEINLINE const FName& VoxelStaticName(const T&)
 		return StaticValue; \
 	}())
 
-#define MAKE_TAG_64(Text) \
-	[] \
-	{ \
-		checkStatic(sizeof(Text) == 9); \
-		return \
-			(uint64(Text[0]) << 0 * 8) | \
-			(uint64(Text[1]) << 1 * 8) | \
-			(uint64(Text[2]) << 2 * 8) | \
-			(uint64(Text[3]) << 3 * 8) | \
-			(uint64(Text[4]) << 4 * 8) | \
-			(uint64(Text[5]) << 5 * 8) | \
-			(uint64(Text[6]) << 6 * 8) | \
-			(uint64(Text[7]) << 7 * 8); \
-	}()
-
 #define GET_MEMBER_NAME_STATIC(ClassName, MemberName) STATIC_FNAME(GET_MEMBER_NAME_STRING_CHECKED(ClassName, MemberName))
-#define GET_OWN_MEMBER_NAME(MemberName) GET_MEMBER_NAME_CHECKED(std::decay_t<decltype(*this)>, MemberName)
+#define GET_OWN_MEMBER_NAME(MemberName) GET_MEMBER_NAME_CHECKED(TDecay<decltype(*this)>::Type, MemberName)
 
-#define VOXEL_GET_TYPE(Value) std::decay_t<decltype(Value)>
+#define VOXEL_GET_TYPE(Value) typename TDecay<decltype(Value)>::Type
 #define VOXEL_THIS_TYPE VOXEL_GET_TYPE(*this)
 // This is needed in classes, where just doing class Name would fwd declare it in the class scope
 #define VOXEL_FWD_DECLARE_CLASS(Name) void PREPROCESSOR_JOIN(__VoxelDeclareDummy_, __LINE__)(class Name*);
@@ -231,18 +211,14 @@ struct VOXELCORE_API FVoxelConsoleSinkHelper
 
 // Unlike GENERATE_MEMBER_FUNCTION_CHECK, this supports inheritance
 // However, it doesn't do any signature check
-#define GENERATE_VOXEL_MEMBER_FUNCTION_CHECK(MemberName) \
-template<typename T> \
-struct THasMemberFunction_ ## MemberName \
-{ \
-private: \
-	template<typename OtherType> \
-	static int16 Test(decltype(&OtherType::MemberName)); \
-	template<typename> \
-	static int32 Test(...); \
-\
-public: \
-	static constexpr bool Value = sizeof(Test<T>(nullptr)) == sizeof(int16); \
+#define VOXEL_GENERATE_MEMBER_FUNCTION_CHECK(MemberName)		            \
+template <typename T>														\
+class THasMemberFunction_##MemberName										\
+{																			\
+	template <typename U> static char MemberTest(decltype(&U::MemberName));	\
+	template <typename U> static int32 MemberTest(...);						\
+public:																		\
+	enum { Value = sizeof(MemberTest<T>(nullptr)) == sizeof(char) };		\
 };
 
 #define VOXEL_FOLD_EXPRESSION(...) \
@@ -285,7 +261,7 @@ enum class EVoxelRunOnStartupPhase
 {
 	Game,
 	Editor,
-	EditorCommandlet,
+	EditorCook,
 	FirstTick
 };
 struct VOXELCORE_API FVoxelRunOnStartupPhaseHelper
@@ -306,8 +282,7 @@ struct VOXELCORE_API FVoxelRunOnStartupPhaseHelper
 // Will only run if GIsEditor is true
 #define VOXEL_RUN_ON_STARTUP_EDITOR(UniqueId) VOXEL_RUN_ON_STARTUP(UniqueId, Editor, 0)
 // Will run before any package PostLoad to work for cooker
-// Also useful to register editor styles for doc commandlet
-#define VOXEL_RUN_ON_STARTUP_EDITOR_COMMANDLET(UniqueId) VOXEL_RUN_ON_STARTUP(UniqueId, EditorCommandlet, 0)
+#define VOXEL_RUN_ON_STARTUP_EDITOR_COOK(UniqueId) VOXEL_RUN_ON_STARTUP(UniqueId, EditorCook, 0)
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -397,7 +372,7 @@ public:
 	FORCEINLINE bool operator<=(const TVoxelUniqueId& Other) const { return Id <= Other.Id; }
 	FORCEINLINE bool operator>=(const TVoxelUniqueId& Other) const { return Id >= Other.Id; }
 
-	FORCEINLINE friend uint32 GetTypeHash(const TVoxelUniqueId UniqueId)
+	FORCEINLINE friend uint32 GetTypeHash(TVoxelUniqueId UniqueId)
 	{
 	    return uint32(UniqueId.Id);
 	}
@@ -413,7 +388,7 @@ public:
 	}
 
 private:
-	FORCEINLINE TVoxelUniqueId(const uint64 Id)
+	FORCEINLINE TVoxelUniqueId(uint64 Id)
 		: Id(Id)
 	{
 		ensureVoxelSlow(IsValid());
@@ -432,8 +407,8 @@ private:
 	INTELLISENSE_ONLY(void VOXEL_APPEND_LINE(Dummy)(Name);) \
 	uint64 TVoxelUniqueId_MakeNew(class __ ## Name ##_Unique*) \
 	{ \
-		static FVoxelCounter64 Counter; \
-		return Counter.Increment_ReturnNew(); \
+		static FThreadSafeCounter64 Counter; \
+		return Counter.Increment(); \
 	}
 
 template<typename T>
@@ -460,7 +435,7 @@ public:
 		return Index != Other.Index;
 	}
 
-	FORCEINLINE friend uint32 GetTypeHash(const TVoxelIndex InIndex)
+	FORCEINLINE friend uint32 GetTypeHash(TVoxelIndex InIndex)
 	{
 	    return InIndex.Index;
 	}
@@ -468,7 +443,7 @@ public:
 protected:
 	int32 Index = -1;
 
-	FORCEINLINE TVoxelIndex(const int32 Index)
+	FORCEINLINE TVoxelIndex(int32 Index)
 		: Index(Index)
 	{
 	}
@@ -488,52 +463,52 @@ protected:
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-template<typename ToType, typename FromType, typename = std::enable_if_t<sizeof(FromType) == sizeof(ToType)>>
+template<typename ToType, typename FromType, typename = typename TEnableIf<sizeof(FromType) == sizeof(ToType)>::Type>
 FORCEINLINE ToType* ReinterpretCastPtr(FromType* From)
 {
 	return reinterpret_cast<ToType*>(From);
 }
-template<typename ToType, typename FromType, typename = std::enable_if_t<sizeof(FromType) == sizeof(ToType)>>
+template<typename ToType, typename FromType, typename = typename TEnableIf<sizeof(FromType) == sizeof(ToType)>::Type>
 FORCEINLINE const ToType* ReinterpretCastPtr(const FromType* From)
 {
 	return reinterpret_cast<const ToType*>(From);
 }
 
-template<typename ToType, typename FromType, typename = std::enable_if_t<sizeof(FromType) == sizeof(ToType)>>
+template<typename ToType, typename FromType, typename = typename TEnableIf<sizeof(FromType) == sizeof(ToType)>::Type>
 FORCEINLINE ToType& ReinterpretCastRef(FromType& From)
 {
 	return reinterpret_cast<ToType&>(From);
 }
-template<typename ToType, typename FromType, typename = std::enable_if_t<sizeof(FromType) == sizeof(ToType)>>
+template<typename ToType, typename FromType, typename = typename TEnableIf<sizeof(FromType) == sizeof(ToType)>::Type>
 FORCEINLINE const ToType& ReinterpretCastRef(const FromType& From)
 {
 	return reinterpret_cast<const ToType&>(From);
 }
 
-template<typename ToType, typename FromType, typename = std::enable_if_t<sizeof(FromType) == sizeof(ToType) && !TIsReferenceType<FromType>::Value>>
+template<typename ToType, typename FromType, typename = typename TEnableIf<sizeof(FromType) == sizeof(ToType) && !TIsReferenceType<FromType>::Value>::Type>
 FORCEINLINE ToType&& ReinterpretCastRef(FromType&& From)
 {
 	return reinterpret_cast<ToType&&>(From);
 }
 
-template<typename ToType, typename FromType, typename = std::enable_if_t<sizeof(FromType) == sizeof(ToType) && std::is_const_v<FromType> == std::is_const_v<ToType>>>
+template<typename ToType, typename FromType, typename = typename TEnableIf<sizeof(FromType) == sizeof(ToType) && std::is_const_v<FromType> == std::is_const_v<ToType>>::Type>
 FORCEINLINE TSharedPtr<ToType>& ReinterpretCastSharedPtr(TSharedPtr<FromType>& From)
 {
 	return ReinterpretCastRef<TSharedPtr<ToType>>(From);
 }
-template<typename ToType, typename FromType, typename = std::enable_if_t<sizeof(FromType) == sizeof(ToType) && std::is_const_v<FromType> == std::is_const_v<ToType>>>
+template<typename ToType, typename FromType, typename = typename TEnableIf<sizeof(FromType) == sizeof(ToType) && std::is_const_v<FromType> == std::is_const_v<ToType>>::Type>
 FORCEINLINE TSharedRef<ToType>& ReinterpretCastSharedPtr(TSharedRef<FromType>& From)
 {
 	return ReinterpretCastRef<TSharedRef<ToType>>(From);
 }
 
-template<typename ToType, typename FromType, typename = std::enable_if_t<sizeof(FromType) == sizeof(ToType) && std::is_const_v<FromType> == std::is_const_v<ToType>>>
+template<typename ToType, typename FromType, typename = typename TEnableIf<sizeof(FromType) == sizeof(ToType) && std::is_const_v<FromType> == std::is_const_v<ToType>>::Type>
 FORCEINLINE const TSharedPtr<ToType>& ReinterpretCastSharedPtr(const TSharedPtr<FromType>& From)
 {
 	return ReinterpretCastRef<TSharedPtr<ToType>>(From);
 }
-template<typename ToType, typename FromType, typename = std::enable_if_t<sizeof(FromType) == sizeof(ToType) && std::is_const_v<FromType> == std::is_const_v<ToType>>>
-FORCEINLINE const TSharedRef<ToType>& ReinterpretCastSharedRef(const TSharedRef<FromType>& From)
+template<typename ToType, typename FromType, typename = typename TEnableIf<sizeof(FromType) == sizeof(ToType) && std::is_const_v<FromType> == std::is_const_v<ToType>>::Type>
+FORCEINLINE const TSharedRef<ToType>& ReinterpretCastSharedPtr(const TSharedRef<FromType>& From)
 {
 	return ReinterpretCastRef<TSharedRef<ToType>>(From);
 }
@@ -542,23 +517,23 @@ FORCEINLINE const TSharedRef<ToType>& ReinterpretCastSharedRef(const TSharedRef<
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-template<typename ToType, typename FromType, typename Allocator, typename = std::enable_if_t<sizeof(FromType) == sizeof(ToType)>>
+template<typename ToType, typename FromType, typename Allocator, typename = typename TEnableIf<sizeof(FromType) == sizeof(ToType)>::Type>
 FORCEINLINE TArray<ToType, Allocator>& ReinterpretCastArray(TArray<FromType, Allocator>& Array)
 {
 	return reinterpret_cast<TArray<ToType, Allocator>&>(Array);
 }
-template<typename ToType, typename FromType, typename Allocator, typename = std::enable_if_t<sizeof(FromType) == sizeof(ToType)>>
+template<typename ToType, typename FromType, typename Allocator, typename = typename TEnableIf<sizeof(FromType) == sizeof(ToType)>::Type>
 FORCEINLINE const TArray<ToType, Allocator>& ReinterpretCastArray(const TArray<FromType, Allocator>& Array)
 {
 	return reinterpret_cast<const TArray<ToType, Allocator>&>(Array);
 }
 
-template<typename ToType, typename FromType, typename Allocator, typename = std::enable_if_t<sizeof(FromType) == sizeof(ToType)>>
+template<typename ToType, typename FromType, typename Allocator, typename = typename TEnableIf<sizeof(FromType) == sizeof(ToType)>::Type>
 FORCEINLINE TArray<ToType, Allocator>&& ReinterpretCastArray(TArray<FromType, Allocator>&& Array)
 {
 	return reinterpret_cast<TArray<ToType, Allocator>&&>(Array);
 }
-template<typename ToType, typename FromType, typename Allocator, typename = std::enable_if_t<sizeof(FromType) == sizeof(ToType)>>
+template<typename ToType, typename FromType, typename Allocator, typename = typename TEnableIf<sizeof(FromType) == sizeof(ToType)>::Type>
 FORCEINLINE const TArray<ToType, Allocator>&& ReinterpretCastArray(const TArray<FromType, Allocator>&& Array)
 {
 	return reinterpret_cast<const TArray<ToType, Allocator>&&>(Array);
@@ -568,14 +543,14 @@ FORCEINLINE const TArray<ToType, Allocator>&& ReinterpretCastArray(const TArray<
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-template<typename ToType, typename ToAllocator, typename FromType, typename Allocator, typename = std::enable_if_t<sizeof(FromType) != sizeof(ToType)>>
+template<typename ToType, typename ToAllocator, typename FromType, typename Allocator, typename = typename TEnableIf<sizeof(FromType) != sizeof(ToType)>::Type>
 FORCEINLINE TArray<ToType, ToAllocator> ReinterpretCastArray_Copy(const TArray<FromType, Allocator>& Array)
 {
 	const int64 NumBytes = Array.Num() * sizeof(FromType);
 	check(NumBytes % sizeof(ToType) == 0);
 	return TArray<ToType, Allocator>(reinterpret_cast<const ToType*>(Array.GetData()), NumBytes / sizeof(ToType));
 }
-template<typename ToType, typename FromType, typename Allocator, typename = std::enable_if_t<sizeof(FromType) != sizeof(ToType)>>
+template<typename ToType, typename FromType, typename Allocator, typename = typename TEnableIf<sizeof(FromType) != sizeof(ToType)>::Type>
 FORCEINLINE TArray<ToType, Allocator> ReinterpretCastArray_Copy(const TArray<FromType, Allocator>& Array)
 {
 	return ReinterpretCastArray_Copy<ToType, Allocator>(Array);
@@ -585,23 +560,23 @@ FORCEINLINE TArray<ToType, Allocator> ReinterpretCastArray_Copy(const TArray<Fro
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-template<typename ToType, typename FromType, typename Allocator, typename = std::enable_if_t<sizeof(FromType) == sizeof(ToType)>>
+template<typename ToType, typename FromType, typename Allocator, typename = typename TEnableIf<sizeof(FromType) == sizeof(ToType)>::Type>
 FORCEINLINE TSet<ToType, DefaultKeyFuncs<ToType>, Allocator>& ReinterpretCastSet(TSet<FromType, DefaultKeyFuncs<FromType>, Allocator>& Set)
 {
 	return reinterpret_cast<TSet<ToType, DefaultKeyFuncs<ToType>, Allocator>&>(Set);
 }
-template<typename ToType, typename FromType, typename Allocator, typename = std::enable_if_t<sizeof(FromType) == sizeof(ToType)>>
+template<typename ToType, typename FromType, typename Allocator, typename = typename TEnableIf<sizeof(FromType) == sizeof(ToType)>::Type>
 FORCEINLINE const TSet<ToType, DefaultKeyFuncs<ToType>, Allocator>& ReinterpretCastSet(const TSet<FromType, DefaultKeyFuncs<FromType>, Allocator>& Set)
 {
 	return reinterpret_cast<const TSet<ToType, DefaultKeyFuncs<ToType>, Allocator>&>(Set);
 }
 
-template<typename ToType, typename FromType, typename Allocator, typename = std::enable_if_t<sizeof(FromType) == sizeof(ToType)>>
+template<typename ToType, typename FromType, typename Allocator, typename = typename TEnableIf<sizeof(FromType) == sizeof(ToType)>::Type>
 FORCEINLINE TSet<ToType, DefaultKeyFuncs<ToType>, Allocator>&& ReinterpretCastSet(TSet<FromType, DefaultKeyFuncs<FromType>, Allocator>&& Set)
 {
 	return reinterpret_cast<TSet<ToType, DefaultKeyFuncs<ToType>, Allocator>&&>(Set);
 }
-template<typename ToType, typename FromType, typename Allocator, typename = std::enable_if_t<sizeof(FromType) == sizeof(ToType)>>
+template<typename ToType, typename FromType, typename Allocator, typename = typename TEnableIf<sizeof(FromType) == sizeof(ToType)>::Type>
 FORCEINLINE const TSet<ToType, DefaultKeyFuncs<ToType>, Allocator>&& ReinterpretCastSet(const TSet<FromType, DefaultKeyFuncs<FromType>, Allocator>&& Set)
 {
 	return reinterpret_cast<const TSet<ToType, DefaultKeyFuncs<ToType>, Allocator>&&>(Set);
@@ -1093,19 +1068,19 @@ struct TVoxelUFunctionOverride
 
 	struct FNativeFunctionRegistrar
 	{
-		FNativeFunctionRegistrar(UClass* Class, const ANSICHAR* InName, const FNativeFuncPtr InPointer)
+		FNativeFunctionRegistrar(UClass* Class, const ANSICHAR* InName, FNativeFuncPtr InPointer)
 		{
 			RegisterFunction(Class, InName, InPointer);
 		}
-		static void RegisterFunction(UClass* Class, const ANSICHAR* InName, const FNativeFuncPtr InPointer)
+		static void RegisterFunction(UClass* Class, const ANSICHAR* InName, FNativeFuncPtr InPointer)
 		{
 			::FNativeFunctionRegistrar::RegisterFunction(Class, InName, reinterpret_cast<::FNativeFuncPtr>(InPointer));
 		}
-		static void RegisterFunction(UClass* Class, const WIDECHAR* InName, const FNativeFuncPtr InPointer)
+		static void RegisterFunction(UClass* Class, const WIDECHAR* InName, FNativeFuncPtr InPointer)
 		{
 			::FNativeFunctionRegistrar::RegisterFunction(Class, InName, reinterpret_cast<::FNativeFuncPtr>(InPointer));
 		}
-		static void RegisterFunctions(UClass* Class, const FNameNativePtrPair* InArray, const int32 NumFunctions)
+		static void RegisterFunctions(UClass* Class, const FNameNativePtrPair* InArray, int32 NumFunctions)
 		{
 			::FNativeFunctionRegistrar::RegisterFunctions(Class, reinterpret_cast<const ::FNameNativePtrPair*>(InArray), NumFunctions);
 		}

@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelPlaceableItemUtilities.h"
 #include "VoxelEditorMinimal.h"
@@ -47,18 +47,18 @@ VOXEL_RUN_ON_STARTUP_EDITOR(RegisterVoxelPlaceableItems)
 
 	IPlacementModeModule& PlacementModeModule = IPlacementModeModule::Get();
 
-	ForEachObjectOfClass<UClass>([&](UClass& Class)
+	ForEachObjectOfClass<UClass>([&](UClass* Class)
 	{
-		if (Class.HasMetaDataHierarchical(STATIC_FNAME("VoxelPlaceableItem")))
+		if (Class->HasMetaDataHierarchical(STATIC_FNAME("VoxelPlaceableItem")))
 		{
 			UActorFactory* Factory = nullptr;
-			if (Class.IsChildOf<AVolume>())
+			if (Class->IsChildOf<AVolume>())
 			{
 				// Make sure the box volume factory is used for volumes
 				// TODO what about other actor types?
-				Factory = GEditor->FindActorFactoryByClassForActorClass(UActorFactoryBoxVolume::StaticClass(), &Class);
+				Factory = GEditor->FindActorFactoryByClassForActorClass(UActorFactoryBoxVolume::StaticClass(), Class);
 			}
-			PlacementModeModule.RegisterPlaceableItem(VoxelPlaceableItemHandle, MakeVoxelShared<FPlaceableItem>(Factory, FAssetData(&Class)));
+			PlacementModeModule.RegisterPlaceableItem(VoxelPlaceableItemHandle, MakeVoxelShared<FPlaceableItem>(Factory, FAssetData(Class)));
 		}
 	});
 
@@ -90,7 +90,7 @@ VOXEL_RUN_ON_STARTUP_EDITOR(UpdateVoxelPlaceableItemsSubMenus)
 		}
 
 		FToolMenuEntry* Entry = Section->FindEntry(VoxelPlaceableItemHandle);
-		if (!Entry)
+		if (!ensure(Entry))
 		{
 			return;
 		}

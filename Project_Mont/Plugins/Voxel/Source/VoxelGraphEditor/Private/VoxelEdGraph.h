@@ -1,48 +1,13 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelEditorMinimal.h"
-#include "VoxelGraph.h"
-#include "Nodes/VoxelGraphNode.h"
 #include "VoxelEdGraph.generated.h"
 
-UCLASS(Deprecated)
-class UDEPRECATED_VoxelGraphMacroParameterNode : public UVoxelGraphNode
-{
-	GENERATED_BODY()
-
-public:
-	UPROPERTY()
-	EVoxelGraphParameterType_DEPRECATED Type;
-
-	UPROPERTY()
-	FGuid Guid;
-
-	UPROPERTY()
-	FVoxelGraphParameter_DEPRECATED CachedParameter;
-};
-
-UENUM()
-enum class EVoxelGraphMacroType_DEPRECATED : uint8
-{
-	Macro,
-	Template,
-	RecursiveTemplate
-};
-
-UCLASS(Deprecated)
-class UDEPRECATED_VoxelGraphNode_Macro : public UVoxelGraphNode
-{
-	GENERATED_BODY()
-
-public:
-	UPROPERTY()
-	TObjectPtr<UVoxelGraph> GraphInterface;
-
-	UPROPERTY()
-	EVoxelGraphMacroType_DEPRECATED Type = EVoxelGraphMacroType_DEPRECATED::Macro;
-};
+class SGraphEditor;
+struct FVoxelGraphToolkit;
+struct FVoxelGraphDelayOnGraphChangedScope;
 
 UCLASS()
 class UVoxelEdGraph : public UEdGraph
@@ -56,23 +21,20 @@ public:
 	void MigrateIfNeeded();
 	void MigrateAndReconstructAll();
 
-	//~ Begin UEdGraph interface
-	virtual void NotifyGraphChanged(const FEdGraphEditAction& Action) override;
-	virtual void PostEditUndo() override;
+	//~ Begin UObject interface
+	virtual void PreEditChange(FProperty* PropertyAboutToChange) override;
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
-	//~ End UEdGraph interface
+	//~ End UObject interface
 
 private:
 	TWeakPtr<FVoxelGraphToolkit> WeakToolkit;
+	TArray<TSharedPtr<FVoxelGraphDelayOnGraphChangedScope>> DelayOnGraphChangedScopeStack;
 
 private:
 	using FVersion = DECLARE_VOXEL_VERSION
 	(
 		FirstVersion,
-		SplitInputSetterAndRemoveLocalVariablesDefault,
-		AddFeatureScaleAmplitudeToBaseNoises,
-		RemoveMacros,
-		AddClampedLerpNodes
+		SplitInputSetterAndRemoveLocalVariablesDefault
 	);
 
 	UPROPERTY()

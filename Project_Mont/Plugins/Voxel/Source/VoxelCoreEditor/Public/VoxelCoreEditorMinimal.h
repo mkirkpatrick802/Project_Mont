@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -7,7 +7,6 @@
 #include "DetailWidgetRow.h"
 #include "DetailLayoutBuilder.h"
 #include "DetailCategoryBuilder.h"
-#include "IDetailGroup.h"
 #include "IDetailCustomization.h"
 #include "IDetailChildrenBuilder.h"
 #include "EditorUndoClient.h"

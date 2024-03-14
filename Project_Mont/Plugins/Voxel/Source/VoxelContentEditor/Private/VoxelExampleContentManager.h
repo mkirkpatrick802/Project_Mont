@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -14,8 +14,6 @@ struct FVoxelExampleContent
 	FString Description;
 	TSharedPtr<TSharedPtr<ISlateBrushSource>> Thumbnail;
 	TSharedPtr<TSharedPtr<ISlateBrushSource>> Image;
-	FName Category;
-	TSet<FName> Tags;
 };
 
 class FVoxelExampleContentManager
@@ -25,8 +23,6 @@ public:
 
 	void OnExamplesReady(const FSimpleDelegate& OnReady);
 	TArray<TSharedPtr<FVoxelExampleContent>> GetExamples() const;
-
-	static FLinearColor GetContentTagColor(FName ContentTag);
 
 private:
 	TArray<TSharedPtr<FVoxelExampleContent>> ExampleContents;

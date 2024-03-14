@@ -1,8 +1,6 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelMinimal.h"
-#include "MaterialDomain.h"
-#include "Engine/Texture.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialInstanceDynamic.h"
 
@@ -18,15 +16,15 @@ DEFINE_VOXEL_INSTANCE_COUNTER(FVoxelMaterialRef);
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-struct FVoxelMaterialInstanceRef
+struct FVoxelInstanceRef
 {
-	TObjectPtr<UMaterialInstanceDynamic> Instance;
+	UMaterialInstanceDynamic* Instance = nullptr;
 };
 
 struct FVoxelInstancePool
 {
 	double LastAccessTime = 0;
-	TArray<TObjectPtr<UMaterialInstanceDynamic>> Instances;
+	TArray<UMaterialInstanceDynamic*> Instances;
 };
 
 class FVoxelMaterialRefManager : public FVoxelSingleton
@@ -35,7 +33,7 @@ public:
 	TSharedPtr<FVoxelMaterialRef> DefaultMaterial;
 
 	TVoxelArray<TWeakPtr<FVoxelMaterialRef>> MaterialRefs;
-	TVoxelSet<TSharedPtr<FVoxelMaterialInstanceRef>> MaterialInstanceRefs;
+	TVoxelSet<TSharedPtr<FVoxelInstanceRef>> InstanceRefs;
 
 	// We don't want to keep the parents alive
 	TVoxelMap<TWeakObjectPtr<UMaterialInterface>, FVoxelInstancePool> InstancePools;
@@ -78,9 +76,9 @@ public:
 				Collector.AddReferencedObject(Material->Material);
 			}
 		}
-		for (const TSharedPtr<FVoxelMaterialInstanceRef>& MaterialInstanceRef : MaterialInstanceRefs)
+		for (const TSharedPtr<FVoxelInstanceRef>& InstanceRef : InstanceRefs)
 		{
-			Collector.AddReferencedObject(MaterialInstanceRef->Instance);
+			Collector.AddReferencedObject(InstanceRef->Instance);
 		}
 
 		for (auto& It : InstancePools)
@@ -140,7 +138,7 @@ public:
 		INC_VOXEL_COUNTER(STAT_VoxelNumMaterialInstancesPooled);
 	}
 };
-FVoxelMaterialRefManager* GVoxelMaterialRefManager = new FVoxelMaterialRefManager();
+FVoxelMaterialRefManager* GVoxelMaterialRefManager = MakeVoxelSingleton(FVoxelMaterialRefManager);
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -196,14 +194,14 @@ TSharedRef<FVoxelMaterialRef> FVoxelMaterialRef::MakeInstance(UMaterialInterface
 		Instance->CopyParameterOverrides(ParentInstance);
 	}
 
-	const TSharedRef<FVoxelMaterialInstanceRef> MaterialInstanceRef = MakeVoxelShared<FVoxelMaterialInstanceRef>();
-	MaterialInstanceRef->Instance = Instance;
-	GVoxelMaterialRefManager->MaterialInstanceRefs.Add(MaterialInstanceRef);
+	const TSharedRef<FVoxelInstanceRef> InstanceRef = MakeVoxelShared<FVoxelInstanceRef>();
+	InstanceRef->Instance = Instance;
+	GVoxelMaterialRefManager->InstanceRefs.Add(InstanceRef);
 
 	const TSharedRef<FVoxelMaterialRef> MaterialRef = MakeVoxelShareable(new (GVoxelMemory) FVoxelMaterialRef());
 	MaterialRef->Material = Instance;
 	MaterialRef->WeakMaterial = Instance;
-	MaterialRef->MaterialInstanceRef = MaterialInstanceRef;
+	MaterialRef->InstanceRef = InstanceRef;
 	GVoxelMaterialRefManager->MaterialRefs.Add(MaterialRef);
 
 	if (ParentInstance)
@@ -283,17 +281,17 @@ void FVoxelMaterialRef::RefreshInstance(UMaterialInstanceDynamic& Instance)
 
 FVoxelMaterialRef::~FVoxelMaterialRef()
 {
-	if (!MaterialInstanceRef)
+	if (!InstanceRef)
 	{
 		return;
 	}
 
-	RunOnGameThread([MaterialInstanceRef = MaterialInstanceRef]
+	FVoxelUtilities::RunOnGameThread([InstanceRef = InstanceRef]
 	{
 		check(IsInGameThread());
 
-		ensure(GVoxelMaterialRefManager->MaterialInstanceRefs.Remove(MaterialInstanceRef));
-		GVoxelMaterialRefManager->ReturnInstanceToPool(MaterialInstanceRef->Instance);
+		ensure(GVoxelMaterialRefManager->InstanceRefs.Remove(InstanceRef));
+		GVoxelMaterialRefManager->ReturnInstanceToPool(InstanceRef->Instance);
 	});
 }
 
@@ -316,7 +314,8 @@ void FVoxelMaterialRef::SetScalarParameter_GameThread(const FName Name, const fl
 		return;
 	}
 
-	ScalarParameters.Add_EnsureNew(Name, Value);
+	ensure(!ScalarParameters.Contains(Name));
+	ScalarParameters.Add(Name, Value);
 
 	UMaterialInstanceDynamic* Instance = Cast<UMaterialInstanceDynamic>(GetMaterial());
 	if (!ensure(Instance))
@@ -337,7 +336,8 @@ void FVoxelMaterialRef::SetVectorParameter_GameThread(const FName Name, const FV
 		return;
 	}
 
-	VectorParameters.Add_EnsureNew(Name, Value);
+	ensure(!VectorParameters.Contains(Name));
+	VectorParameters.Add(Name, Value);
 
 	UMaterialInstanceDynamic* Instance = Cast<UMaterialInstanceDynamic>(GetMaterial());
 	if (!ensure(Instance))
@@ -358,7 +358,8 @@ void FVoxelMaterialRef::SetTextureParameter_GameThread(const FName Name, UTextur
 		return;
 	}
 
-	TextureParameters.Add_EnsureNew(Name, Value);
+	ensure(!TextureParameters.Contains(Name));
+	TextureParameters.Add(Name, Value);
 
 	UMaterialInstanceDynamic* Instance = Cast<UMaterialInstanceDynamic>(GetMaterial());
 	if (!ensure(Instance))
@@ -379,11 +380,12 @@ void FVoxelMaterialRef::SetDynamicParameter_GameThread(const FName Name, const T
 		return;
 	}
 
-	DynamicParameters.Add_EnsureNew(Name, Value);
+	ensure(!DynamicParameters.Contains(Name));
+	DynamicParameters.Add(Name, Value);
 
 	Value->AddOnChanged(MakeWeakPtrDelegate(this, [this, Name, WeakValue = MakeWeakPtr(Value)]
 	{
-		RunOnGameThread(MakeWeakPtrLambda(this, [this, Name, WeakValue]
+		FVoxelUtilities::RunOnGameThread(MakeWeakPtrLambda(this, [this, Name, WeakValue]
 		{
 			const TSharedPtr<FVoxelDynamicMaterialParameter> PinnedValue = WeakValue.Pin();
 			if (!ensure(PinnedValue))

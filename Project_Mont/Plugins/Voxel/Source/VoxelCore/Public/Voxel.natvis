@@ -3,7 +3,7 @@
 
   <!-- FVoxelGraphNodeRef visualizer -->
   <Type Name="FVoxelGraphNodeRef">
-    <DisplayString>{EdGraphNodeTitle,sb} - {NodeId}</DisplayString>
+    <DisplayString>{DebugName}</DisplayString>
   </Type>
 
   <!-- FVoxelPinType visualizer -->
@@ -17,10 +17,10 @@
     <DisplayString Condition="bIsBuffer &amp;&amp; bIsBufferArray &amp;&amp; InternalType == 6">int64 (array)</DisplayString>
     <DisplayString Condition="bIsBuffer &amp;&amp; bIsBufferArray &amp;&amp; InternalType == 7">name (array)</DisplayString>
     <DisplayString Condition="bIsBuffer &amp;&amp; bIsBufferArray &amp;&amp; InternalType == 8 &amp;&amp; !PrivateInternalField.DebugPtr">uint8 (array)</DisplayString>
-    <DisplayString Condition="bIsBuffer &amp;&amp; bIsBufferArray &amp;&amp; InternalType == 8 &amp;&amp; PrivateInternalField.DebugPtr">{PrivateInternalField.DebugPtr->NamePrivate,sb} (array)</DisplayString>
-    <DisplayString Condition="bIsBuffer &amp;&amp; bIsBufferArray &amp;&amp; InternalType == 9">{PrivateInternalField.DebugPtr->NamePrivate,sb} (class array)</DisplayString>
-    <DisplayString Condition="bIsBuffer &amp;&amp; bIsBufferArray &amp;&amp; InternalType == 10">{PrivateInternalField.DebugPtr->NamePrivate,sb} (array)</DisplayString>
-    <DisplayString Condition="bIsBuffer &amp;&amp; bIsBufferArray &amp;&amp; InternalType == 11">F{PrivateInternalField.DebugPtr->NamePrivate,sb} (array)</DisplayString>
+    <DisplayString Condition="bIsBuffer &amp;&amp; bIsBufferArray &amp;&amp; InternalType == 8 &amp;&amp; PrivateInternalField.DebugPtr">{PrivateInternalField->NamePrivate,sb} (array)</DisplayString>
+    <DisplayString Condition="bIsBuffer &amp;&amp; bIsBufferArray &amp;&amp; InternalType == 9">{PrivateInternalField->NamePrivate,sb} (class array)</DisplayString>
+    <DisplayString Condition="bIsBuffer &amp;&amp; bIsBufferArray &amp;&amp; InternalType == 10">{PrivateInternalField->NamePrivate,sb} (array)</DisplayString>
+    <DisplayString Condition="bIsBuffer &amp;&amp; bIsBufferArray &amp;&amp; InternalType == 11">F{PrivateInternalField->NamePrivate,sb} (array)</DisplayString>
 
     <DisplayString Condition="bIsBuffer &amp;&amp; !bIsBufferArray &amp;&amp; InternalType == 0">null (buffer)</DisplayString>
     <DisplayString Condition="bIsBuffer &amp;&amp; !bIsBufferArray &amp;&amp; InternalType == 1">wildcard (buffer)</DisplayString>
@@ -31,10 +31,10 @@
     <DisplayString Condition="bIsBuffer &amp;&amp; !bIsBufferArray &amp;&amp; InternalType == 6">int64 (buffer)</DisplayString>
     <DisplayString Condition="bIsBuffer &amp;&amp; !bIsBufferArray &amp;&amp; InternalType == 7">name (buffer)</DisplayString>
     <DisplayString Condition="bIsBuffer &amp;&amp; !bIsBufferArray &amp;&amp; InternalType == 8 &amp;&amp; !PrivateInternalField.DebugPtr">uint8 (buffer)</DisplayString>
-    <DisplayString Condition="bIsBuffer &amp;&amp; !bIsBufferArray &amp;&amp; InternalType == 8 &amp;&amp; PrivateInternalField.DebugPtr">{PrivateInternalField.DebugPtr->NamePrivate,sb} (buffer)</DisplayString>
-    <DisplayString Condition="bIsBuffer &amp;&amp; !bIsBufferArray &amp;&amp; InternalType == 9">{PrivateInternalField.DebugPtr->NamePrivate,sb} (class buffer)</DisplayString>
-    <DisplayString Condition="bIsBuffer &amp;&amp; !bIsBufferArray &amp;&amp; InternalType == 10">{PrivateInternalField.DebugPtr->NamePrivate,sb} (buffer)</DisplayString>
-    <DisplayString Condition="bIsBuffer &amp;&amp; !bIsBufferArray &amp;&amp; InternalType == 11">F{PrivateInternalField.DebugPtr->NamePrivate,sb} (buffer)</DisplayString>
+    <DisplayString Condition="bIsBuffer &amp;&amp; !bIsBufferArray &amp;&amp; InternalType == 8 &amp;&amp; PrivateInternalField.DebugPtr">{PrivateInternalField->NamePrivate,sb} (buffer)</DisplayString>
+    <DisplayString Condition="bIsBuffer &amp;&amp; !bIsBufferArray &amp;&amp; InternalType == 9">{PrivateInternalField->NamePrivate,sb} (class buffer)</DisplayString>
+    <DisplayString Condition="bIsBuffer &amp;&amp; !bIsBufferArray &amp;&amp; InternalType == 10">{PrivateInternalField->NamePrivate,sb} (buffer)</DisplayString>
+    <DisplayString Condition="bIsBuffer &amp;&amp; !bIsBufferArray &amp;&amp; InternalType == 11">F{PrivateInternalField->NamePrivate,sb} (buffer)</DisplayString>
 
     <DisplayString Condition="!bIsBuffer &amp;&amp; InternalType == 0">null</DisplayString>
     <DisplayString Condition="!bIsBuffer &amp;&amp; InternalType == 1">wildcard</DisplayString>
@@ -45,10 +45,10 @@
     <DisplayString Condition="!bIsBuffer &amp;&amp; InternalType == 6">int64</DisplayString>
     <DisplayString Condition="!bIsBuffer &amp;&amp; InternalType == 7">name</DisplayString>
     <DisplayString Condition="!bIsBuffer &amp;&amp; InternalType == 8 &amp;&amp; !PrivateInternalField.DebugPtr">uint8</DisplayString>
-    <DisplayString Condition="!bIsBuffer &amp;&amp; InternalType == 8 &amp;&amp; PrivateInternalField.DebugPtr">{PrivateInternalField.DebugPtr->NamePrivate,sb}</DisplayString>
-    <DisplayString Condition="!bIsBuffer &amp;&amp; InternalType == 9">{PrivateInternalField.DebugPtr->NamePrivate,sb} (class)</DisplayString>
-    <DisplayString Condition="!bIsBuffer &amp;&amp; InternalType == 10">{PrivateInternalField.DebugPtr->NamePrivate,sb}</DisplayString>
-    <DisplayString Condition="!bIsBuffer &amp;&amp; InternalType == 11">F{PrivateInternalField.DebugPtr->NamePrivate,sb}</DisplayString>
+    <DisplayString Condition="!bIsBuffer &amp;&amp; InternalType == 8 &amp;&amp; PrivateInternalField.DebugPtr">{PrivateInternalField->NamePrivate,sb}</DisplayString>
+    <DisplayString Condition="!bIsBuffer &amp;&amp; InternalType == 9">{PrivateInternalField->NamePrivate,sb} (class)</DisplayString>
+    <DisplayString Condition="!bIsBuffer &amp;&amp; InternalType == 10">{PrivateInternalField->NamePrivate,sb}</DisplayString>
+    <DisplayString Condition="!bIsBuffer &amp;&amp; InternalType == 11">F{PrivateInternalField->NamePrivate,sb}</DisplayString>
   </Type>
 
   <!-- FVoxelTerminalPinValue visualizer -->
@@ -114,30 +114,6 @@
     </Expand>
   </Type>
 
-  <!-- FVoxelParameterPath visualizer -->
-  <Type Name="FVoxelParameterPath">
-    <DisplayString Condition="Guids.ArrayNum == 0">Empty</DisplayString>
-    <DisplayString Condition="Guids.ArrayNum == 1">{Guids.AllocatorInstance.InlineData[0]}</DisplayString>
-    <DisplayString Condition="Guids.ArrayNum == 2">{Guids.AllocatorInstance.InlineData[0]} {Guids.AllocatorInstance.InlineData[1]}</DisplayString>
-    <DisplayString Condition="Guids.ArrayNum == 3">{Guids.AllocatorInstance.InlineData[0]} {Guids.AllocatorInstance.InlineData[1]} {Guids.AllocatorInstance.InlineData[2]}</DisplayString>
-    <DisplayString Condition="Guids.ArrayNum > 0">{Guids}</DisplayString>
-    <Expand>
-      <ExpandedItem>Guids</ExpandedItem>
-    </Expand>
-  </Type>
-
-  <!-- TVoxelChunkedArray visualizer -->
-  <Type Name="TVoxelChunkedArray&lt;*&gt;">
-    <DisplayString>Num={ArrayNum}</DisplayString>
-    <Expand>
-      <IndexListItems>
-        <Size>ArrayNum</Size>
-        <ValueNode Condition="!PrivateChunks.AllocatorInstance.SecondaryData.Data">(($T1**)PrivateChunks.AllocatorInstance.InlineData)[$i / NumPerChunk][$i % NumPerChunk]</ValueNode>
-        <ValueNode Condition="PrivateChunks.AllocatorInstance.SecondaryData.Data">(($T1**)PrivateChunks.AllocatorInstance.SecondaryData.Data)[$i / NumPerChunk][$i % NumPerChunk]</ValueNode>
-      </IndexListItems>
-    </Expand>
-  </Type>
-
   <!-- TVoxelBufferStorage visualizer -->
   <Type Name="TVoxelBufferStorage&lt;*&gt;">
     <DisplayString>Num={ArrayNum}</DisplayString>
@@ -187,11 +163,11 @@
     </Expand>
   </Type>
 
-  <!-- FVoxelMaterialBlendingBuffer visualizer -->
-  <Type Name="FVoxelMaterialBlendingBuffer">
-    <DisplayString>{*(FVoxelMaterialBlendingBufferStorage*)PrivateStorage.Object}</DisplayString>
+  <!-- FVoxelMaterialDefinitionBuffer visualizer -->
+  <Type Name="FVoxelMaterialDefinitionBuffer">
+    <DisplayString>{*(FVoxelMaterialDefinitionBufferStorage*)PrivateStorage.Object}</DisplayString>
     <Expand>
-      <ExpandedItem>*(FVoxelMaterialBlendingBufferStorage*)PrivateStorage.Object</ExpandedItem>
+      <ExpandedItem>*(FVoxelMaterialDefinitionBufferStorage*)PrivateStorage.Object</ExpandedItem>
     </Expand>
   </Type>
 
@@ -221,16 +197,16 @@
 
   <!-- FVoxelCallstack visualizer -->
   <Type Name="FVoxelCallstack">
-    <DisplayString>{NodeRef}</DisplayString>
+    <DisplayString>{Node}</DisplayString>
     <Expand>
       <CustomListItems>
         <Variable Name="Self" InitialValue="Parent.Object"/>
         <Loop>
           <If Condition="Self == Parent.Object">
-            <Item>NodeRef</Item>
+            <Item>Node</Item>
           </If>
           <If Condition="Self != nullptr">
-            <Item>Self->NodeRef</Item>
+            <Item>Self->Node</Item>
           </If>
           <Exec>Self = Self->Parent.Object</Exec>
         </Loop>
@@ -243,23 +219,22 @@
     <DisplayString>Label={WeakRootComponent->OwnerPrivate->ActorLabel,sb} Graph={GraphPath,sb}</DisplayString>
   </Type>
 
+  <!-- FVoxelMaterialDefinitionRef visualizer -->
+  <Type Name="FVoxelMaterialDefinitionRef">
+    <DisplayString Condition="Index == 0">null ({Index})</DisplayString>
+    <DisplayString Condition="Index == 65535">Invalid ({Index})</DisplayString>
+    <DisplayString Condition="Index != 0 &amp;&amp; Index != 65535">{((UVoxelMaterialDefinitionInterface**)UnrealEditor-VoxelGraphCore-Win64-DebugGame.dll!GVoxelMaterialDefinitionManager->Materials.AllocatorInstance.Data)[Index]->NamePrivate,sb} Index={Index}</DisplayString>
+    <Expand>
+      <ExpandedItem Condition="Index != 0 &amp;&amp; Index != 65535">*((UVoxelMaterialDefinitionInterface**)UnrealEditor-VoxelGraphCore-Win64-DebugGame.dll!GVoxelMaterialDefinitionManager->Materials.AllocatorInstance.Data)[Index]</ExpandedItem>
+    </Expand>
+  </Type>
+
   <!-- FVoxelTransformRef visualizer -->
   <Type Name="FVoxelTransformRef">
     <DisplayString Condition="!Impl.Object">Identity</DisplayString>
     <DisplayString Condition="Impl.Object">{((UnrealEditor-VoxelGraphCore-Win64-DebugGame.dll!FVoxelTransformRefImpl*)Impl.Object)->Name,sb}</DisplayString>
     <Expand>
       <ExpandedItem Condition="Impl.Object">((UnrealEditor-VoxelGraphCore-Win64-DebugGame.dll!FVoxelTransformRefImpl*)Impl.Object)->Transform.M</ExpandedItem>
-    </Expand>
-  </Type>
-
-  <!-- FVoxelFutureValue visualizer -->
-  <Type Name="FVoxelFutureValue">
-    <DisplayString Condition="!State.Object">null</DisplayString>
-    <DisplayString Condition="State.Object &amp;&amp; State.Object->Value.Type.InternalType == 0">Pending Type={State.Object->Type}</DisplayString>
-    <DisplayString Condition="State.Object &amp;&amp; State.Object->Value.Type.InternalType != 0">{State.Object->Value}</DisplayString>
-    <Expand>
-      <ExpandedItem Condition="State.Object &amp;&amp; State.Object->Value.Type.InternalType != 0 &amp;&amp; !State.Object->Value.Type.bIsBuffer &amp;&amp; State.Object->Value.Type.InternalType != 11">State.Object->Value</ExpandedItem>
-      <ExpandedItem Condition="State.Object &amp;&amp; (State.Object->Value.Type.bIsBuffer || State.Object->Value.Type.InternalType == 11)">*(FVoxelVirtualStruct*)State.Object->Value.SharedStruct.Object</ExpandedItem>
     </Expand>
   </Type>
 
@@ -290,22 +265,16 @@
   <Type Name="TVoxelBitArray&lt;*&gt;">
     <DisplayString>Num={NumBits}, Max={MaxBits}</DisplayString>
     <Expand>
-      <IndexListItems>
-        <Size>NumBits</Size>
-        <ValueNode>(((uint32*)AllocatorInstance.Data)[$i / 32] &gt;&gt; ($i % 32)) &amp; 1,d</ValueNode>
-      </IndexListItems>
+      <ArrayItems>
+        <Size>(NumBits + 31) / 32</Size>
+        <ValuePointer>(FVoxelBitArrayVisualizerEntry*)AllocatorInstance.Data</ValuePointer>
+      </ArrayItems>
     </Expand>
   </Type>
 
-  <!-- TVoxelStaticBitArray visualizer -->
-  <Type Name="TVoxelStaticBitArray&lt;*&gt;">
-    <DisplayString>Num={$T1,d}</DisplayString>
-    <Expand>
-      <IndexListItems>
-        <Size>$T1</Size>
-        <ValueNode>(((uint32*)Array.Data)[$i / 32] &gt;&gt; ($i % 32)) &amp; 1,d</ValueNode>
-      </IndexListItems>
-    </Expand>
+  <!-- FVoxelBitArrayVisualizerEntry visualizer -->
+  <Type Name="FVoxelBitArrayVisualizerEntry">
+    <DisplayString>{Bit0}{Bit1}{Bit2}{Bit3}{Bit4}{Bit5}{Bit6}{Bit7}{Bit8}{Bit9}{Bit10}{Bit11}{Bit12}{Bit13}{Bit14}{Bit15}{Bit16}{Bit17}{Bit18}{Bit19}{Bit20}{Bit21}{Bit22}{Bit23}{Bit24}{Bit25}{Bit26}{Bit27}{Bit28}{Bit29}{Bit30}{Bit31}</DisplayString>
   </Type>
 
   <!-- TVoxelPointerOctree::FChildrenPtr visualizer -->
@@ -356,45 +325,6 @@
     <DisplayString Condition = "ScriptStruct != nullptr">Type=F{ScriptStruct->NamePrivate}</DisplayString>
     <Expand>
       <ExpandedItem Condition="ScriptStruct != nullptr">*($T1*)StructMemory</ExpandedItem>
-    </Expand>
-  </Type>
-
-  <!-- TVoxelSetElement visualizer -->
-  <Type Name="TVoxelSetElement&lt;*&gt;">
-    <DisplayString>{Value}</DisplayString>
-    <Expand>
-      <ExpandedItem>Value</ExpandedItem>
-    </Expand>
-  </Type>
-
-  <!-- TVoxelSet visualizer -->
-  <Type Name="TVoxelSet&lt;*&gt;">
-    <DisplayString Condition="Elements.ArrayNum == 0">Empty</DisplayString>
-    <DisplayString Condition="Elements.ArrayNum &lt; 0">Invalid</DisplayString>
-    <DisplayString Condition="Elements.ArrayMax &lt; Elements.ArrayNum">Invalid</DisplayString>
-    <DisplayString Condition="Elements.ArrayMax &gt;= Elements.ArrayNum">Num={Elements.ArrayNum}</DisplayString>
-    <Expand>
-      <ExpandedItem>Elements</ExpandedItem>
-    </Expand>
-  </Type>
-
-  <!-- TVoxelMapElement visualizer -->
-  <Type Name="TVoxelMapElement&lt;*&gt;">
-    <DisplayString>{Key} -&gt; {Value}</DisplayString>
-    <Expand>
-      <Item Name="Key">Key</Item>
-      <Item Name="Value">Value</Item>
-    </Expand>
-  </Type>
-
-  <!-- TVoxelMap visualizer -->
-  <Type Name="TVoxelMap&lt;*&gt;">
-    <DisplayString Condition="Elements.ArrayNum == 0">Empty</DisplayString>
-    <DisplayString Condition="Elements.ArrayNum &lt; 0">Invalid</DisplayString>
-    <DisplayString Condition="Elements.ArrayMax &lt; Elements.ArrayNum">Invalid</DisplayString>
-    <DisplayString Condition="Elements.ArrayMax &gt;= Elements.ArrayNum">Num={Elements.ArrayNum}</DisplayString>
-    <Expand>
-      <ExpandedItem>Elements</ExpandedItem>
     </Expand>
   </Type>
 

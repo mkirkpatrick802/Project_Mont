@@ -1,16 +1,13 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelMinimal.h"
 #include "VoxelParameter.h"
-#include "VoxelParameterOverridesOwner.h"
-#include "VoxelParameterOverrideCollection_DEPRECATED.h"
+#include "VoxelGraphInterface.h"
 #include "VoxelGraph.generated.h"
 
-struct FVoxelGraphMetadata;
-class UVoxelTerminalGraph;
-class UVoxelParameterContainer_DEPRECATED;
+class UVoxelRuntimeGraph;
 
 USTRUCT()
 struct VOXELGRAPHCORE_API FVoxelEditedDocumentInfo
@@ -18,26 +15,47 @@ struct VOXELGRAPHCORE_API FVoxelEditedDocumentInfo
 	GENERATED_BODY()
 
 	UPROPERTY()
-	TSoftObjectPtr<UEdGraph> EdGraph;
+	FSoftObjectPath EditedObjectPath;
 
 	UPROPERTY()
-	FVector2D ViewLocation = FVector2D::ZeroVector;
+	FVector2D SavedViewOffset = FVector2D::ZeroVector;
 
 	UPROPERTY()
-	float ZoomAmount = -1.f;
+	float SavedZoomAmount = -1.f;
+
+	FVoxelEditedDocumentInfo() = default;
+
+	explicit FVoxelEditedDocumentInfo(const UObject* EditedObject)
+		: EditedObjectPath(EditedObject)
+	{
+	}
+
+	FVoxelEditedDocumentInfo(
+		const UObject* EditedObject,
+		const FVector2D& SavedViewOffset,
+		const float SavedZoomAmount)
+		: EditedObjectPath(EditedObject)
+		, SavedViewOffset(SavedViewOffset)
+		, SavedZoomAmount(SavedZoomAmount)
+	{
+	}
 };
 
 UENUM()
-enum class EVoxelGraphParameterType_DEPRECATED
+enum class EVoxelGraphParameterType
 {
 	Parameter,
 	Input,
 	Output,
 	LocalVariable
 };
+ENUM_RANGE_BY_FIRST_AND_LAST(
+	EVoxelGraphParameterType,
+	EVoxelGraphParameterType::Parameter,
+	EVoxelGraphParameterType::LocalVariable);
 
 USTRUCT()
-struct VOXELGRAPHCORE_API FVoxelGraphParameter_DEPRECATED : public FVoxelParameter
+struct VOXELGRAPHCORE_API FVoxelGraphParameter : public FVoxelParameter
 {
 	GENERATED_BODY()
 
@@ -45,211 +63,216 @@ struct VOXELGRAPHCORE_API FVoxelGraphParameter_DEPRECATED : public FVoxelParamet
 	bool bExposeInputDefaultAsPin_DEPRECATED = false;
 
 	UPROPERTY(EditAnywhere, Category = "Voxel")
-	EVoxelGraphParameterType_DEPRECATED ParameterType = {};
+	EVoxelGraphParameterType ParameterType = {};
+};
+
+USTRUCT()
+struct VOXELGRAPHCORE_API FVoxelGraphPreviewConfig
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	EVoxelAxis Axis = EVoxelAxis::X;
+
+	UPROPERTY()
+	int32 Resolution = 512;
+
+	UPROPERTY()
+	FVector Position = FVector::ZeroVector;
+
+	UPROPERTY()
+	double Zoom = 1.;
+
+	float GetAxisLocation() const
+	{
+		switch (Axis)
+		{
+		default: return 0.f;
+		case EVoxelAxis::X: return Position.X;
+		case EVoxelAxis::Y: return Position.Y;
+		case EVoxelAxis::Z: return Position.Z;
+		}
+	}
+	void SetAxisLocation(const float Value)
+	{
+		switch (Axis)
+		{
+		default: ensure(false);
+		case EVoxelAxis::X: Position.X = Value; break;
+		case EVoxelAxis::Y: Position.Y = Value; break;
+		case EVoxelAxis::Z: Position.Z = Value; break;
+		}
+	}
 };
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-constexpr FVoxelGuid GVoxelMainTerminalGraphGuid = MAKE_VOXEL_GUID("00000000FFFFFFFF000000002A276A92");
-
-UCLASS(BlueprintType, meta = (VoxelAssetType, AssetColor=Blue))
-class VOXELGRAPHCORE_API UVoxelGraph
-	: public UObject
-	, public IVoxelParameterOverridesObjectOwner
+UCLASS()
+class VOXELGRAPHCORE_API UVoxelGraph : public UVoxelGraphInterface
 {
 	GENERATED_BODY()
 
 public:
 #if WITH_EDITORONLY_DATA
-	UPROPERTY(EditAnywhere, Category = "Config")
-	FString Category;
+	UPROPERTY()
+	TMap<FName, TObjectPtr<UEdGraph>> Graphs_DEPRECATED;
 
-	UPROPERTY(EditAnywhere, Category = "Config")
-	FString Description;
+	UPROPERTY()
+	TObjectPtr<UEdGraph> MainEdGraph;
 
-	UPROPERTY(EditAnywhere, Category = "Config", AdvancedDisplay)
-	FString DisplayNameOverride;
-
-	// Enable to render a custom graph thumbnail
-	UPROPERTY(EditAnywhere, Category = "Config", AdvancedDisplay)
-	bool bEnableThumbnail = false;
-
-	// Display graph in graph creation window
-	UPROPERTY(EditAnywhere, Category = "Config", AdvancedDisplay)
-	bool bUseAsTemplate = false;
-
-	UPROPERTY(EditAnywhere, Category = "Config", AdvancedDisplay)
-	bool bShowInContextMenu = true;
-#endif
-
-#if WITH_EDITORONLY_DATA
 	UPROPERTY()
 	TArray<FVoxelEditedDocumentInfo> LastEditedDocuments;
 #endif
 
+	UPROPERTY()
+	TObjectPtr<UVoxelGraph> Graph_DEPRECATED;
+
+	UPROPERTY()
+	TArray<TObjectPtr<UVoxelGraph>> InlineMacros;
+
+	UPROPERTY()
+	FVoxelParameterCategories InlineMacroCategories;
+
+public:
+#if WITH_EDITORONLY_DATA
+	// Choose title bar color for this macro usages
+	UPROPERTY(EditAnywhere, Category = "Config")
+	FLinearColor InstanceColor = FLinearColor::Gray;
+#endif
+
+	// Enable to render a custom graph thumbnail
+	// Might crash the engine if virtual shadow maps are enabled
+	UPROPERTY(EditAnywhere, Category = "Config")
+	bool bEnableThumbnail = false;
+
+	UPROPERTY(EditAnywhere, Category = "Config")
+	FString Tooltip;
+
+	UPROPERTY(EditAnywhere, Category = "Config", AssetRegistrySearchable)
+	FString Category;
+
+#if WITH_EDITORONLY_DATA
+	UPROPERTY(EditAnywhere, Category = "Config", AssetRegistrySearchable)
+	FString Description;
+#endif
+
+	UPROPERTY(EditAnywhere, Category = "Internal")
+	TArray<FVoxelGraphParameter> Parameters;
+
+#if WITH_EDITORONLY_DATA
+	UPROPERTY()
+	bool bIsParameterGraph = false;
+
+	UPROPERTY(EditAnywhere, Category = "Internal")
+	TMap<FGuid, TObjectPtr<UVoxelGraph>> ParameterGraphs;
+#endif
+
+	UPROPERTY()
+	TMap<EVoxelGraphParameterType, FVoxelParameterCategories> ParametersCategories;
+
+	UPROPERTY()
+	FVoxelGraphPreviewConfig Preview;
+
+	UPROPERTY(EditAnywhere, Category = "Config")
+	bool bExposeToLibrary = true;
+
+	enum class EParameterChangeType
+	{
+		Unknown,
+		DefaultValue
+	};
+
+	DECLARE_MULTICAST_DELEGATE_OneParam(FVoxelGraphParameterChange, EParameterChangeType);
+	mutable FVoxelGraphParameterChange OnParametersChanged;
+
+public:
 	UVoxelGraph();
 
-public:
-#if WITH_EDITOR
-	FVoxelGraphMetadata GetMetadata() const;
-#endif
+	virtual FString GetGraphName() const override;
+	void SetGraphName(const FString& NewName);
 
-public:
-	UVoxelTerminalGraph* FindTerminalGraph_NoInheritance(const FGuid& Guid);
-	const UVoxelTerminalGraph* FindTerminalGraph_NoInheritance(const FGuid& Guid) const;
+	void ForceRecompile();
 
-	void ForeachTerminalGraph_NoInheritance(TFunctionRef<void(UVoxelTerminalGraph&)> Lambda);
-	void ForeachTerminalGraph_NoInheritance(TFunctionRef<void(const UVoxelTerminalGraph&)> Lambda) const;
-
-	FGuid FindTerminalGraphGuid_NoInheritance(const UVoxelTerminalGraph* TerminalGraph) const;
-
-public:
-	UVoxelTerminalGraph* FindTerminalGraph(const FGuid& Guid);
-	const UVoxelTerminalGraph* FindTerminalGraph(const FGuid& Guid) const;
-
-	UVoxelTerminalGraph& FindTerminalGraphChecked(const FGuid& Guid);
-	const UVoxelTerminalGraph& FindTerminalGraphChecked(const FGuid& Guid) const;
-
-	TVoxelSet<FGuid> GetTerminalGraphs() const;
-	// Will also return true if it's already overridden
-	bool IsTerminalGraphOverrideable(const FGuid& Guid) const;
-	const UVoxelTerminalGraph* FindTopmostTerminalGraph(const FGuid& Guid) const;
-
-#if WITH_EDITOR
-	UVoxelTerminalGraph& AddTerminalGraph(
-		const FGuid& Guid,
-		const UVoxelTerminalGraph* Template = nullptr);
-	void RemoveTerminalGraph(const FGuid& Guid);
-	void ReorderTerminalGraphs(TConstVoxelArrayView<FGuid> NewGuids);
-#endif
-
-public:
-	const FVoxelParameter* FindParameter(const FGuid& Guid) const;
-	const FVoxelParameter& FindParameterChecked(const FGuid& Guid) const;
-
-	TVoxelSet<FGuid> GetParameters() const;
-	bool IsInheritedParameter(const FGuid& Guid) const;
-
-#if WITH_EDITOR
-	void AddParameter(const FGuid& Guid, const FVoxelParameter& Parameter);
-	void RemoveParameter(const FGuid& Guid);
-	void UpdateParameter(const FGuid& Guid, TFunctionRef<void(FVoxelParameter&)> Update);
-	void ReorderParameters(TConstVoxelArrayView<FGuid> NewGuids);
-#endif
+	FORCEINLINE UVoxelRuntimeGraph& GetRuntimeGraph() const
+	{
+		return *RuntimeGraph;
+	}
 
 private:
 	UPROPERTY()
-	TMap<FGuid, TObjectPtr<UVoxelTerminalGraph>> GuidToTerminalGraph;
+	TObjectPtr<UVoxelRuntimeGraph> RuntimeGraph;
 
-	UPROPERTY()
-	TMap<FGuid, FVoxelParameter> GuidToParameter;
+	UPROPERTY(EditAnywhere, Category = "Config")
+	bool bEnableNameOverride = false;
 
-public:
-	void Fixup();
-	bool IsFunctionLibrary() const;
-	UVoxelTerminalGraph& GetMainTerminalGraph();
-	const UVoxelTerminalGraph& GetMainTerminalGraph() const;
+	UPROPERTY(EditAnywhere, DisplayName = "Name", Category = "Config")
+	FString NameOverride;
 
-	static void LoadAllGraphs();
-	TVoxelSet<const UVoxelGraph*> GetUsedGraphs() const;
-
-private:
-	void GetUsedGraphsImpl(TVoxelSet<const UVoxelGraph*>& OutGraphs) const;
-
-public:
-	// Won't check for loops, prefer GetBaseGraphs instead
-	UVoxelGraph* GetBaseGraph_Unsafe() const;
-
-#if WITH_EDITOR
-	UFUNCTION(BlueprintCallable, Category = "Voxel")
-	void SetBaseGraph(UVoxelGraph* NewBaseGraph);
-#endif
-
-	// Includes self
-	TVoxelInlineSet<UVoxelGraph*, 8> GetBaseGraphs();
-	TVoxelInlineSet<const UVoxelGraph*, 8> GetBaseGraphs() const;
-
-	// Includes self, slow
-	TVoxelSet<UVoxelGraph*> GetChildGraphs_LoadedOnly();
-	TVoxelSet<const UVoxelGraph*> GetChildGraphs_LoadedOnly() const;
-
-private:
-	UPROPERTY()
-	TObjectPtr<UVoxelGraph> PrivateBaseGraph;
-
-	UPROPERTY()
-	FVoxelParameterOverrides ParameterOverrides;
+	friend class FUVoxelGraphCustomization;
 
 public:
 	//~ Begin UObject Interface
 	virtual void PostLoad() override;
-	virtual void PostInitProperties() override;
 	virtual void PostCDOContruct() override;
 #if WITH_EDITOR
-	virtual void PostEditUndo() override;
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
-	virtual void PostRename(UObject* OldOuter, FName OldName) override;
 #endif
 	//~ End UObject Interface
 
-	//~ Begin IVoxelParameterOverridesOwner Interface
-	virtual bool ShouldForceEnableOverride(const FVoxelParameterPath& Path) const override;
-	virtual UVoxelGraph* GetGraph() const override { return ConstCast(this); }
-	virtual FVoxelParameterOverrides& GetParameterOverrides() override;
-	//~ End IVoxelParameterOverridesOwner Interface
+	//~ Begin UVoxelGraphInterface Interface
+	virtual UVoxelGraph* GetGraph() const override
+	{
+		return ConstCast(this);
+	}
+	//~ End UVoxelGraphInterface Interface
 
-public:
-#if WITH_EDITORONLY_DATA
-	UPROPERTY(Transient)
-	bool bEnableNodeRangeStats = false;
+	//~ Begin IVoxelParameterProvider Interface
+	virtual void AddOnChanged(const FSimpleDelegate& Delegate) override;
+	virtual TSharedPtr<IVoxelParameterRootView> GetParameterViewImpl(const FVoxelParameterPath& BasePath) override;
+	//~ End IVoxelParameterProvider Interface
+
+	void FixupParameters();
+
+#if WITH_EDITOR
+	TArray<UVoxelGraph*> GetAllGraphs();
+	UVoxelGraph* FindGraph(const UEdGraph* EdGraph);
 #endif
+
+	FVoxelGraphParameter* FindParameterByGuid(const FGuid& TargetGuid)
+	{
+		return Parameters.FindByKey(TargetGuid);
+	}
+	const FVoxelGraphParameter* FindParameterByGuid(const FGuid& TargetGuid) const
+	{
+		return Parameters.FindByKey(TargetGuid);
+	}
+
+	FVoxelGraphParameter* FindParameterByName(const EVoxelGraphParameterType ParameterType, const FName TargetName)
+	{
+		return Parameters.FindByPredicate([&](const FVoxelGraphParameter& Parameter)
+		{
+			return
+				Parameter.ParameterType == ParameterType &&
+				Parameter.Name == TargetName;
+		});
+	}
+	const FVoxelGraphParameter* FindParameterByName(const EVoxelGraphParameterType ParameterType, const FName TargetName) const
+	{
+		return ConstCast(this)->FindParameterByName(ParameterType, TargetName);
+	}
+
+	TArray<FString>& GetCategories(const EVoxelGraphParameterType Type)
+	{
+		return ParametersCategories[Type].Categories;
+	}
+	const TArray<FString>& GetCategories(const EVoxelGraphParameterType Type) const
+	{
+		return ParametersCategories[Type].Categories;
+	}
 
 private:
-#if WITH_EDITORONLY_DATA
-	// 320, removal of UVoxelGraphAsset
-	UPROPERTY()
-	TObjectPtr<UVoxelGraph> Graph_DEPRECATED;
-
-	// Old
-	UPROPERTY()
-	TMap<FName, TObjectPtr<UEdGraph>> Graphs_DEPRECATED;
-
-	// 341, addition of UVoxelTerminalGraph
-	UPROPERTY()
-	TObjectPtr<UEdGraph> MainEdGraph_DEPRECATED;
-
-	// 341, addition of UVoxelTerminalGraph
-	UPROPERTY()
-	bool bEnableNameOverride_DEPRECATED  = false;
-
-	// 341, addition of UVoxelTerminalGraph
-	UPROPERTY()
-	FString NameOverride_DEPRECATED;
-
-	// 341, addition of UVoxelTerminalGraph
-	UPROPERTY()
-	bool bExposeToLibrary_DEPRECATED = true;
-
-	// 341, addition of UVoxelTerminalGraph
-	UPROPERTY()
-	TArray<TObjectPtr<UVoxelGraph>> InlineMacros_DEPRECATED;
-
-	// 341, addition of UVoxelTerminalGraph
-	UPROPERTY()
-	TArray<FVoxelGraphParameter_DEPRECATED> Parameters_DEPRECATED;
-
-	// 341, removal of UVoxelGraphInstance
-	UPROPERTY()
-	TObjectPtr<UVoxelGraph> Parent_DEPRECATED;
-
-	// 341, removal of UVoxelGraphInstance
-	UPROPERTY()
-	FVoxelParameterOverrideCollection_DEPRECATED ParameterCollection_DEPRECATED;
-
-	// 341, removal of UVoxelGraphInstance
-	UPROPERTY()
-	TObjectPtr<UVoxelParameterContainer_DEPRECATED> ParameterContainer_DEPRECATED;
-#endif
+	void FixupCategories();
+	void FixupInlineMacroCategories();
 };

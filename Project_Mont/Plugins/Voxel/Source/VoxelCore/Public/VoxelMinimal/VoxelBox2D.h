@@ -1,10 +1,9 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelCoreMinimal.h"
 #include "VoxelMinimal/VoxelBox.h"
-#include "Math/TransformCalculus2D.h"
 #include "VoxelBox2D.generated.h"
 
 USTRUCT()
@@ -19,7 +18,6 @@ struct VOXELCORE_API FVoxelBox2D
 	FVector2D Max = FVector2D(ForceInit);
 
 	static const FVoxelBox2D Infinite;
-	static const FVoxelBox2D InvertedInfinite;
 
 	FVoxelBox2D() = default;
 
@@ -30,11 +28,11 @@ struct VOXELCORE_API FVoxelBox2D
 		ensureVoxelSlow(Min.X <= Max.X);
 		ensureVoxelSlow(Min.Y <= Max.Y);
 	}
-	FORCEINLINE explicit FVoxelBox2D(const double Min, const FVector2D& Max)
+	FORCEINLINE explicit FVoxelBox2D(double Min, const FVector2D& Max)
 		: FVoxelBox2D(FVector2D(Min), Max)
 	{
 	}
-	FORCEINLINE explicit FVoxelBox2D(const FVector2D& Min, const double Max)
+	FORCEINLINE explicit FVoxelBox2D(const FVector2D& Min, double Max)
 		: FVoxelBox2D(Min, FVector2D(Max))
 	{
 	}
@@ -46,7 +44,7 @@ struct VOXELCORE_API FVoxelBox2D
 		: FVoxelBox2D(FVector2D(Min), FVector2D(Max))
 	{
 	}
-	FORCEINLINE explicit FVoxelBox2D(const double Min, const double Max)
+	FORCEINLINE explicit FVoxelBox2D(double Min, double Max)
 		: FVoxelBox2D(FVector2D(Min), FVector2D(Max))
 	{
 	}
@@ -124,7 +122,7 @@ struct VOXELCORE_API FVoxelBox2D
 	{
 		return FBox2f(FVector2f(Min), FVector2f(Max));
 	}
-	FVoxelBox ToBox3D(const double MinZ, const double MaxZ) const
+	FVoxelBox ToBox3D(double MinZ, double MaxZ) const
 	{
 		return FVoxelBox(
 			FVector3d(Min.X, Min.Y, MinZ),
@@ -133,22 +131,10 @@ struct VOXELCORE_API FVoxelBox2D
 
 	FORCEINLINE bool IsValid() const
 	{
-		return
-			ensure(FMath::IsFinite(Min.X)) &&
-			ensure(FMath::IsFinite(Min.Y)) &&
-			ensure(FMath::IsFinite(Max.X)) &&
-			ensure(FMath::IsFinite(Max.Y)) &&
-			Min.X <= Max.X &&
-			Min.Y <= Max.Y;
-	}
-	FORCEINLINE bool IsValidAndNotEmpty() const
-	{
-		return
-			IsValid() &&
-			*this != FVoxelBox2D();
+		return Min.X < Max.X && Min.Y < Max.Y;
 	}
 
-	FORCEINLINE bool Contains(const double X, const double Y) const
+	FORCEINLINE bool Contains(double X, double Y) const
 	{
 		return
 			(Min.X <= X) && (X <= Max.X) &&
@@ -258,7 +244,7 @@ struct VOXELCORE_API FVoxelBox2D
 		return FMath::Sqrt(ComputeSquaredDistanceFromBoxToPoint(Point));
 	}
 
-	FORCEINLINE FVoxelBox2D Scale(const double S) const
+	FORCEINLINE FVoxelBox2D Scale(double S) const
 	{
 		return { Min * S, Max * S };
 	}
@@ -266,7 +252,7 @@ struct VOXELCORE_API FVoxelBox2D
 	{
 		return { Min * S, Max * S };
 	}
-	FORCEINLINE FVoxelBox2D Extend(const double Amount) const
+	FORCEINLINE FVoxelBox2D Extend(double Amount) const
 	{
 		return { Min - Amount, Max + Amount };
 	}
@@ -279,15 +265,13 @@ struct VOXELCORE_API FVoxelBox2D
 		return Translate(Offset);
 	}
 
-	FVoxelBox2D TransformBy(const FTransform2d& Transform) const;
-
-	FORCEINLINE FVoxelBox2D& operator*=(const double Scale)
+	FORCEINLINE FVoxelBox2D& operator*=(double Scale)
 	{
 		Min *= Scale;
 		Max *= Scale;
 		return *this;
 	}
-	FORCEINLINE FVoxelBox2D& operator/=(const double Scale)
+	FORCEINLINE FVoxelBox2D& operator/=(double Scale)
 	{
 		Min /= Scale;
 		Max /= Scale;
@@ -301,6 +285,35 @@ struct VOXELCORE_API FVoxelBox2D
 	FORCEINLINE bool operator!=(const FVoxelBox2D& Other) const
 	{
 		return Min != Other.Min || Max != Other.Max;
+	}
+
+	template<typename MatrixType>
+	FVoxelBox2D TransformBy(const MatrixType& Transform) const
+	{
+		FVector2D Vertices[4] =
+		{
+			FVector2D(Min.X, Min.Y),
+			FVector2D(Max.X, Min.Y),
+			FVector2D(Min.X, Max.Y),
+			FVector2D(Max.X, Max.Y),
+		};
+
+		for (int32 Index = 0; Index < 4; Index++)
+		{
+			Vertices[Index] = FVector2D(Transform.TransformPoint(FVector2D(Vertices[Index])));
+		}
+
+		FVoxelBox2D NewBox;
+		NewBox.Min = Vertices[0];
+		NewBox.Max = Vertices[0];
+
+		for (int32 Index = 1; Index < 4; Index++)
+		{
+			NewBox.Min = FVoxelUtilities::ComponentMin(NewBox.Min, Vertices[Index]);
+			NewBox.Max = FVoxelUtilities::ComponentMax(NewBox.Max, Vertices[Index]);
+		}
+
+		return NewBox;
 	}
 
 	FORCEINLINE FVoxelBox2D& operator+=(const FVoxelBox2D& Other)
@@ -326,16 +339,16 @@ FORCEINLINE uint32 GetTypeHash(const FVoxelBox2D& Box)
 	return FVoxelUtilities::MurmurHash(Box);
 }
 
-FORCEINLINE FVoxelBox2D operator*(const FVoxelBox2D& Box, const double Scale)
+FORCEINLINE FVoxelBox2D operator*(const FVoxelBox2D& Box, double Scale)
 {
 	return FVoxelBox2D(Box) *= Scale;
 }
-FORCEINLINE FVoxelBox2D operator*(const double Scale, const FVoxelBox2D& Box)
+FORCEINLINE FVoxelBox2D operator*(double Scale, const FVoxelBox2D& Box)
 {
 	return FVoxelBox2D(Box) *= Scale;
 }
 
-FORCEINLINE FVoxelBox2D operator/(const FVoxelBox2D& Box, const double Scale)
+FORCEINLINE FVoxelBox2D operator/(const FVoxelBox2D& Box, double Scale)
 {
 	return FVoxelBox2D(Box) /= Scale;
 }

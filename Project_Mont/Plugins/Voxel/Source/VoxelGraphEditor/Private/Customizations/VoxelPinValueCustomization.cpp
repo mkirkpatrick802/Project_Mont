@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelEditorMinimal.h"
 #include "VoxelPinValue.h"
@@ -17,7 +17,7 @@ public:
 	{
 		TypeHandle = PropertyHandle->GetChildHandleStatic(FVoxelPinValue, Type);
 		CachedType = FVoxelEditorUtilities::GetStructPropertyValue<FVoxelPinType>(TypeHandle);
-		RefreshDelegate = FVoxelEditorUtilities::MakeRefreshDelegate(this, CustomizationUtils);
+		RefreshDelegate = FVoxelEditorUtilities::MakeRefreshDelegate(PropertyHandle, CustomizationUtils);
 
 		if (!CachedType.IsValid())
 		{
@@ -40,21 +40,9 @@ public:
 		IDetailChildrenBuilder& ChildBuilder,
 		IPropertyTypeCustomizationUtils& CustomizationUtils) override
 	{
-		if (const TSharedPtr<IPropertyHandle> ParentHandle = PropertyHandle->GetParentHandle())
-		{
-			if (ParentHandle->AsArray())
-			{
-				for (const auto& It : *ParentHandle->GetInstanceMetaDataMap())
-				{
-					PropertyHandle->SetInstanceMetaData(It.Key, It.Value);
-				}
-			}
-		}
-
 		Wrapper = FVoxelPinValueCustomizationHelper::CreatePinValueCustomization(
 			PropertyHandle,
 			ChildBuilder,
-			FVoxelEditorUtilities::MakeRefreshDelegate(this, CustomizationUtils),
 			{},
 			[&](FDetailWidgetRow& Row, const TSharedRef<SWidget>& ValueWidget)
 			{
@@ -97,7 +85,7 @@ public:
 	//~ End FVoxelTicker Interface
 
 private:
-	TSharedPtr<FVoxelInstancedStructDetailsWrapper> Wrapper;
+	TSharedPtr<FVoxelStructCustomizationWrapper> Wrapper;
 
 	TSharedPtr<IPropertyHandle> TypeHandle;
 	FVoxelPinType CachedType;

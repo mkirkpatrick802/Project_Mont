@@ -1,67 +1,40 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelEditorMinimal.h"
-#include "VoxelColumnSizeData.h"
+#include "Widgets/SVoxelMembers.h"
 #include "Material/VoxelMaterialDefinition.h"
 
-class SGraphActionMenu;
 struct FVoxelMaterialDefinitionToolkit;
-struct FVoxelMaterialDefinitionParameterSchemaAction;
 
-class SVoxelMaterialDefinitionParameters
-	: public SCompoundWidget
-	, public FSelfRegisteringEditorUndoClient
+class SVoxelMaterialDefinitionParameters : public SVoxelMembers
 {
 public:
-	const TSharedRef<FVoxelColumnSizeData> ColumnSizeData = MakeVoxelShared<FVoxelColumnSizeData>();
-
 	VOXEL_SLATE_ARGS()
 	{
+		SLATE_ARGUMENT(UVoxelMaterialDefinition*, Definition);
 		SLATE_ARGUMENT(TSharedPtr<FVoxelMaterialDefinitionToolkit>, Toolkit);
 	};
 
 	void Construct(const FArguments& Args);
 
-public:
-	void SelectMember(const FGuid& Guid, int32 SectionId, bool bRequestRename, bool bRefresh);
-
-	TSharedPtr<FVoxelMaterialDefinitionToolkit> GetToolkit() const
-	{
-		return WeakToolkit.Pin();
-	}
-	void QueueRefresh()
-	{
-		bRefreshQueued = true;
-	}
-
-public:
-	//~ Begin SWidget Interface
-	virtual void Tick(const FGeometry& AllottedGeometry, double InCurrentTime, float InDeltaTime) override;
-	virtual FReply OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent) override;
-	//~ End SWidget Interface
-
-public:
-	//~ Begin FSelfRegisteringEditorUndoClient Interface
-	virtual void PostUndo(bool bSuccess) override;
-	virtual void PostRedo(bool bSuccess) override;
-	//~ End FSelfRegisteringEditorUndoClient Interface
-
 private:
-	void Refresh();
-	FString GetPasteCategory() const;
-	void OnAddNewMember() const;
-	TSharedPtr<SWidget> OnContextMenuOpening();
-	TSharedPtr<FVoxelMaterialDefinitionParameterSchemaAction> GetSelectedAction() const;
+	//~ Begin SVoxelMembers Interface
+	virtual void CollectStaticSections(TArray<int32>& StaticSectionIds) override;
+	virtual FText OnGetSectionTitle(int32 SectionId) override;
+	virtual TSharedRef<SWidget> OnGetMenuSectionWidget(TSharedRef<SWidget> RowWidget, int32 SectionId) override;
+	virtual void CollectSortedActions(FVoxelMembersActionsSortHelper& OutActionsList) override;
+	virtual void SelectBaseObject() override;
+	virtual void GetContextMenuAddOptions(FMenuBuilder& MenuBuilder) override;
+	virtual void OnPasteItem(const FString& ImportText, int32 SectionId) override;
+	virtual bool CanPasteItem(const FString& ImportText, int32 SectionId) override;
+	virtual void OnAddNewMember(int32 SectionId) override;
+	virtual const TArray<FString>& GetCopyPrefixes() const override;
 
-private:
-	const TSharedRef<FUICommandList> CommandList = MakeVoxelShared<FUICommandList>();
+public:
+	virtual TArray<FString>& GetEditableCategories(int32 SectionId) override;
+	//~ End SVoxelMembers Interface
 
-	bool bIsRefreshing = false;
-	bool bRefreshQueued = false;
-
-	TWeakPtr<FVoxelMaterialDefinitionToolkit> WeakToolkit;
-	TSharedPtr<SSearchBox> FilterBox;
-	TSharedPtr<SGraphActionMenu> MembersMenu;
+	FDelegateHandle OnParametersChangedHandle;
 };

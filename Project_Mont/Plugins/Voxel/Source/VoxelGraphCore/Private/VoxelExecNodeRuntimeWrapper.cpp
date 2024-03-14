@@ -1,17 +1,16 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelExecNodeRuntimeWrapper.h"
-#include "VoxelBuffer.h"
 
-void FVoxelExecNodeRuntimeWrapper::Initialize(const TSharedRef<FVoxelTerminalGraphInstance>& NewTerminalGraphInstance)
+void FVoxelExecNodeRuntimeWrapper::Initialize(const TSharedRef<FVoxelQueryContext>& NewContext)
 {
-	TerminalGraphInstance = NewTerminalGraphInstance;
+	Context = NewContext->EnterScope(Node->GetNodeRef());
 
 	EnableNodeValue =
 		Node->GetNodeRuntime().MakeDynamicValueFactory(Node->EnableNodePin)
 		.AddRef(Node)
-		.RunSynchronously()
-		.Compute(TerminalGraphInstance.ToSharedRef());
+		.Thread(EVoxelTaskThread::GameThread)
+		.Compute(Context.ToSharedRef());
 
 	EnableNodeValue.OnChanged_GameThread(MakeWeakPtrLambda(this, [=](const bool bNewEnableNode)
 	{
@@ -40,7 +39,7 @@ void FVoxelExecNodeRuntimeWrapper::Initialize(const TSharedRef<FVoxelTerminalGra
 	}));
 }
 
-void FVoxelExecNodeRuntimeWrapper::Tick(FVoxelRuntime& Runtime) const
+void FVoxelExecNodeRuntimeWrapper::Tick(FVoxelRuntime& Runtime)
 {
 	ensure(IsInGameThread());
 
@@ -49,18 +48,18 @@ void FVoxelExecNodeRuntimeWrapper::Tick(FVoxelRuntime& Runtime) const
 		return;
 	}
 
-	FVoxelQueryScope Scope(nullptr, TerminalGraphInstance.Get());
+	FVoxelQueryScope Scope(nullptr, Context.Get());
 	NodeRuntime_GameThread->Tick(Runtime);
 }
 
-void FVoxelExecNodeRuntimeWrapper::AddReferencedObjects(FReferenceCollector& Collector) const
+void FVoxelExecNodeRuntimeWrapper::AddReferencedObjects(FReferenceCollector& Collector)
 {
 	if (!NodeRuntime_GameThread)
 	{
 		return;
 	}
 
-	FVoxelQueryScope Scope(nullptr, TerminalGraphInstance.Get());
+	FVoxelQueryScope Scope(nullptr, Context.Get());
 	NodeRuntime_GameThread->AddReferencedObjects(Collector);
 }
 
@@ -73,7 +72,7 @@ FVoxelOptionalBox FVoxelExecNodeRuntimeWrapper::GetBounds() const
 		return {};
 	}
 
-	FVoxelQueryScope Scope(nullptr, TerminalGraphInstance.Get());
+	FVoxelQueryScope Scope(nullptr, Context.Get());
 	return NodeRuntime_GameThread->GetBounds();
 }
 
@@ -84,7 +83,7 @@ void FVoxelExecNodeRuntimeWrapper::ComputeConstantPins()
 	ensure(ConstantPins_GameThread.Num() == 0);
 
 	// Pre-allocate ConstantPins_GameThread to avoid OnChanged calling OnConstantValueUpdated right away
-	for (const auto& It : Node->GetNodeRuntime().GetNameToPinData())
+	for (const auto& It : Node->GetNodeRuntime().GetPinDatas())
 	{
 		const FVoxelNodeRuntime::FPinData& PinData = *It.Value;
 		if (!PinData.Metadata.bConstantPin ||
@@ -99,62 +98,30 @@ void FVoxelExecNodeRuntimeWrapper::ComputeConstantPins()
 		ConstantValue->DynamicValue =
 			FVoxelDynamicValueFactory(PinData.Compute.ToSharedRef(), PinData.Type, PinData.StatName)
 			.AddRef(Node)
-			.RunSynchronously()
-			.Compute(TerminalGraphInstance.ToSharedRef());
+			.Thread(EVoxelTaskThread::GameThread)
+			.Compute(Context.ToSharedRef());
 
-		ensure(!ConstantPins_GameThread.Contains(It.Key));
-		ConstantPins_GameThread.Add(It.Key).Add(ConstantValue);
-	}
-
-	// Merge variadic pins
-	for (const auto& It : Node->GetNodeRuntime().GetVariadicPinNameToPinNames())
-	{
-		TVoxelArray<TSharedPtr<FConstantValue>> NewConstantValues;
-		NewConstantValues.Reserve(It.Value.Num());
-
-		for (const FName Name : It.Value)
-		{
-			TVoxelArray<TSharedPtr<FConstantValue>> ConstantValues;
-			ConstantPins_GameThread.RemoveAndCopyValue(Name, ConstantValues);
-
-			ensure(ConstantValues.Num() == 1);
-			NewConstantValues.Add(ConstantValues[0]);
-		}
-
-		ensure(!ConstantPins_GameThread.Contains(It.Key));
-		ConstantPins_GameThread.Add(It.Key, MoveTemp(NewConstantValues));
+		ConstantPins_GameThread.Add(It.Key, ConstantValue);
 	}
 
 	for (const auto& It : ConstantPins_GameThread)
 	{
-		for (const TSharedPtr<FConstantValue>& ConstantValue : It.Value)
+		FConstantValue& ConstantValue = *It.Value;
+
+		const auto OnChanged = MakeWeakPtrLambda(this, MakeWeakPtrLambda(ConstantValue, [this, &ConstantValue](const FVoxelRuntimePinValue& NewValue)
 		{
-			const auto OnChanged = MakeWeakPtrLambda(this, MakeWeakPtrLambda(ConstantValue, [this, &ConstantValue = *ConstantValue](const FVoxelRuntimePinValue& NewValue)
+			checkVoxelSlow(IsInGameThread());
+			ConstantValue.Value = NewValue;
+			OnConstantValueUpdated();
+		}));
+
+		ConstantValue.DynamicValue.OnChanged([OnChanged](const FVoxelRuntimePinValue& NewValue)
+		{
+			FVoxelUtilities::RunOnGameThread([OnChanged, NewValue]
 			{
-				checkVoxelSlow(IsInGameThread());
-
-				if (NewValue.IsBuffer())
-				{
-					const TSharedRef<FVoxelBuffer> NewBuffer = NewValue.Get<FVoxelBuffer>().MakeSharedCopy();
-					NewBuffer->Shrink();
-					ConstantValue.Value = FVoxelRuntimePinValue::Make(NewBuffer, NewValue.GetType());
-				}
-				else
-				{
-					ConstantValue.Value = NewValue;
-				}
-
-				OnConstantValueUpdated();
-			}));
-
-			ConstantValue->DynamicValue.OnChanged([OnChanged](const FVoxelRuntimePinValue& NewValue)
-			{
-				RunOnGameThread([OnChanged, NewValue]
-				{
-					OnChanged(NewValue);
-				});
+				OnChanged(NewValue);
 			});
-		}
+		});
 	}
 }
 
@@ -165,27 +132,18 @@ void FVoxelExecNodeRuntimeWrapper::OnConstantValueUpdated()
 
 	for (const auto& It : ConstantPins_GameThread)
 	{
-		for (const TSharedPtr<FConstantValue>& ConstantValue : It.Value)
+		if (!It.Value->Value.IsValid())
 		{
-			if (!ConstantValue->Value.IsValid())
-			{
-				// Not ready yet
-				return;
-			}
+			// Not ready yet
+			return;
 		}
 	}
 
-	TVoxelMap<FName, TVoxelArray<FVoxelRuntimePinValue>> ConstantValues;
+	TVoxelMap<FName, FVoxelRuntimePinValue> ConstantValues;
 	ConstantValues.Reserve(ConstantPins_GameThread.Num());
 	for (const auto& It : ConstantPins_GameThread)
 	{
-		TVoxelArray<FVoxelRuntimePinValue>& Values = ConstantValues.Add_EnsureNew(It.Key);
-		Values.Reserve(It.Value.Num());
-
-		for (const TSharedPtr<FConstantValue>& ConstantValue : It.Value)
-		{
-			Values.Add(ConstantValue->Value);
-		}
+		ConstantValues.Add(It.Key, It.Value->Value);
 	}
 
 	if (NodeRuntime_GameThread)
@@ -203,5 +161,5 @@ void FVoxelExecNodeRuntimeWrapper::OnConstantValueUpdated()
 		return;
 	}
 
-	NodeRuntime_GameThread->CallCreate(TerminalGraphInstance.ToSharedRef(), MoveTemp(ConstantValues));
+	NodeRuntime_GameThread->CallCreate(Context.ToSharedRef(), MoveTemp(ConstantValues));
 }

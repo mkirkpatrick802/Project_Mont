@@ -1,10 +1,9 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelThumbnailRenderers.h"
 #include "SceneView.h"
 #include "SceneInterface.h"
 #include "ThumbnailHelpers.h"
-#include "Engine/Texture.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshActor.h"
 #include "ThumbnailRendering/SceneThumbnailInfo.h"
@@ -16,7 +15,7 @@ void UVoxelThumbnailRenderer::BeginDestroy()
 	Super::BeginDestroy();
 }
 
-void UVoxelThumbnailRenderer::Draw(UObject* Object, const int32 X, const int32 Y, const uint32 Width, const uint32 Height, FRenderTarget* RenderTarget, FCanvas* Canvas, const bool bAdditionalViewFamily)
+void UVoxelThumbnailRenderer::Draw(UObject* Object, int32 X, int32 Y, uint32 Width, uint32 Height, FRenderTarget* RenderTarget, FCanvas* Canvas, bool bAdditionalViewFamily)
 {
 	if (!ThumbnailScene)
 	{
@@ -86,12 +85,12 @@ void UVoxelStaticMeshThumbnailRenderer::ClearScene(UObject* Object)
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-void UVoxelTextureThumbnailRenderer::GetThumbnailSize(UObject* Object, const float Zoom, uint32& OutWidth, uint32& OutHeight) const
+void UVoxelTextureThumbnailRenderer::GetThumbnailSize(UObject* Object, float Zoom, uint32& OutWidth, uint32& OutHeight) const
 {
 	Super::GetThumbnailSize(GetTexture(Object), Zoom, OutWidth, OutHeight);
 }
 
-void UVoxelTextureThumbnailRenderer::Draw(UObject* Object, const int32 X, const int32 Y, const uint32 Width, const uint32 Height, FRenderTarget* Target, FCanvas* Canvas, const bool bAdditionalViewFamily)
+void UVoxelTextureThumbnailRenderer::Draw(UObject* Object, int32 X, int32 Y, uint32 Width, uint32 Height, FRenderTarget* Target, FCanvas* Canvas, bool bAdditionalViewFamily)
 {
 	Super::Draw(GetTexture(Object), X, Y, Width, Height, Target, Canvas, bAdditionalViewFamily);
 }

@@ -1,4 +1,4 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -7,8 +7,7 @@
 #include "VoxelGraphNodeRef.h"
 #include "VoxelPreviewHandler.generated.h"
 
-class FVoxelRuntimeInfo;
-class FVoxelTerminalGraphInstance;
+class FVoxelQueryContext;
 
 USTRUCT()
 struct VOXELGRAPHCORE_API FVoxelPreviewHandler
@@ -19,10 +18,7 @@ struct VOXELGRAPHCORE_API FVoxelPreviewHandler
 	GENERATED_VIRTUAL_STRUCT_BODY()
 
 public:
-	static TConstVoxelArrayView<TSharedRef<const FVoxelPreviewHandler>> GetHandlers();
-
-public:
-	virtual ~FVoxelPreviewHandler() override;
+	static const TArray<const FVoxelPreviewHandler*>& GetHandlers();
 
 	virtual bool SupportsType(const FVoxelPinType& Type) const
 	{
@@ -32,8 +28,7 @@ public:
 public:
 	int32 PreviewSize = 0;
 	FVoxelGraphPinRef PinRef;
-	TSharedPtr<FVoxelRuntimeInfo> RuntimeInfo;
-	TSharedPtr<FVoxelTerminalGraphInstance> TerminalGraphInstance;
+	TSharedPtr<FVoxelQueryContext> QueryContext;
 
 	enum class EPreviewType
 	{

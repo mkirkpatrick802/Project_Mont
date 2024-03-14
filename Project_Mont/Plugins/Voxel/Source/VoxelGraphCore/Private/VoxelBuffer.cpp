@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelBuffer.h"
 #include "Buffer/VoxelNameBuffer.h"
@@ -8,8 +8,8 @@
 struct FVoxelBufferStatics
 {
 	bool bInitialized = false;
-	TVoxelMap<FVoxelPinType, UScriptStruct*> InnerToBuffer;
-	TVoxelMap<UScriptStruct*, FVoxelPinType> BufferToInner;
+	TVoxelAddOnlyMap<FVoxelPinType, UScriptStruct*> InnerToBuffer;
+	TVoxelAddOnlyMap<UScriptStruct*, FVoxelPinType> BufferToInner;
 };
 FVoxelBufferStatics GVoxelBufferStatics;
 
@@ -30,7 +30,8 @@ VOXEL_RUN_ON_STARTUP(FVoxelBufferStatics_Initialize, Game, 999)
 			continue;
 		}
 
-		const TSharedRef<FVoxelBuffer> Buffer = MakeSharedStruct<FVoxelBuffer>(Struct);
+		TVoxelInstancedStruct<FVoxelBuffer> Buffer(Struct);
+
 		const FVoxelPinType InnerType = Buffer->GetInnerType();
 
 		GVoxelBufferStatics.InnerToBuffer.Add_CheckNew(InnerType, Struct);
@@ -69,13 +70,6 @@ TSharedRef<FVoxelBuffer> FVoxelBuffer::Make(const FVoxelPinType& InnerType)
 	const TSharedRef<FVoxelComplexTerminalBuffer> Result = MakeVoxelShared<FVoxelComplexTerminalBuffer>();
 	Result->Initialize(InnerType);
 	return Result;
-}
-
-TSharedRef<FVoxelBuffer> FVoxelBuffer::MakeEmpty(const FVoxelPinType& InnerType)
-{
-	const TSharedRef<FVoxelBuffer> Buffer = Make(InnerType);
-	Buffer->SetAsEmpty();
-	return Buffer;
 }
 
 FVoxelPinType FVoxelBuffer::FindInnerType_NotComplex(UScriptStruct* Struct)
@@ -129,14 +123,10 @@ int32 FVoxelBuffer::Num_Slow() const
 	int32 NewNum = 1;
 	for (const FVoxelTerminalBuffer& Buffer : GetTerminalBuffers())
 	{
-		ensure(FVoxelBufferAccessor::MergeNum(NewNum, Buffer.Num_Slow()));
+		ensure(FVoxelBufferAccessor::MergeNum(NewNum, Buffer));
 	}
 	return NewNum;
 }
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
 
 bool FVoxelBuffer::IsValid_Slow() const
 {
@@ -168,6 +158,10 @@ bool FVoxelBuffer::IsValid_Slow() const
 
 	return bValid;
 }
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
 
 FVoxelRuntimePinValue FVoxelBuffer::GetGenericConstant() const
 {
@@ -235,13 +229,12 @@ void FVoxelSimpleTerminalBuffer::SetAsEmpty()
 
 void FVoxelSimpleTerminalBuffer::Shrink()
 {
-	if (!GetStorage().CanGrow())
+	if (IsDefault())
 	{
 		return;
 	}
 
-	ensure(!IsDefault());
-	PrivateStorage = GetStorage().Clone(false);
+	GetMutableStorage().Shrink();
 }
 
 void FVoxelSimpleTerminalBuffer::CheckSlowImpl() const
@@ -347,8 +340,8 @@ TSharedRef<FVoxelComplexBufferStorage> FVoxelComplexTerminalBuffer::MakeNewStora
 
 struct FVoxelComplexTerminalBufferStatics
 {
-	FVoxelCriticalSection CriticalSection;
-	TVoxelMap<FVoxelPinType, TSharedPtr<FVoxelComplexBufferStorage>> InnerTypeToStorage;
+	FVoxelFastCriticalSection CriticalSection;
+	TVoxelAddOnlyMap<FVoxelPinType, TSharedPtr<FVoxelComplexBufferStorage>> InnerTypeToStorage;
 };
 FVoxelComplexTerminalBufferStatics GVoxelComplexTerminalBufferStatics;
 

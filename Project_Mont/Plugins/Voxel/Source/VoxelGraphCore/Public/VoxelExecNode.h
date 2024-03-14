@@ -1,8 +1,9 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelMinimal.h"
+#include "VoxelExec.h"
 #include "VoxelNode.h"
 #include "VoxelExecNode.generated.h"
 
@@ -10,7 +11,7 @@ struct FVoxelSpawnable;
 class FVoxelRuntime;
 class FVoxelExecNodeRuntime;
 
-USTRUCT(Category = "Exec Nodes", meta = (Abstract, NodeColor = "Red", NodeIcon = "Execute", NodeIconColor = "White", ShowInRootShortList))
+USTRUCT(Category = "Exec Nodes", meta = (Abstract, NodeColor = "Red", NodeIconColor = "White", ShowInRootShortList))
 struct VOXELGRAPHCORE_API FVoxelExecNode : public FVoxelNode
 {
 	GENERATED_BODY()
@@ -18,6 +19,8 @@ struct VOXELGRAPHCORE_API FVoxelExecNode : public FVoxelNode
 
 	// If false, the node will never be executed
 	VOXEL_INPUT_PIN(bool, EnableNode, true, VirtualPin);
+	// If not connected, will be executed automatically
+	VOXEL_OUTPUT_PIN(FVoxelExec, Exec, OptionalPin);
 
 public:
 	TSharedPtr<FVoxelExecNodeRuntime> CreateSharedExecRuntime(const TSharedRef<const FVoxelExecNode>& SharedThis) const;
@@ -30,8 +33,21 @@ protected:
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
+class IVoxelExecNodeRuntimeInterface
+{
+public:
+	IVoxelExecNodeRuntimeInterface() = default;
+	virtual ~IVoxelExecNodeRuntimeInterface() = default;
+
+	virtual void Tick(FVoxelRuntime& Runtime) {}
+	virtual void AddReferencedObjects(FReferenceCollector& Collector) {}
+	virtual FVoxelOptionalBox GetBounds() const { return {}; }
+};
+
 class VOXELGRAPHCORE_API FVoxelExecNodeRuntime
-	: public IVoxelNodeInterface
+	: public IVoxelExecNodeRuntimeInterface
+	, public IVoxelNodeInterface
+	, public FVoxelNodeAliases
 	, public TSharedFromThis<FVoxelExecNodeRuntime>
 	, public TVoxelRuntimeInfo<FVoxelExecNodeRuntime>
 {
@@ -64,18 +80,22 @@ public:
 	{
 		return NodeRef->GetNodeRuntime();
 	}
-	TSharedRef<FVoxelTerminalGraphInstance> GetTerminalGraphInstance() const
+	TSharedRef<FVoxelQueryContext> GetContext() const
 	{
-		return PrivateTerminalGraphInstance.ToSharedRef();
+		return PrivateContext.ToSharedRef();
+	}
+	const TSharedRef<const FVoxelRuntimeInfo>& GetRuntimeInfo() const
+	{
+		return PrivateContext->RuntimeInfo;
 	}
 	FORCEINLINE const FVoxelRuntimeInfo& GetRuntimeInfoRef() const
 	{
-		return *GetRuntimeInfo();
+		checkVoxelSlow(PrivateContext);
+		return *PrivateContext.Get()->RuntimeInfo;
 	}
 
 	TSharedPtr<FVoxelRuntime> GetRuntime() const;
 	USceneComponent* GetRootComponent() const;
-	const TSharedRef<const FVoxelRuntimeInfo>& GetRuntimeInfo() const;
 
 	virtual UScriptStruct* GetNodeType() const
 	{
@@ -84,75 +104,36 @@ public:
 
 public:
 	void CallCreate(
-		const TSharedRef<FVoxelTerminalGraphInstance>& TerminalGraphInstance,
-		TVoxelMap<FName, TVoxelArray<FVoxelRuntimePinValue>>&& ConstantValues);
+		const TSharedRef<FVoxelQueryContext>& Context,
+		TVoxelMap<FName, FVoxelRuntimePinValue>&& ConstantValues);
 
 	virtual void PreCreate() {}
 	virtual void Create() {}
 	virtual void Destroy() {}
 
-	virtual void Tick(FVoxelRuntime& Runtime) {}
-	virtual void AddReferencedObjects(FReferenceCollector& Collector) {}
-	virtual FVoxelOptionalBox GetBounds() const { return {}; }
-
 protected:
 	FORCEINLINE const FVoxelRuntimePinValue& GetConstantPin(const FVoxelPinRef& Pin) const
 	{
-		const TVoxelArray<FVoxelRuntimePinValue>& Values = PrivateConstantValues[Pin];
-		checkVoxelSlow(Values.Num() == 1);
-		return Values[0];
-	}
-	FORCEINLINE const TVoxelArray<FVoxelRuntimePinValue>& GetConstantPin(const FVoxelVariadicPinRef& Pin) const
-	{
 		return PrivateConstantValues[Pin];
 	}
-
 	template<typename T>
 	FORCEINLINE auto GetConstantPin(const TVoxelPinRef<T>& Pin) const -> decltype(auto)
 	{
-		const FVoxelRuntimePinValue& Value = GetConstantPin(FVoxelPinRef(Pin));
-
 		if constexpr (VoxelPassByValue<T>)
 		{
-			return Value.Get<T>();
+			return PrivateConstantValues[Pin].template Get<T>();
 		}
 		else
 		{
-			return Value.GetSharedStruct<T>();
-		}
-	}
-	template<typename T>
-	FORCEINLINE auto GetConstantPin(const TVoxelVariadicPinRef<T>& Pin) const -> decltype(auto)
-	{
-		const TVoxelArray<FVoxelRuntimePinValue>& Values = this->GetConstantPin(FVoxelVariadicPinRef(Pin));
-
-		if constexpr (VoxelPassByValue<T>)
-		{
-			TVoxelArray<T> Result;
-			Result.Reserve(Values.Num());
-			for (const FVoxelRuntimePinValue& Value : Values)
-			{
-				Result.Add(Value.Get<T>());
-			}
-			return Result;
-		}
-		else
-		{
-			TVoxelArray<TSharedRef<const T>> Result;
-			Result.Reserve(Values.Num());
-			for (const FVoxelRuntimePinValue& Value : Values)
-			{
-				Result.Add(Value.GetSharedStruct<T>());
-			}
-			return Result;
+			return PrivateConstantValues[Pin].template GetSharedStruct<T>();
 		}
 	}
 
 private:
 	bool bIsCreated = false;
 	bool bIsDestroyed = false;
-	TSharedPtr<FVoxelTerminalGraphInstance> PrivateTerminalGraphInstance;
-	TVoxelMap<FName, TVoxelArray<FVoxelRuntimePinValue>> PrivateConstantValues;
+	TSharedPtr<FVoxelQueryContext> PrivateContext;
+	TVoxelMap<FName, FVoxelRuntimePinValue> PrivateConstantValues;
 
 	void CallDestroy();
 
@@ -163,8 +144,8 @@ private:
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-template<typename InNodeType, typename BaseType = FVoxelExecNodeRuntime>
-class TVoxelExecNodeRuntime : public BaseType
+template<typename InNodeType>
+class TVoxelExecNodeRuntime : public FVoxelExecNodeRuntime
 {
 public:
 	using NodeType = InNodeType;
@@ -173,7 +154,7 @@ public:
 	const NodeType& Node;
 
 	explicit TVoxelExecNodeRuntime(const TSharedRef<const FVoxelExecNode>& NodeRef)
-		: BaseType(NodeRef)
+		: FVoxelExecNodeRuntime(NodeRef)
 		, Node(CastChecked<NodeType>(*NodeRef))
 	{
 		checkStatic(TIsDerivedFrom<NodeType, FVoxelExecNode>::Value);

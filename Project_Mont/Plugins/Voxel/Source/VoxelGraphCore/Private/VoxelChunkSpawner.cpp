@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelChunkSpawner.h"
 
@@ -20,7 +20,7 @@ TSharedRef<FVoxelChunkRef> FVoxelChunkSpawner::CreateChunk(
 	const FVoxelBox& Bounds) const
 {
 	const TSharedPtr<FVoxelChunkRef> ChunkRef = PrivateCreateChunkLambda(LOD, ChunkSize, Bounds);
-	if (!ensureVoxelSlow(ChunkRef))
+	if (!ensure(ChunkRef))
 	{
 		return MakeVoxelShared<FVoxelChunkRef>(FVoxelChunkId(), MakeVoxelShared<FVoxelChunkActionQueue>());
 	}

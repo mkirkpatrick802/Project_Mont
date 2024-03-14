@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -15,7 +15,7 @@ public:
 		check(LockerThreadId != ThreadId());
 
 		Section.Lock();
-		ensure(bIsLocked.Exchange(true) == false);
+		ensure(LockCounter.Set(1) == 0);
 
 		check(LockerThreadId == -1);
 		LockerThreadId = ThreadId();
@@ -25,13 +25,13 @@ public:
 		check(LockerThreadId == ThreadId());
 		LockerThreadId = -1;
 
-		ensure(bIsLocked.Exchange(false) == true);
+		ensure(LockCounter.Set(0) == 1);
 		Section.Unlock();
 	}
 
 	FORCEINLINE bool IsLocked() const
 	{
-		return bIsLocked.Get();
+		return LockCounter.GetValue() > 0;
 	}
 	FORCEINLINE bool IsLockedByThisThread() const
 	{
@@ -40,7 +40,7 @@ public:
 
 private:
 	FCriticalSection Section;
-	TVoxelAtomic<bool> bIsLocked;
+	FThreadSafeCounter LockCounter;
 	uint32 LockerThreadId = -1;
 
 	FORCEINLINE static uint32 ThreadId()
@@ -125,16 +125,16 @@ private:
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-class FVoxelSlowCriticalSection
+class FVoxelCriticalSection
 {
 public:
-	FVoxelSlowCriticalSection() = default;
+	FVoxelCriticalSection() = default;
 
 	// Allow copying for convenience
-	FVoxelSlowCriticalSection(const FVoxelSlowCriticalSection&)
+	FVoxelCriticalSection(const FVoxelCriticalSection&)
 	{
 	}
-	FVoxelSlowCriticalSection& operator=(const FVoxelSlowCriticalSection&)
+	FVoxelCriticalSection& operator=(const FVoxelCriticalSection&)
 	{
 		return *this;
 	}
@@ -187,7 +187,6 @@ public:
 
 	FORCEINLINE void ReadLock()
 	{
-		VOXEL_FUNCTION_COUNTER();
 		Section.ReadLock();
 	}
 	FORCEINLINE void ReadUnlock()
@@ -197,7 +196,6 @@ public:
 
 	FORCEINLINE void WriteLock()
 	{
-		VOXEL_FUNCTION_COUNTER();
 		Section.WriteLock();
 	}
 	FORCEINLINE void WriteUnlock()
@@ -262,14 +260,14 @@ private:
 ///////////////////////////////////////////////////////////////////////////////
 
 template<typename StorageType>
-class TVoxelCriticalSectionImpl
+class TVoxelFastCriticalSectionImpl
 {
 public:
-	TVoxelCriticalSectionImpl() = default;
+	TVoxelFastCriticalSectionImpl() = default;
 
 	FORCEINLINE void Lock()
 	{
-		checkVoxelSlow(Storage.LockerThreadId.Get() != FPlatformTLS::GetCurrentThreadId());
+		checkVoxelSlow(Storage.LockerThreadId.Load() != FPlatformTLS::GetCurrentThreadId());
 
 		while (true)
 		{
@@ -278,26 +276,26 @@ public:
 				break;
 			}
 
-			while (Storage.bIsLocked.Get(std::memory_order_relaxed) == true)
+			while (Storage.bIsLocked.Load(std::memory_order_relaxed) == true)
 			{
 				FPlatformProcess::Yield();
 			}
 		}
 
-		checkVoxelSlow(Storage.LockerThreadId.Get() == 0);
-		VOXEL_DEBUG_ONLY(Storage.LockerThreadId.Set(FPlatformTLS::GetCurrentThreadId()));
+		checkVoxelSlow(Storage.LockerThreadId.Load() == 0);
+		VOXEL_DEBUG_ONLY(Storage.LockerThreadId.Store(FPlatformTLS::GetCurrentThreadId()));
 	}
 	FORCEINLINE void Unlock()
 	{
-		checkVoxelSlow(Storage.LockerThreadId.Get() == FPlatformTLS::GetCurrentThreadId());
-		VOXEL_DEBUG_ONLY(Storage.LockerThreadId.Set(0));
+		checkVoxelSlow(Storage.LockerThreadId.Load() == FPlatformTLS::GetCurrentThreadId());
+		VOXEL_DEBUG_ONLY(Storage.LockerThreadId.Store(0));
 
-		Storage.bIsLocked.Set(false, std::memory_order_release);
+		Storage.bIsLocked.Store(false, std::memory_order_release);
 	}
 
 	FORCEINLINE bool IsLocked() const
 	{
-		return Storage.bIsLocked.Get(std::memory_order_relaxed);
+		return Storage.bIsLocked.Load(std::memory_order_relaxed);
 	}
 	FORCEINLINE bool ShouldRecordStats() const
 	{
@@ -306,7 +304,7 @@ public:
 #if VOXEL_DEBUG
 	FORCEINLINE bool IsLockedByThisThread_Debug() const
 	{
-		return Storage.LockerThreadId.Get() == FPlatformTLS::GetCurrentThreadId();
+		return Storage.LockerThreadId.Load() == FPlatformTLS::GetCurrentThreadId();
 	}
 #endif
 
@@ -316,7 +314,7 @@ private:
 
 namespace Impl
 {
-	struct FVoxelCriticalSectionStorage
+	struct FVoxelFastCriticalSectionStorage
 	{
 		FVoxelCacheLinePadding PaddingA;
 		TVoxelAtomic<bool> bIsLocked = false;
@@ -326,7 +324,7 @@ namespace Impl
 		FVoxelCacheLinePadding PaddingB;
 	};
 
-	struct FVoxelCriticalSectionStorage_NoPadding
+	struct FVoxelFastCriticalSectionStorage_NoPadding
 	{
 		TVoxelAtomic<bool> bIsLocked = false;
 #if VOXEL_DEBUG
@@ -335,8 +333,8 @@ namespace Impl
 	};
 }
 
-using FVoxelCriticalSection = TVoxelCriticalSectionImpl<Impl::FVoxelCriticalSectionStorage>;
-using FVoxelCriticalSection_NoPadding = TVoxelCriticalSectionImpl<Impl::FVoxelCriticalSectionStorage_NoPadding>;
+using FVoxelFastCriticalSection = TVoxelFastCriticalSectionImpl<Impl::FVoxelFastCriticalSectionStorage>;
+using FVoxelFastCriticalSection_NoPadding = TVoxelFastCriticalSectionImpl<Impl::FVoxelFastCriticalSectionStorage_NoPadding>;
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -348,6 +346,7 @@ public:
 	FORCEINLINE explicit FVoxelScopeLock_Read(FVoxelSharedCriticalSection& Section)
 		: Section(Section)
 	{
+		VOXEL_FUNCTION_COUNTER();
 		Section.ReadLock();
 	}
 	FORCEINLINE ~FVoxelScopeLock_Read()
@@ -365,6 +364,7 @@ public:
 	FORCEINLINE explicit FVoxelScopeLock_Write(FVoxelSharedCriticalSection& Section)
 		: Section(Section)
 	{
+		VOXEL_FUNCTION_COUNTER();
 		Section.WriteLock();
 	}
 	FORCEINLINE ~FVoxelScopeLock_Write()

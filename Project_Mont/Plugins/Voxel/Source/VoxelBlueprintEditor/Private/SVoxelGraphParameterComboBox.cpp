@@ -1,17 +1,22 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "SVoxelGraphParameterComboBox.h"
-#include "VoxelGraphVisuals.h"
 #include "SVoxelGraphParameterSelector.h"
+#include "VoxelGraphVisuals.h"
 
 void SVoxelGraphParameterComboBox::Construct(const FArguments& InArgs)
 {
-	OnItemChanged = InArgs._OnItemChanged;
-	ensure(OnItemChanged.IsBound());
+	CachedParameterProvider = InArgs._ParameterProvider;
+	OnParameterChanged = InArgs._OnTypeChanged;
+	ensure(OnParameterChanged.IsBound());
 
-	Items = InArgs._Items;
-	CurrentItem = InArgs._CurrentItem;
-	bIsValidItem = InArgs._IsValidItem;
+	SAssignNew(MainIcon, SImage);
+
+	SAssignNew(MainTextBlock, STextBlock)
+	.Font(FVoxelEditorUtilities::Font())
+	.ColorAndOpacity(FSlateColor::UseForeground());
+
+	UpdateParameter(InArgs._CurrentParameter);
 
 	TSharedPtr<SHorizontalBox> SelectorBox;
 	ChildSlot
@@ -27,7 +32,7 @@ void SVoxelGraphParameterComboBox::Construct(const FArguments& InArgs)
 			.ContentPadding(0)
 			.ForegroundColor_Lambda([this]
 			{
-				return bIsValidItem.Get() ? FSlateColor::UseForeground() : FStyleColors::Error;
+				return bIsValidParameter ? FSlateColor::UseForeground() : FStyleColors::Error;
 			})
 			.ButtonContent()
 			[
@@ -39,15 +44,7 @@ void SVoxelGraphParameterComboBox::Construct(const FArguments& InArgs)
 				.Padding(0.f, 0.f, 2.f, 0.f)
 				.AutoWidth()
 				[
-					SNew(SImage)
-					.Image_Lambda(MakeWeakPtrLambda(this, [this]
-					{
-						return FVoxelGraphVisuals::GetPinIcon(CurrentItem.Get().Type).GetIcon();
-					}))
-					.ColorAndOpacity_Lambda(MakeWeakPtrLambda(this, [this]
-					{
-						return FVoxelGraphVisuals::GetPinColor(CurrentItem.Get().Type);
-					}))
+					MainIcon.ToSharedRef()
 				]
 				+ SHorizontalBox::Slot()
 				.VAlign(VAlign_Center)
@@ -55,17 +52,35 @@ void SVoxelGraphParameterComboBox::Construct(const FArguments& InArgs)
 				.Padding(2.f, 0.f, 0.f, 0.f)
 				.AutoWidth()
 				[
-					SNew(STextBlock)
-					.Font(FVoxelEditorUtilities::Font())
-					.ColorAndOpacity(FSlateColor::UseForeground())
-					.Text_Lambda(MakeWeakPtrLambda(this, [this]
-					{
-						return FText::FromName(CurrentItem.Get().Name);
-					}))
+					MainTextBlock.ToSharedRef()
 				]
 			]
 		]
 	];
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+void SVoxelGraphParameterComboBox::UpdateParameter(const FVoxelGraphBlueprintParameter& NewParameter)
+{
+	bIsValidParameter = NewParameter.bIsValid;
+	MainIcon->SetImage(GetIcon(NewParameter.Type));
+	MainIcon->SetColorAndOpacity(GetColor(NewParameter.Type));
+
+	MainTextBlock->SetText(FText::FromName(NewParameter.Name));
+}
+
+void SVoxelGraphParameterComboBox::UpdateParameterProvider(const TWeakInterfacePtr<IVoxelParameterProvider>& NewParameterProvider)
+{
+	CachedParameterProvider = NewParameterProvider;
+	if (!ParameterSelector)
+	{
+		return;
+	}
+
+	ParameterSelector->UpdateParameterProvider(NewParameterProvider);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -84,8 +99,12 @@ TSharedRef<SWidget> SVoxelGraphParameterComboBox::GetMenuContent()
 	SAssignNew(MenuContent, SMenuOwner)
 	[
 		SAssignNew(ParameterSelector, SVoxelGraphParameterSelector)
-		.Items(Items)
-		.OnItemChanged(OnItemChanged)
+		.ParameterProvider(CachedParameterProvider)
+		.OnParameterChanged(MakeWeakPtrDelegate(this, [this](const FVoxelParameter& NewParameter)
+		{
+			OnParameterChanged.ExecuteIfBound(NewParameter);
+			UpdateParameter(FVoxelGraphBlueprintParameter(NewParameter));
+		}))
 		.OnCloseMenu(MakeWeakPtrDelegate(this, [this]
 		{
 			MenuContent->CloseSummonedMenus();
@@ -96,4 +115,18 @@ TSharedRef<SWidget> SVoxelGraphParameterComboBox::GetMenuContent()
 	TypeComboButton->SetMenuContentWidgetToFocus(ParameterSelector->GetWidgetToFocus());
 
 	return MenuContent.ToSharedRef();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+const FSlateBrush* SVoxelGraphParameterComboBox::GetIcon(const FVoxelPinType& PinType) const
+{
+	return FVoxelGraphVisuals::GetPinIcon(PinType).GetIcon();
+}
+
+FLinearColor SVoxelGraphParameterComboBox::GetColor(const FVoxelPinType& PinType) const
+{
+	return FVoxelGraphVisuals::GetPinColor(PinType);
 }

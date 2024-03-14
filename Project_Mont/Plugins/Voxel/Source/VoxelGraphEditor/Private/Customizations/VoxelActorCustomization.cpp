@@ -1,10 +1,11 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelEditorMinimal.h"
 #include "VoxelActor.h"
+#include "IDetailGroup.h"
 #include "Sculpt/VoxelSculptStorage.h"
 #include "SculptVolume/VoxelSculptEdMode.h"
-#include "VoxelParameterOverridesDetails.h"
+#include "Customizations/VoxelParameterContainerDetails.h"
 
 VOXEL_CUSTOMIZE_CLASS(AVoxelActor)(IDetailLayoutBuilder& DetailLayout)
 {
@@ -15,9 +16,10 @@ VOXEL_CUSTOMIZE_CLASS(AVoxelActor)(IDetailLayoutBuilder& DetailLayout)
 
 	FVoxelEditorUtilities::EnableRealtime();
 
-	const TVoxelArray<TWeakObjectPtr<AVoxelActor>> WeakActors = GetWeakObjectsBeingCustomized(DetailLayout);
-
 	{
+		TArray<TWeakObjectPtr<UObject>> Objects;
+		DetailLayout.GetObjectsBeingCustomized(Objects);
+
 		DetailLayout.EditCategory(STATIC_FNAME("Sculpt"))
 		.AddCustomRow(INVTEXT("Sculpt"))
 		.NameContent()
@@ -34,15 +36,15 @@ VOXEL_CUSTOMIZE_CLASS(AVoxelActor)(IDetailLayoutBuilder& DetailLayout)
 			{
 				FScopedTransaction Transaction(TEXT("Clear Sculpt Data"), INVTEXT("Clear Sculpt Data"), nullptr);
 
-				for (const TWeakObjectPtr<AVoxelActor>& WeakActor : WeakActors)
+				for (const TWeakObjectPtr<UObject>& Object : Objects)
 				{
-					if (!WeakActor.IsValid() ||
-						!ensure(WeakActor->SculptStorageComponent))
+					if (const AVoxelActor* VoxelActor = Cast<AVoxelActor>(Object.Get()))
 					{
-						continue;
+						if (ensure(VoxelActor->SculptStorageComponent))
+						{
+							VoxelActor->SculptStorageComponent->ClearData();
+						}
 					}
-
-					WeakActor->SculptStorageComponent->ClearData();
 				}
 
 				return FReply::Handled();
@@ -50,66 +52,61 @@ VOXEL_CUSTOMIZE_CLASS(AVoxelActor)(IDetailLayoutBuilder& DetailLayout)
 		];
 	}
 
-	const TSharedRef<IPropertyHandle> GraphHandle = DetailLayout.GetProperty(GET_MEMBER_NAME_STATIC(AVoxelActor, Graph_NewProperty));
-	GraphHandle->MarkHiddenByCustomization();
+	IDetailCategoryBuilder& ActorCategory = DetailLayout.EditCategory(STATIC_FNAME("Actor"));
 
-	// Force graph at the bottom
-	DetailLayout
-	.EditCategory(
-		"Config",
-		{},
-		ECategoryPriority::Uncommon)
-	.AddProperty(GraphHandle);
+	TArray<TSharedRef<IPropertyHandle>> ActorProperties;
+	ActorCategory.GetDefaultProperties(ActorProperties);
 
-	KeepAlive(FVoxelParameterOverridesDetails::Create(
-		DetailLayout,
-		GetObjectsBeingCustomized(DetailLayout),
-		FVoxelEditorUtilities::MakeRefreshDelegate(this, DetailLayout)));
-
-	// Hide component properties
-	for (const FProperty& Property : GetClassProperties<UActorComponent>())
+	for (const TSharedRef<IPropertyHandle>& ActorPropertyHandle : ActorProperties)
 	{
-		if (const TSharedPtr<IPropertyHandle> PropertyHandle = DetailLayout.GetProperty(Property.GetFName(), UActorComponent::StaticClass()))
+		if (ActorPropertyHandle->GetProperty()->GetFName() == GET_MEMBER_NAME_STATIC(AActor, Tags))
 		{
-			PropertyHandle->MarkHiddenByCustomization();
+			IDetailCategoryBuilder& DefaultCategory = DetailLayout.EditCategory(STATIC_FNAME("Default"));
+			DefaultCategory.AddProperty(ActorPropertyHandle);
+			break;
 		}
 	}
 
-	const auto MoveToDefaultCategory = [&](const FName CategoryName, const TSet<FName>& ExplicitProperties = {}, const bool bCreateGroup = true)
+	DetailLayout.HideCategory(STATIC_FNAME("Actor"));
+
+	IDetailCategoryBuilder& WorldPartitionCategory = DetailLayout.EditCategory(STATIC_FNAME("WorldPartition"));
+	TArray<TSharedRef<IPropertyHandle>> WorldPartitionProperties;
+	WorldPartitionCategory.GetDefaultProperties(WorldPartitionProperties);
+
+	IDetailCategoryBuilder& DefaultCategory = DetailLayout.EditCategory(STATIC_FNAME("Default"));
+	IDetailGroup& Group = DefaultCategory.AddGroup(STATIC_FNAME("WorldPartition"), INVTEXT("World Partition"));
+	for (const TSharedRef<IPropertyHandle>& WorldPartitionProperty : WorldPartitionProperties)
 	{
-		IDetailCategoryBuilder& CategoryBuilder = DetailLayout.EditCategory(CategoryName);
-		TArray<TSharedRef<IPropertyHandle>> Properties;
-		CategoryBuilder.GetDefaultProperties(Properties);
+		Group.AddPropertyRow(WorldPartitionProperty);
+	}
 
-		IDetailCategoryBuilder& DefaultCategory = DetailLayout.EditCategory(STATIC_FNAME("Default"), {}, ECategoryPriority::Uncommon);
+	TArray<TWeakObjectPtr<UObject>> WeakObjects;
+	DetailLayout.GetObjectsBeingCustomized(WeakObjects);
 
-		DetailLayout.HideCategory(CategoryName);
+	TArray<UObject*> Objects;
+	for (const TWeakObjectPtr<UObject>& WeakObject : WeakObjects)
+	{
+		Objects.Add(WeakObject.Get());
+	}
 
-		if (!bCreateGroup)
-		{
-			for (const TSharedRef<IPropertyHandle>& Property : Properties)
-			{
-				if (ExplicitProperties.Num() == 0 ||
-					ExplicitProperties.Contains(Property->GetProperty()->GetFName()))
-				{
-					DefaultCategory.AddProperty(Property);
-				}
-			}
-			return;
-		}
+	IDetailPropertyRow* Row = DetailLayout.EditCategory("").AddExternalObjectProperty(
+		Objects,
+		GET_MEMBER_NAME_STATIC(AVoxelActor, ParameterContainer),
+		EPropertyLocation::Default,
+		FAddPropertyParams().ForceShowProperty());
 
-		IDetailGroup& Group = DefaultCategory.AddGroup(CategoryName, CategoryBuilder.GetDisplayName());
-		for (const TSharedRef<IPropertyHandle>& Property : Properties)
-		{
-			if (ExplicitProperties.Num() == 0 ||
-				ExplicitProperties.Contains(Property->GetProperty()->GetFName()))
-			{
-				Group.AddPropertyRow(Property);
-			}
-		}
-	};
+	if (!ensure(Row))
+	{
+		return;
+	}
 
-	MoveToDefaultCategory(STATIC_FNAME("Actor"), { GET_MEMBER_NAME_STATIC(AActor, Tags) }, false);
-	MoveToDefaultCategory(STATIC_FNAME("WorldPartition"));
-	MoveToDefaultCategory(STATIC_FNAME("LevelInstance"));
+	Row->Visibility(EVisibility::Collapsed);
+
+	const TSharedPtr<IPropertyHandle> PropertyHandle = Row->GetPropertyHandle();
+	if (!ensure(PropertyHandle))
+	{
+		return;
+	}
+
+	KeepAlive(FVoxelParameterContainerDetails::Create(DetailLayout, PropertyHandle.ToSharedRef()));
 }

@@ -1,20 +1,20 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelCoreMinimal.h"
-#include "VoxelMinimal/VoxelMemory.h"
+#include "VoxelMinimal/Utilities/VoxelBaseUtilities.h"
 
 template<typename FuncType>
 class TVoxelUniqueFunction;
 
-template<typename>
-struct TIsTVoxelUniqueFunction : TIntegralConstant<bool, false>
+template <typename T>
+struct TIsTVoxelUniqueFunction : FVoxelFalseType
 {
 };
 
-template<typename T>
-struct TIsTVoxelUniqueFunction<TVoxelUniqueFunction<T>> : TIntegralConstant<bool, true>
+template <typename T>
+struct TIsTVoxelUniqueFunction<TVoxelUniqueFunction<T>> : FVoxelTrueType
 {
 };
 
@@ -27,29 +27,16 @@ ReturnType VoxelCall(void* RawFunctor, ArgTypes&... Args)
 template<typename ReturnType, typename... ArgTypes>
 class TVoxelUniqueFunction<ReturnType(ArgTypes...)>
 {
-private:
-	template<typename FunctorType>
-	struct HasValidReturnType
-	{
-		using FunctorReturnType = decltype(DeclVal<FunctorType>()(DeclVal<ArgTypes>()...));
-
-		static constexpr bool Value =
-			std::is_same_v<ReturnType, FunctorReturnType> ||
-			TIsConstructible<ReturnType, FunctorReturnType>::Value;
-	};
-
 public:
 	TVoxelUniqueFunction() = default;
 	TVoxelUniqueFunction(decltype(nullptr)) {}
 
-	template<typename FunctorType, typename = std::enable_if_t<TAnd<
-		TNot<TIsTVoxelUniqueFunction<std::decay_t<FunctorType>>>,
-		TIsInvocable<FunctorType, ArgTypes...>,
-		HasValidReturnType<FunctorType>
-	>::Value>>
+	template<typename FunctorType, typename = typename TEnableIf<
+		!TIsTVoxelUniqueFunction<typename TDecay<FunctorType>::Type>::Value&&
+		UE::Core::Private::Function::TFuncCanBindToFunctor<ReturnType(ArgTypes...), FunctorType>::Value>::Type>
 	FORCEINLINE TVoxelUniqueFunction(FunctorType&& Functor)
 	{
-		this->Bind(MoveTempIfPossible(Functor));
+		this->Bind(MoveTemp(Functor));
 	}
 	TVoxelUniqueFunction(const TVoxelUniqueFunction& Other) = delete;
 
@@ -89,9 +76,10 @@ public:
 		return *this;
 	}
 
-	FORCEINLINE ReturnType operator()(ArgTypes... Args) const
+	FORCEINLINE_ACTUAL ReturnType operator()(ArgTypes... Args) const
 	{
-		checkVoxelSlow(Callable && Allocation);
+		checkVoxelSlow(Callable);
+		checkVoxelSlow(Allocation);
 		return (*Callable)(Allocation, Args...);
 	}
 
@@ -113,7 +101,7 @@ private:
 		FunctorType Functor;
 
 		explicit TStorage(FunctorType&& Functor)
-			: Functor(MoveTempIfPossible(Functor))
+			: Functor(MoveTemp(Functor))
 		{
 		}
 
@@ -135,7 +123,7 @@ private:
 
 		using FStorage = TStorage<FunctorType>;
 
-		FStorage* Storage = new (GVoxelMemory) FStorage(MoveTempIfPossible(Functor));
+		FStorage* Storage = new (GVoxelMemory) FStorage(MoveTemp(Functor));
 		Storage->Destroy = &FStorage::CallDestroy;
 
 		Callable = &VoxelCall<FunctorType, ReturnType, ArgTypes...>;

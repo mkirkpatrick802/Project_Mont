@@ -1,8 +1,9 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "Material/VoxelMaterialDefinition.h"
 #include "Material/VoxelMaterialDefinitionInstance.h"
 #include "Material/MaterialExpressionSampleVoxelParameter.h"
+#include "VoxelParameterView.h"
 
 DEFINE_VOXEL_FACTORY(UVoxelMaterialDefinition);
 
@@ -11,9 +12,9 @@ VOXEL_CONSOLE_COMMAND(
 	"voxel.RebuildMaterialTextures",
 	"")
 {
-	ForEachObjectOfClass<UVoxelMaterialDefinition>([&](UVoxelMaterialDefinition& Definition)
+	ForEachObjectOfClass<UVoxelMaterialDefinition>([&](UVoxelMaterialDefinition* Definition)
 	{
-		Definition.QueueRebuildTextures();
+		Definition->QueueRebuildTextures();
 	});
 }
 
@@ -22,9 +23,9 @@ VOXEL_CONSOLE_COMMAND(
 	"voxel.PurgeMaterialTextures",
 	"")
 {
-	ForEachObjectOfClass<UVoxelMaterialDefinition>([&](UVoxelMaterialDefinition& Definition)
+	ForEachObjectOfClass<UVoxelMaterialDefinition>([&](UVoxelMaterialDefinition* Definition)
 	{
-		for (auto& It : Definition.GuidToParameterData)
+		for (auto& It : Definition->GuidToParameterData)
 		{
 			if (!ensure(It.Value))
 			{
@@ -42,7 +43,7 @@ VOXEL_CONSOLE_COMMAND(
 			}
 		}
 
-		Definition.QueueRebuildTextures();
+		Definition->QueueRebuildTextures();
 	});
 }
 
@@ -50,60 +51,25 @@ VOXEL_CONSOLE_COMMAND(
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-void UVoxelMaterialDefinition::PostLoad()
-{
-	Super::PostLoad();
-
-	if (GuidToParameter_DEPRECATED.Num() > 0)
-	{
-		for (const auto& It : GuidToParameter_DEPRECATED)
-		{
-			Parameters_DEPRECATED.Add(It.Value);
-		}
-		GuidToParameter_DEPRECATED.Empty();
-	}
-
-	for (const FVoxelParameter& Parameter : Parameters_DEPRECATED)
-	{
-		FVoxelMaterialDefinitionParameter MaterialDefinitionParameter;
-		MaterialDefinitionParameter.Name = Parameter.Name;
-		MaterialDefinitionParameter.Type = Parameter.Type;
-		MaterialDefinitionParameter.DefaultValue = Parameter.DeprecatedDefaultValue;
 #if WITH_EDITOR
-		MaterialDefinitionParameter.Category = Parameter.Category;
-		MaterialDefinitionParameter.Description = Parameter.Description;
-		MaterialDefinitionParameter.MetaData = Parameter.MetaData;
-#endif
-
-		ensure(!GuidToMaterialParameter.Contains(Parameter.DeprecatedGuid));
-		GuidToMaterialParameter.Add(Parameter.DeprecatedGuid, MaterialDefinitionParameter);
-	}
-	Parameters_DEPRECATED.Empty();
-
-	Fixup();
-}
-
-#if WITH_EDITOR
-
 void UVoxelMaterialDefinition::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 
-	Fixup();
+	FVoxelParameter::FixupParameterArray(this, Parameters);
 
 	// Fixup GuidToParameterData
 	{
-		TVoxelSet<FGuid> ValidGuids;
-		for (const auto& It : GuidToMaterialParameter)
+		TSet<FGuid> ValidGuids;
+		for (const FVoxelParameter& Parameter : Parameters)
 		{
-			const FVoxelMaterialDefinitionParameter& Parameter = It.Value;
 			const UMaterialExpressionSampleVoxelParameter* Template = UMaterialExpressionSampleVoxelParameter::GetTemplate(Parameter.Type);
 			if (!Template)
 			{
 				continue;
 			}
 
-			ValidGuids.Add(It.Key);
+			ValidGuids.Add(Parameter.Guid);
 
 			UScriptStruct* Struct = Template->GetVoxelParameterDataType();
 			if (!ensure(Struct))
@@ -111,7 +77,7 @@ void UVoxelMaterialDefinition::PostEditChangeProperty(FPropertyChangedEvent& Pro
 				continue;
 			}
 
-			TVoxelInstancedStruct<FVoxelMaterialParameterData>& ParameterData = GuidToParameterData.FindOrAdd(It.Key);
+			TVoxelInstancedStruct<FVoxelMaterialParameterData>& ParameterData = GuidToParameterData.FindOrAdd(Parameter.Guid);
 			if (ParameterData.GetScriptStruct() != Struct)
 			{
 				ParameterData = FVoxelInstancedStruct(Struct);
@@ -133,6 +99,16 @@ void UVoxelMaterialDefinition::PostEditChangeProperty(FPropertyChangedEvent& Pro
 		}
 	}
 
+	// Fixup categories
+	{
+		TArray<FString> CategoriesList;
+		for (const FVoxelParameter& Parameter : Parameters)
+		{
+			CategoriesList.Add(Parameter.Category);
+		}
+		Categories.Fixup(CategoriesList);
+	}
+
 	OnParametersChanged.Broadcast();
 	QueueRebuildTextures();
 }
@@ -142,54 +118,96 @@ void UVoxelMaterialDefinition::PostEditChangeProperty(FPropertyChangedEvent& Pro
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-FVoxelPinValue UVoxelMaterialDefinition::GetParameterValue(const FGuid& Guid) const
+class FVoxelMaterialDefinitionParameterView : public IVoxelParameterView
 {
-	const FVoxelMaterialDefinitionParameter* Parameter = GuidToMaterialParameter.Find(Guid);
-	if (!ensure(Parameter))
+public:
+	TWeakObjectPtr<UVoxelMaterialDefinition> Definition;
+	FGuid Guid;
+
+	using IVoxelParameterView::IVoxelParameterView;
+
+	virtual const FVoxelParameter* GetParameter() const override
 	{
-		return {};
-	}
-	return Parameter->DefaultValue;
-}
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-void UVoxelMaterialDefinition::Fixup()
-{
-	VOXEL_FUNCTION_COUNTER();
-
-	// Compact to avoid adding into a hole
-	GuidToMaterialParameter.CompactStable();
-
-	// Fixup parameters
-	{
-		TSet<FName> Names;
-
-		for (auto& It : GuidToMaterialParameter)
+		if (!ensure(Definition.IsValid()))
 		{
-			FVoxelMaterialDefinitionParameter& Parameter = It.Value;
-			Parameter.Fixup();
-
-			if (Parameter.Name.IsNone())
-			{
-				Parameter.Name = "Parameter";
-			}
-
-			while (Names.Contains(Parameter.Name))
-			{
-				Parameter.Name.SetNumber(Parameter.Name.GetNumber() + 1);
-			}
-
-			Names.Add(Parameter.Name);
+			return nullptr;
 		}
+
+		const FVoxelParameter* Parameter = Definition->FindParameterByGuid(Guid);
+		if (!ensure(Parameter))
+		{
+			return nullptr;
+		}
+
+		return Parameter;
 	}
+};
+
+class FVoxelMaterialDefinitionParameterRootView : public IVoxelParameterRootView
+{
+public:
+	TWeakObjectPtr<UVoxelMaterialDefinition> Definition;
+	FVoxelParameterPath BasePath;
+	TVoxelMap<FGuid, TSharedPtr<FVoxelMaterialDefinitionParameterView>> GuidToParameterView;
+
+	using IVoxelParameterRootView::IVoxelParameterRootView;
+
+	virtual TVoxelArray<IVoxelParameterView*> GetChildren() override
+	{
+		if (!ensure(Definition.IsValid()))
+		{
+			return {};
+		}
+
+		TVoxelArray<IVoxelParameterView*> Children;
+		for (const FVoxelParameter& Parameter : Definition->Parameters)
+		{
+			TSharedPtr<FVoxelMaterialDefinitionParameterView>& ParameterView = GuidToParameterView.FindOrAdd(Parameter.Guid);
+			if (!ParameterView)
+			{
+				ParameterView = MakeVoxelShared<FVoxelMaterialDefinitionParameterView>(*this, BasePath.MakeChild(Parameter.Guid));
+				ParameterView->Definition = Definition;
+				ParameterView->Guid = Parameter.Guid;
+			}
+			Children.Add(ParameterView.Get());
+		}
+		return Children;
+	}
+	virtual const FVoxelParameterCategories* GetCategories() const override
+	{
+		if (!ensure(Definition.IsValid()))
+		{
+			return nullptr;
+		}
+		return &ConstCast(*Definition).Categories;
+	}
+};
+
+void UVoxelMaterialDefinition::AddOnChanged(const FSimpleDelegate& Delegate)
+{
+	OnParametersChanged.Add(Delegate);
 }
+
+TSharedPtr<IVoxelParameterRootView> UVoxelMaterialDefinition::GetParameterViewImpl(const FVoxelParameterPath& BasePath)
+{
+	const TSharedRef<FVoxelMaterialDefinitionParameterRootView> ParameterRootView = MakeVoxelShared<FVoxelMaterialDefinitionParameterRootView>(this);
+	ParameterRootView->Definition = this;
+	ParameterRootView->BasePath = BasePath;
+	return ParameterRootView;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
 
 void UVoxelMaterialDefinition::QueueRebuildTextures()
 {
 	GVoxelMaterialDefinitionManager->QueueRebuildTextures(*this);
 }
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
 
 void UVoxelMaterialDefinition::RebuildTextures()
 {
@@ -208,53 +226,64 @@ void UVoxelMaterialDefinition::RebuildTextures()
 		FName DebugName;
 		TVoxelArray<FInstance> Instances;
 	};
-	TVoxelMap<FGuid, FInstances> ParameterToInstances;
+	TVoxelAddOnlyMap<FGuid, FInstances> ParameterToInstances;
 	{
 		VOXEL_SCOPE_COUNTER("Build instances");
 
-		const auto AddMaterial = [&](UVoxelMaterialDefinitionInterface& Interface)
+		// Add self
 		{
-			const int32 Index = GVoxelMaterialDefinitionManager->Register_GameThread(Interface);
+			const int32 Index = GVoxelMaterialDefinitionManager->Register_GameThread(*this).Index;
 
-			for (const auto& It : GuidToMaterialParameter)
+			for (const FVoxelParameter& Parameter : Parameters)
 			{
-				const FVoxelPinValue Value = Interface.GetParameterValue(It.Key);
-				if (!ensure(Value.IsValid()))
-				{
-					continue;
-				}
-
-				const UMaterialExpressionSampleVoxelParameter* Template = UMaterialExpressionSampleVoxelParameter::GetTemplate(It.Value.Type);
+				const UMaterialExpressionSampleVoxelParameter* Template = UMaterialExpressionSampleVoxelParameter::GetTemplate(Parameter.Type);
 				if (!Template)
 				{
 					continue;
 				}
 
-				FInstances& Instances = ParameterToInstances.FindOrAdd(It.Key);
-				if (!Instances.Template)
-				{
-					ensure(&Interface == this);
-					Instances.Template = Template;
-					Instances.DebugName = It.Value.Name;
-				}
-
+				FInstances& Instances = ParameterToInstances.Add_CheckNew(Parameter.Guid);
+				Instances.Template = Template;
+				Instances.DebugName = GetName() + "_" + Parameter.Name;
 				Instances.Instances.Add(FInstance
 				{
-					&Interface,
+					this,
 					Index,
-					Value.AsTerminalValue()
+					Parameter.DefaultValue.AsTerminalValue()
 				});
 			}
-		};
+		}
 
-		// Add self
-		AddMaterial(*this);
-
-		ForEachObjectOfClass<UVoxelMaterialDefinitionInstance>([&](UVoxelMaterialDefinitionInstance& Instance)
+		ForEachObjectOfClass<UVoxelMaterialDefinitionInstance>([&](UVoxelMaterialDefinitionInstance* InstanceObject)
 		{
-			if (Instance.GetDefinition() == this)
+			if (InstanceObject->GetDefinition() != this)
 			{
-				AddMaterial(Instance);
+				return;
+			}
+
+			const int32 Index = GVoxelMaterialDefinitionManager->Register_GameThread(*InstanceObject).Index;
+
+			const TSharedPtr<IVoxelParameterRootView> ParameterRootView = InstanceObject->GetParameterView();
+			if (!ensure(ParameterRootView))
+			{
+				return;
+			}
+
+			for (const IVoxelParameterView* ParameterView : ParameterRootView->GetChildren())
+			{
+				FInstances* Instances = ParameterToInstances.Find(ParameterView->Path.Leaf());
+				if (!Instances)
+				{
+					checkVoxelSlow(!UMaterialExpressionSampleVoxelParameter::GetTemplate(ParameterView->GetType()));
+					continue;
+				}
+
+				Instances->Instances.Add(FInstance
+				{
+					InstanceObject,
+					Index,
+					ParameterView->GetValue().AsTerminalValue()
+				});
 			}
 		});
 	}

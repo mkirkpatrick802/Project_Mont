@@ -1,16 +1,13 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelCoreMinimal.h"
 #include "VoxelMinimal/Containers/VoxelArray.h"
 #include "VoxelMinimal/Containers/VoxelArrayView.h"
-#include "VoxelMinimal/RefCountPtr_RenderThread.h"
-#include "Shader.h"
+#include "VoxelMinimal/Utilities/RefCountPtr_RenderThread.h"
 #include "RHIGPUReadback.h"
 #include "RenderGraphBuilder.h"
-#include "DataDrivenShaderPlatformInfo.h"
-#include "Containers/DynamicRHIResourceArray.h"
 
 class UTexture2D;
 class FShaderParameterMap;
@@ -40,11 +37,6 @@ public:
 
 private:
 	static FRDGBuilder* StaticBuilder;
-};
-
-template<typename ElementType, uint32 Alignment>
-struct TIsContiguousContainer<TResourceArray<ElementType, Alignment>> : TIsContiguousContainer<TArray<ElementType, TMemoryImageAllocator<Alignment>>>
-{
 };
 
 struct FVoxelResourceArrayRef : public FResourceArrayInterface
@@ -102,8 +94,8 @@ public:
 	template<typename T>
 	static TSharedRef<FVoxelRDGExternalBuffer> CreateTyped(
 		FRHICommandListBase& RHICmdList,
-		const TConstVoxelArrayView<T> Array,
-		const EPixelFormat Format,
+		const TConstArrayView<T> Array,
+		EPixelFormat Format,
 		const TCHAR* Name)
 	{
 		FVoxelResourceArrayRef ResourceArray(Array);
@@ -119,7 +111,7 @@ public:
 
 	static TSharedRef<FVoxelRDGExternalBuffer> Create(
 		FRHICommandListBase& RHICmdList,
-		TConstVoxelArrayView<uint8> Array,
+		TConstArrayView<uint8> Array,
 		EPixelFormat Format,
 		const TCHAR* Name,
 		EBufferUsageFlags AdditionalFlags = BUF_None);
@@ -175,13 +167,13 @@ class VOXELCORE_API FVoxelRDGBuffer
 public:
 	FVoxelRDGBuffer() = default;
 
-	FVoxelRDGBuffer(const EPixelFormat Format, const FRDGBufferRef Buffer, FRDGBuilder& GraphBuilder = FVoxelRDGBuilderScope::Get())
+	FVoxelRDGBuffer(EPixelFormat Format, FRDGBufferRef Buffer, FRDGBuilder& GraphBuilder = FVoxelRDGBuilderScope::Get())
 		: GraphBuilder(&GraphBuilder)
 		, Format(Format)
 		, Buffer(Buffer)
 	{
 	}
-	FVoxelRDGBuffer(const EPixelFormat Format, FRDGBufferDesc Desc, const TCHAR* Name, FRDGBuilder& GraphBuilder = FVoxelRDGBuilderScope::Get())
+	FVoxelRDGBuffer(EPixelFormat Format, FRDGBufferDesc Desc, const TCHAR* Name, FRDGBuilder& GraphBuilder = FVoxelRDGBuilderScope::Get())
 		: FVoxelRDGBuffer(Format, GraphBuilder.CreateBuffer(Desc, Name), GraphBuilder)
 	{
 	}
@@ -316,34 +308,61 @@ struct uint4;
 	INTERNAL_SHADER_PARAMETER_EXPLICIT(UBMT_RDG_TEXTURE_UAV, TShaderResourceParameterTypeInfo<FRDGTextureUAV*>, FRDGTextureUAV*,MemberName,, = nullptr,EShaderPrecisionModifier::Float,TEXT("RW"#ShaderType),false) \
 	VOXEL_SHADER_PARAMETER_INTELLISENSE(ShaderType, MemberName)
 
+#if INTELLISENSE_PARSER
+#define VOXEL_SHADER_OPTIONAL_PARAMETER(Name) \
+	SHADER_PARAMETER(int32, PREPROCESSOR_JOIN(OPTIONAL_, Name)) \
+	FVoxelDummy_OPTIONAL_ ## Name; \
+	void VoxelDummy_OPTIONAL_ ## Name() const \
+	{ \
+		(void)Name; \
+	}; \
+	typedef zzNextMemberIdOPTIONAL_ ## Name
+#else
+#define VOXEL_SHADER_OPTIONAL_PARAMETER(Name) \
+	SHADER_PARAMETER(int32, PREPROCESSOR_JOIN(OPTIONAL_, Name))
+#endif
+
+#define VOXEL_SHADER_ALL_PARAMETERS_ARE_OPTIONAL() \
+	SHADER_PARAMETER(int32, ALL_OPTIONAL)
+
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
 #define VOXEL_SHADER_NAME(Name) Name :: FVoxelShader
 
-template<typename>
-struct TVoxelShader_ModifyCompilationEnvironment
-{
-	static void ModifyCompilationEnvironment(const FShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& Environment)
-	{
+#define DECLARE_VOXEL_SHADER_NAMESPACE(DebugName, Folder) \
+	INTELLISENSE_ONLY(namespace DebugName {}) \
+	constexpr const TCHAR* GVoxelShaderDebugName = TEXT(#DebugName); \
+	constexpr const TCHAR* GVoxelShaderFolder = TEXT("/Plugin/Voxel/" Folder); \
+	template<typename ShaderClass> \
+	struct TVoxelShader_ModifyCompilationEnvironment \
+	{ \
+		static void ModifyCompilationEnvironment(const FShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& Environment) \
+		{ \
+		} \
+	}; \
+	\
+	template<typename ShaderClass> \
+	struct TVoxelShader_ShouldCompilePermutation \
+	{ \
+		static bool ShouldCompilePermutation(const FShaderPermutationParameters& Parameters) \
+		{ \
+			return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5); \
+		} \
+	}; \
+	\
+	template<typename> \
+	struct TVoxelPermutationDomain \
+	{ \
+		using FPermutationDomain = FShaderPermutationNone; \
+	}; \
+	\
+	template<typename> \
+	struct TVoxelSourceFileOverride \
+	{ \
+		static TOptional<FString> Get() { return {}; } \
 	}
-};
-
-template<typename>
-struct TVoxelShader_ShouldCompilePermutation
-{
-	static bool ShouldCompilePermutation(const FShaderPermutationParameters& Parameters)
-	{
-		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);
-	}
-};
-
-template<typename>
-struct TVoxelPermutationDomain
-{
-	using FPermutationDomain = FShaderPermutationNone;
-};
 
 #define VOXEL_SHADER_MODIFY_COMPILATION_ENVIRONMENT(Name) \
 	namespace Name \
@@ -399,6 +418,27 @@ struct TVoxelPermutationDomain
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
+#define VOXEL_SHADER_OVERRIDE_FILE(Name, Path) \
+	namespace Name \
+	{ \
+		class FVoxelShader; \
+	} \
+	template<> \
+	struct TVoxelSourceFileOverride<VOXEL_SHADER_NAME(Name)> \
+	{ \
+		static TOptional<FString> Get() { return FString(Path); } \
+	};
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+VOXELCORE_API void Voxel_CheckShaderBindings(
+	const FShader* Shader,
+	int32 PermutationId,
+	const FShaderParameterMap& ParametersMap,
+	const FShaderParametersMetadata& StructMetaData);
+
 struct VOXELCORE_API FVoxelShaderStatsScope
 {
 public:
@@ -424,7 +464,7 @@ private:
 	TSharedPtr<FData> Data;
 };
 
-#define BEGIN_VOXEL_SHADER(FolderPath, Name, InShaderFrequency) \
+#define BEGIN_VOXEL_SHADER(Name, InShaderFrequency) \
 	namespace Name \
 	{ \
 		class FVoxelShader : public FGlobalShader \
@@ -432,16 +472,13 @@ private:
 		public: \
 			static const TCHAR* GetDebugName() \
 			{ \
-			    static const FString DebugName = FString("VoxelShader_") + #Name; \
+			    static const FString DebugName = FString::Printf(TEXT("%s_%s"), TEXT(#Name), GVoxelShaderDebugName); \
 				return *DebugName; \
 			} \
-			static const TCHAR* GetFunctionName() \
-			{ \
-				return TEXT("Main"); \
-			} \
+			static const TCHAR* GetFunctionName() { return TEXT("Main"); } \
 			static const TCHAR* GetSourceFilename() \
 			{ \
-			    static const FString Filename = "/Plugin" / FString(FolderPath) / #Name + ".usf"; \
+			    static const FString Filename = TVoxelSourceFileOverride<FVoxelShader>::Get().Get(FString::Printf(TEXT("%s/%s.usf"), GVoxelShaderFolder, TEXT(#Name))); \
 				return *Filename; \
 			} \
 			static constexpr EShaderFrequency ShaderFrequency = InShaderFrequency; \
@@ -466,6 +503,7 @@ private:
 				: FGlobalShader(Initializer) \
 			{ \
 				BindForLegacyShaderParameters<FParameters>(this, Initializer.PermutationId, Initializer.ParameterMap, true); \
+				Voxel_CheckShaderBindings(this, Initializer.PermutationId, Initializer.ParameterMap, *FParameters::FTypeInfo::GetStructMetadata()); \
 			} \
 			static inline const FShaderParametersMetadata* GetRootParametersMetadata() { return FParameters::FTypeInfo::GetStructMetadata(); } \
 			\
@@ -481,7 +519,14 @@ private:
 		IMPLEMENT_SHADER_TYPE_WITH_DEBUG_NAME(,FVoxelShader, FVoxelShader::GetSourceFilename(), FVoxelShader::GetFunctionName(), FVoxelShader::ShaderFrequency); \
 	}
 
-#define BEGIN_VOXEL_COMPUTE_SHADER(FolderPath, Name) BEGIN_VOXEL_SHADER(FolderPath, Name, SF_Compute)
+extern VOXELCORE_API FString GetVoxelShaderFullPath(const FString& Path, const FString& Name);
+
+#define BEGIN_RELATIVE_VOXEL_SHADER(Name, InShaderFrequency) \
+	VOXEL_SHADER_OVERRIDE_FILE(Name, GetVoxelShaderFullPath(__FILE__, #Name)); \
+	BEGIN_VOXEL_SHADER(Name, InShaderFrequency)
+
+#define BEGIN_VOXEL_COMPUTE_SHADER(Name) BEGIN_VOXEL_SHADER(Name, SF_Compute)
+#define BEGIN_VOXEL_RELATIVE_COMPUTE_SHADER(Name) BEGIN_RELATIVE_VOXEL_SHADER(Name, SF_Compute)
 
 #if HAS_GPU_STATS
 #define INTERNAL_VOXEL_SHADER_CALL_GPU_STAT(Name) \
@@ -610,7 +655,7 @@ private:
 	uint32 NumBytes = 0;
 	FRHIGPUBufferReadback Readback;
 
-	explicit FVoxelGPUBufferReadback(const FName RequestName)
+	explicit FVoxelGPUBufferReadback(FName RequestName)
 		: Readback(RequestName)
 	{
 	}
@@ -732,6 +777,21 @@ Define(PF_R64_UINT, 1, 1, 1, 8, 1)
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
+#define VOXEL_ENQUEUE_RENDER_COMMAND(Name) \
+	INTELLISENSE_ONLY(struct VOXEL_APPEND_LINE(FDummy) { void Name(); }); \
+	[](auto&& Lambda) \
+	{ \
+		ENQUEUE_RENDER_COMMAND(Name)([Lambda = MoveTemp(Lambda)](FRHICommandListImmediate& RHICmdList) \
+		{ \
+			VOXEL_SCOPE_COUNTER(#Name); \
+			Lambda(RHICmdList); \
+		}); \
+	}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
 FORCEINLINE void RHIUpdateTexture2D_Unsafe(
 	FRHITexture2D* Texture,
 	const uint32 MipIndex,
@@ -798,19 +858,9 @@ public:
 		TSharedPtr<FVirtualDestructor> KeepAlive);
 
 	template<typename ArrayType>
-	static void UpdateBuffer(
-		FRDGBuilder& GraphBuilder,
-		const FBufferRHIRef& Buffer,
-		const ArrayType& Array,
-		const int64 Offset = 0)
+	static void UpdateBuffer(const FBufferRHIRef& Buffer, const ArrayType& Array, int64 Offset = 0)
 	{
-		FVoxelRenderUtilities::UpdateBuffer(
-			GraphBuilder.RHICmdList,
-			Buffer,
-			Array.GetData(),
-			Array.GetTypeSize(),
-			Array.Num(),
-			Offset);
+		FVoxelRenderUtilities::UpdateBuffer(Buffer, Array.GetData(), Array.GetTypeSize(), Array.Num(), Offset);
 	}
 
 	template<typename ArrayType, typename KeepAliveType>
@@ -846,6 +896,11 @@ public:
 
 	static void CopyBuffer(FRDGBuilder& GraphBuilder, TSharedPtr<FVoxelGPUBufferReadback>& Readback, FRDGBufferRef Buffer);
 	static TSharedRef<FVoxelGPUBufferReadback> CopyBuffer(FRDGBuilder& GraphBuilder, FRDGBufferRef Buffer);
+
+	static void AllocatePooledTexture(
+		TRefCountPtr<IPooledRenderTarget>& Out,
+		const FPooledRenderTargetDesc& Desc,
+		const TCHAR* Name);
 
 	static bool UpdateTextureRef(
 		UTexture2D* TextureObject,
@@ -915,9 +970,4 @@ public:
 public:
 	static void KeepAliveThisFrame(void* Key, TFunction<void()> Lambda);
 	static void KeepAliveThisFrameAndRelease(const TSharedPtr<FRenderResource>& Resource);
-
-public:
-	static void ResetPreviousLocalToWorld(
-		const UPrimitiveComponent& Component,
-		const FPrimitiveSceneProxy& SceneProxy);
 };

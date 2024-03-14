@@ -1,13 +1,12 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "Widgets/SVoxelGraphPinTypeComboBox.h"
-#include "Widgets/SVoxelPinTypeSelector.h"
 #include "VoxelGraphVisuals.h"
+#include "Widgets/SVoxelGraphPinTypeSelector.h"
 
 void SVoxelPinTypeComboBox::Construct(const FArguments& InArgs)
 {
 	AllowedTypes = InArgs._AllowedTypes;
-	bAllowWildcard = InArgs._AllowWildcard;
 	CurrentType = InArgs._CurrentType;
 	ReadOnly = InArgs._ReadOnly;
 
@@ -108,10 +107,7 @@ void SVoxelPinTypeComboBox::Construct(const FArguments& InArgs)
 			+ SHorizontalBox::Slot()
 			.VAlign(VAlign_Center)
 			.HAlign(HAlign_Left)
-			.Padding(MakeAttributeLambda(MakeWeakPtrLambda(this, [this, bShowContainerSelection]
-			{
-				return FMargin(2.f, bShowContainerSelection && !CachedType.IsWildcard() && CachedType.HasBufferType_EditorOnly() ? 4.f : 3.f);
-			})))
+			.Padding(2.f, bShowContainerSelection ? 4.f : 3.f)
 			.AutoWidth()
 			[
 				MainIcon.ToSharedRef()
@@ -139,10 +135,6 @@ void SVoxelPinTypeComboBox::Construct(const FArguments& InArgs)
 	.Padding(2.f)
 	[
 		SAssignNew(ContainerTypeComboButton, SComboButton)
-		.Visibility_Lambda(MakeWeakPtrLambda(this, [this]
-		{
-			return !CachedType.IsWildcard() && CachedType.HasBufferType_EditorOnly() ? EVisibility::Visible : EVisibility::Collapsed;
-		}))
 		.ComboButtonStyle(FAppStyle::Get(),"BlueprintEditor.CompactVariableTypeSelector")
 		.MenuPlacement(MenuPlacement_ComboBoxRight)
 		.OnGetMenuContent(this, &SVoxelPinTypeComboBox::GetPinContainerTypeMenuContent)
@@ -193,21 +185,12 @@ TSharedRef<SWidget> SVoxelPinTypeComboBox::GetMenuContent()
 	[
 		SAssignNew(PinTypeSelector, SVoxelPinTypeSelector)
 		.AllowedTypes(AllowedTypes)
-		.AllowWildcard(bAllowWildcard)
 		.OnTypeChanged_Lambda([this](FVoxelPinType NewType)
 		{
-			if (NewType.HasBufferType_EditorOnly())
+			if (CachedType.IsBuffer())
 			{
-				if (CachedType.IsBuffer())
-				{
-					NewType = NewType.GetBufferType();
-				}
-				if (CachedType.IsBufferArray())
-				{
-					NewType = NewType.WithBufferArray(true);
-				}
+				NewType = NewType.GetBufferType();
 			}
-
 			OnTypeChanged.ExecuteIfBound(NewType);
 			UpdateType(NewType);
 		})
@@ -335,6 +318,7 @@ void SVoxelPinTypeComboBox::UpdateType(const FVoxelPinType& NewType)
 	MainIcon->SetColorAndOpacity(GetColor(CachedInnerType));
 
 	MainTextBlock->SetText(FText::FromString(CachedInnerType.ToString()));
+
 }
 
 ///////////////////////////////////////////////////////////////////////////////

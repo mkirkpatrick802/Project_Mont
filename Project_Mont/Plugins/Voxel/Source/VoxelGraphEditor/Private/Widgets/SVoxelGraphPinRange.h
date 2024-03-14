@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -6,7 +6,7 @@
 #include "VoxelPinValue.h"
 
 template<typename PinType, typename InnerType>
-class SVoxelGraphPinRange : public SGraphPin
+class VOXELGRAPHEDITOR_API SVoxelGraphPinRange : public SGraphPin
 {
 public:
 	VOXEL_SLATE_ARGS()

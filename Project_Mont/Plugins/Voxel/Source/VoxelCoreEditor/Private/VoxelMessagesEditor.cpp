@@ -1,7 +1,6 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelEditorMinimal.h"
-#include "VoxelMessage.h"
 #include "SVoxelNotification.h"
 #include "MessageLogModule.h"
 #include "Logging/MessageLog.h"
@@ -12,7 +11,7 @@ public:
 	//~ Begin FVoxelEditorSingleton Interface
 	virtual void Initialize() override
 	{
-		GVoxelMessageManager->OnMessageLogged.AddLambda([this](const TSharedRef<FVoxelMessage>& Message)
+		FVoxelMessages::OnMessageLogged.AddLambda([this](const TSharedRef<FTokenizedMessage>& Message)
 		{
 			LogMessage(Message);
 		});
@@ -27,9 +26,17 @@ public:
 	//~ End FVoxelEditorSingleton Interface
 
 public:
-	void LogMessage(const TSharedRef<FVoxelMessage>& Message)
+	void LogMessage(const TSharedRef<FTokenizedMessage>& Message)
 	{
-		const uint64 Hash = Message->GetHash();
+		if (GEditor->PlayWorld ||
+			GIsPlayInEditorWorld)
+		{
+			FMessageLog("PIE").AddMessage(Message);
+		}
+
+		FMessageLog("Voxel").AddMessage(Message);
+
+		const FText MessageText = Message->ToText();
 		const double Time = FPlatformTime::Seconds();
 
 		bool bFoundRecentMessage = false;
@@ -43,7 +50,7 @@ public:
 				continue;
 			}
 
-			if (RecentMessage.Hash == Hash)
+			if (RecentMessage.Text.EqualTo(MessageText))
 			{
 				bFoundRecentMessage = true;
 				RecentMessage.LastTime = Time;
@@ -55,7 +62,7 @@ public:
 		{
 			RecentMessages.Add(FRecentMessage
 			{
-				Hash,
+				MessageText,
 				Time
 			});
 		}
@@ -118,7 +125,7 @@ public:
 				return;
 			}
 
-			GlobalNotification->SetCompletionState(SNotificationItem::CS_Fail);
+			GlobalNotification->SetCompletionState(SNotificationItem::CS_Fail);;
 			WeakGlobalNotification = GlobalNotification;
 
 			return;
@@ -135,7 +142,7 @@ public:
 				continue;
 			}
 
-			if (Notification->Hash != Hash)
+			if (!Notification->Text.EqualToCaseIgnored(MessageText))
 			{
 				continue;
 			}
@@ -146,10 +153,9 @@ public:
 		}
 
 		const TSharedRef<FNotification> Notification = MakeVoxelShared<FNotification>();
-		Notification->Text = FText::FromString(Message->ToString());
-		Notification->Hash = Hash;
+		Notification->Text = MessageText;
 
-		FNotificationInfo Info = FNotificationInfo(Notification->Text);
+		FNotificationInfo Info = FNotificationInfo(MessageText);
 		Info.CheckBoxState = ECheckBoxState::Unchecked;
 		Info.ExpireDuration = 10;
 		Info.WidthOverride = FOptionalSize();
@@ -158,8 +164,7 @@ public:
 			.Count_Lambda([=]
 			{
 				return Notification->Count;
-			})
-			.MaxDesiredWidth(1000.f);
+			});
 
 		Notification->WeakItem = FSlateNotificationManager::Get().AddNotification(Info);
 		Notifications.Add(Notification);
@@ -170,7 +175,7 @@ private:
 
 	struct FRecentMessage
 	{
-		uint64 Hash = 0;
+		FText Text;
 		double LastTime = 0;
 	};
 	TVoxelArray<FRecentMessage> RecentMessages;
@@ -179,9 +184,8 @@ private:
 	{
 		TWeakPtr<SNotificationItem> WeakItem;
 		FText Text;
-		uint64 Hash = 0;
 		int32 Count = 1;
 	};
 	TVoxelArray<TSharedPtr<FNotification>> Notifications;
 };
-FVoxelMessagesEditor* GVoxelMessagesEditor = new FVoxelMessagesEditor();
+FVoxelMessagesEditor* GVoxelMessagesEditor = MakeVoxelSingleton(FVoxelMessagesEditor);

@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -45,7 +45,7 @@ protected:
 	UPROPERTY()
 	FVoxelPinType ValueType;
 
-	FSharedVoidPtr OnChannelDefinitionsChangedPtr;
+	TSharedPtr<int32> DelegateOwner;
 };
 
 UCLASS()

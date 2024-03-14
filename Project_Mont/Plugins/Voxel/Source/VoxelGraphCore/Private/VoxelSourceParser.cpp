@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelSourceParser.h"
 #include "VoxelNode.h"
@@ -7,7 +7,7 @@
 #endif
 
 #if WITH_EDITOR
-FVoxelSourceParser* GVoxelSourceParser = new FVoxelSourceParser();
+FVoxelSourceParser* GVoxelSourceParser = MakeVoxelSingleton(FVoxelSourceParser);
 
 void FVoxelSourceParser::Initialize()
 {
@@ -273,7 +273,7 @@ FString FVoxelSourceParser::GetPropertyDefault(UFunction* Function, const FName 
 		PropertyToDefault.Add(PropertyFName, Property);
 	}
 
-	TVoxelArray<FProperty*> FunctionProperties = GetFunctionProperties(Function).Array();
+	TArray<FProperty*> FunctionProperties = GetFunctionProperties(Function).Array();
 	FunctionProperties.RemoveSwap(Function->GetReturnProperty());
 
 	ensure(PropertyToDefault.Num() == FunctionProperties.Num());
@@ -316,7 +316,7 @@ void FVoxelSourceParser::BuildPinTooltip(UScriptStruct* NodeStruct)
 		Line.TrimStartAndEndInline();
 	}
 
-	const TSharedRef<FVoxelNode> NodeInstance = MakeSharedStruct<FVoxelNode>(NodeStruct);
+	TVoxelInstancedStruct<FVoxelNode> NodeInstance(NodeStruct);
 	for (const FVoxelPin& Pin : NodeInstance->GetPins())
 	{
 		if (Pin.Metadata.Line == 0 ||

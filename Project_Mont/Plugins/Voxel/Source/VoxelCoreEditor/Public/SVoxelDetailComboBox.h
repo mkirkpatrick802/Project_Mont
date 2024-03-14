@@ -1,10 +1,10 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelCoreEditorMinimal.h"
 #include "SVoxelDetailWidgets.h"
-#include "VoxelEditorUtilities.h"
+#include "VoxelEditorDetailsUtilities.h"
 
 template<typename T>
 class SVoxelDetailComboBox
@@ -51,20 +51,14 @@ public:
 		}
 
 		template<typename ArgType>
-		WidgetArgsType& RefreshDelegate(IDetailCustomization* DetailCustomization, const ArgType& Arg)
+		WidgetArgsType& RefreshDelegate(const TSharedPtr<IPropertyHandle>& PropertyHandle, const ArgType& Arg)
 		{
-			_RefreshDelegate = FVoxelEditorUtilities::MakeRefreshDelegate(DetailCustomization, Arg);
-			return *this;
-		}
-		template<typename ArgType>
-		WidgetArgsType& RefreshDelegate(IPropertyTypeCustomization* DetailCustomization, const ArgType& Arg)
-		{
-			_RefreshDelegate = FVoxelEditorUtilities::MakeRefreshDelegate(DetailCustomization, Arg);
+			_RefreshDelegate = FVoxelEditorUtilities::MakeRefreshDelegate(PropertyHandle, Arg);
 			return *this;
 		}
 
 		SLATE_ATTRIBUTE(TArray<T>, Options);
-		SLATE_ATTRIBUTE(T, CurrentOption);
+		SLATE_ARGUMENT(T, CurrentOption);
 
 		SLATE_ARGUMENT(bool, CanEnterCustomOption);
 		SLATE_EVENT(FOnMakeOptionFromText, OnMakeOptionFromText);
@@ -80,11 +74,21 @@ public:
 	void Construct(const FArguments& Args)
 	{
 		OptionsAttribute = Args._Options;
-		CurrentOptionAttribute = Args._CurrentOption;
-
 		for (T Option : OptionsAttribute.Get())
 		{
 			Options.Add(MakeVoxelShared<T>(Option));
+		}
+
+		for (const TSharedPtr<T>& Option : Options)
+		{
+			if (*Option == Args._CurrentOption)
+			{
+				CurrentOption = Option;
+			}
+		}
+		if (!CurrentOption)
+		{
+			CurrentOption = MakeVoxelShared<T>(Args._CurrentOption);
 		}
 
 		bCanEnterCustomOption = Args._CanEnterCustomOption;
@@ -107,15 +111,7 @@ public:
 		if (bCanEnterCustomOption)
 		{
 			SAssignNew(CustomOptionTextBox, SEditableTextBox)
-			.Text_Lambda([=]() -> FText
-			{
-				if (!GetOptionTextDelegate.IsBound())
-				{
-					return {};
-				}
-
-				return FText::FromString(GetOptionTextDelegate.Execute(CurrentOptionAttribute.Get()));
-			})
+			.Text(this, &SVoxelDetailComboBox::GetCurrentOptionText)
 			.OnTextCommitted_Lambda([this](const FText& Text, ETextCommit::Type)
 			{
 				if (!ensure(OnMakeOptionFromTextDelegate.IsBound()))
@@ -123,24 +119,23 @@ public:
 					return;
 				}
 
-				const T NewOption = OnMakeOptionFromTextDelegate.Execute(Text.ToString());
-
-				TSharedPtr<T> NewOptionPtr;
+				T NewOption = OnMakeOptionFromTextDelegate.Execute(Text.ToString());
+				CurrentOption = nullptr;
 				for (const TSharedPtr<T>& Option : Options)
 				{
 					if (NewOption == *Option)
 					{
-						NewOptionPtr = Option;
+						CurrentOption = Option;
 						break;
 					}
 				}
 
-				if (!NewOptionPtr)
+				if (!CurrentOption)
 				{
-					NewOptionPtr = MakeVoxelShared<T>(NewOption);
+					CurrentOption = MakeVoxelShared<T>(NewOption);
 				}
 
-				ComboBox->SetSelectedItem(NewOptionPtr);
+				ComboBox->SetSelectedItem(CurrentOption);
 			})
 			.SelectAllTextWhenFocused(true)
 			.RevertTextOnEscape(true)
@@ -152,7 +147,7 @@ public:
 		{
 			SAssignNew(SelectedItemBox, SBox)
 			[
-				GenerateWidget(GetCurrentOption())
+				GenerateWidget(CurrentOption)
 			];
 
 			ComboboxContent = SelectedItemBox;
@@ -170,6 +165,8 @@ public:
 					return;
 				}
 
+				CurrentOption = NewOption;
+
 				const TWeakPtr<SWidget> WeakThis = AsWeak();
 				check(WeakThis.IsValid());
 
@@ -185,14 +182,15 @@ public:
 
 				if (!bCanEnterCustomOption)
 				{
-					SelectedItemBox->SetContent(GenerateWidget(GetCurrentOption()));
+					const TSharedRef<SWidget> Widget = GenerateWidget(CurrentOption);
+					SelectedItemBox->SetContent(Widget);
 				}
 			})
 			.OnGenerateWidget_Lambda([this](const TSharedPtr<T>& Option) -> TSharedRef<SWidget>
 			{
 				return GenerateWidget(Option);
 			})
-			.InitiallySelectedItem(GetCurrentOption())
+			.InitiallySelectedItem(CurrentOption)
 			[
 				ComboboxContent.ToSharedRef()
 			]
@@ -202,7 +200,7 @@ public:
 public:
 	void SetCurrentItem(T NewSelection)
 	{
-		if (CurrentOptionAttribute.Get() == NewSelection)
+		if (*CurrentOption == NewSelection)
 		{
 			return;
 		}
@@ -216,7 +214,20 @@ public:
 			}
 		}
 
-		ComboBox->SetSelectedItem(NewOption);
+		if (NewOption)
+		{
+			CurrentOption = NewOption;
+		}
+		else if (bCanEnterCustomOption)
+		{
+			CurrentOption = MakeVoxelShared<T>(NewSelection);
+		}
+		else
+		{
+			return;
+		}
+
+		ComboBox->SetSelectedItem(CurrentOption);
 	}
 
 private:
@@ -225,9 +236,9 @@ private:
 	TSharedPtr<SEditableTextBox> CustomOptionTextBox;
 
 	TAttribute<TArray<T>> OptionsAttribute;
-	TAttribute<T> CurrentOptionAttribute;
-
 	TArray<TSharedPtr<T>> Options;
+	TSharedPtr<T> CurrentOption;
+
 	bool bCanEnterCustomOption = false;
 
 	FOnMakeOptionFromText OnMakeOptionFromTextDelegate;
@@ -248,38 +259,9 @@ private:
 
 		return SNew(SVoxelDetailText)
 			.Clipping(EWidgetClipping::ClipToBounds)
-			.Text_Lambda([=]() -> FText
-			{
-				if (!GetOptionTextDelegate.IsBound())
-				{
-					return {};
-				}
-
-				return FText::FromString(GetOptionTextDelegate.Execute(*Option));
-			})
-			.ToolTipText_Lambda([=]() -> FText
-			{
-				if (!GetOptionToolTipDelegate.IsBound())
-				{
-					return {};
-				}
-
-				return GetOptionToolTipDelegate.Execute(*Option);
-			})
-			.ColorAndOpacity_Lambda([=]() -> FSlateColor
-			{
-				if (!Options.Contains(Option))
-				{
-					return FLinearColor::Red;
-				}
-				if (IsOptionValidDelegate.IsBound() &&
-					!IsOptionValidDelegate.Execute(*Option))
-				{
-					return FLinearColor::Red;
-				}
-
-				return FSlateColor::UseForeground();
-			});
+			.Text(this, &SVoxelDetailComboBox::GetOptionText, Option)
+			.ToolTipText(this, &SVoxelDetailComboBox::GetOptionToolTip, Option)
+			.ColorAndOpacity(this, &SVoxelDetailComboBox::GetOptionColor, Option);
 	}
 
 public:
@@ -289,7 +271,7 @@ public:
 
 		TArray<T> NewOptions = OptionsAttribute.Get();
 
-		// Remove non-existing options
+		// Remove non existing options
 		Options.RemoveAll([&](const TSharedPtr<T>& Option)
 		{
 			if (NewOptions.Contains(*Option))
@@ -303,35 +285,76 @@ public:
 		// Add new options
 		for (const T& Option : NewOptions)
 		{
-			Options.Add(MakeVoxelShared<T>(Option));
+			if (Option == *CurrentOption)
+			{
+				Options.Add(CurrentOption);
+			}
+			else
+			{
+				Options.Add(MakeVoxelShared<T>(Option));
+			}
 		}
 		ComboBox->RefreshOptions();
 	}
 
 private:
-	FSimpleDelegate RefreshDelegate;
-
-	TSharedPtr<T> GetCurrentOption() const
+	FText GetOptionText(TSharedPtr<T> Option) const
 	{
-		const T CurrentOption = CurrentOptionAttribute.Get();
-		for (const TSharedPtr<T>& Option : Options)
+		if (!GetOptionTextDelegate.IsBound())
 		{
-			if (*Option == CurrentOption)
-			{
-				return Option;
-			}
+			return {};
 		}
-		return MakeVoxelShared<T>(CurrentOption);
+
+		return FText::FromString(GetOptionTextDelegate.Execute(*Option));
 	}
+	FText GetOptionToolTip(TSharedPtr<T> Option) const
+	{
+		if (!GetOptionToolTipDelegate.IsBound())
+		{
+			return {};
+		}
+
+		return GetOptionToolTipDelegate.Execute(*Option);
+	}
+	FSlateColor GetOptionColor(TSharedPtr<T> Option) const
+	{
+		if (!Options.Contains(Option))
+		{
+			return FLinearColor::Red;
+		}
+		if (IsOptionValidDelegate.IsBound() && !IsOptionValidDelegate.Execute(*Option))
+		{
+			return FLinearColor::Red;
+		}
+
+		return FSlateColor::UseForeground();
+	}
+
+private:
+	FText GetCurrentOptionText() const
+	{
+		return this->GetOptionText(CurrentOption);
+	}
+	FText GetCurrentOptionToolTip() const
+	{
+		return this->GetOptionToolTip(CurrentOption);
+	}
+	FSlateColor GetCurrentOptionColor() const
+	{
+		return this->GetOptionColor(CurrentOption);
+	}
+
+private:
+	FSimpleDelegate RefreshDelegate;
 
 	//~ Begin Interface FSelfRegisteringEditorUndoClient
 	virtual void PostUndo(bool bSuccess) override
 	{
-		(void)RefreshDelegate.ExecuteIfBound();
+		RefreshDelegate.ExecuteIfBound();
 	}
 	virtual void PostRedo(bool bSuccess) override
 	{
-		(void)RefreshDelegate.ExecuteIfBound();
+		RefreshDelegate.ExecuteIfBound();
 	}
 	//~ End Interface FSelfRegisteringEditorUndoClient
 };

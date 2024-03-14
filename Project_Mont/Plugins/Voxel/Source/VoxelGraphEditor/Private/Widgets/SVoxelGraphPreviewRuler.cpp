@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "SVoxelGraphPreviewRuler.h"
 #include "Fonts/FontMeasure.h"
@@ -7,6 +7,7 @@ void SVoxelGraphPreviewRuler::Construct(const FArguments& InArgs)
 {
 	Value = InArgs._Value;
 	Resolution = InArgs._Resolution;
+	SizeWidget = InArgs._SizeWidget;
 
 	ChildSlot
 	[
@@ -110,13 +111,13 @@ void SVoxelGraphPreviewRuler::UpdateRuler(const FVector2D& ScreenSpacePosition, 
 
 double SVoxelGraphPreviewRuler::GetPixelSize() const
 {
-	const TSharedPtr<SWidget> SizeWidget = WeakSizeWidget.Pin();
-	if (!ensure(SizeWidget.IsValid()))
+	const TSharedPtr<SWidget> Widget = SizeWidget.Get().Pin();
+	if (!ensure(Widget.IsValid()))
 	{
 		return 0;
 	}
 
-	const double PixelSize = Value.Get() * double(Resolution.Get()) / FMath::Min(SizeWidget->GetCachedGeometry().Size.X, SizeWidget->GetCachedGeometry().Size.Y);
+	const double PixelSize = Value.Get() * double(Resolution.Get()) / FMath::Min(Widget->GetCachedGeometry().Size.X, Widget->GetCachedGeometry().Size.Y);
 
 	if (!FMath::IsFinite(PixelSize) ||
 		PixelSize <= 0)
@@ -131,13 +132,13 @@ double SVoxelGraphPreviewRuler::GetRulerDistance() const
 {
 	const double RawDistance = FVector2D::Distance(TransformedEndPosition, TransformedStartPosition);
 
-	const TSharedPtr<SWidget> WeakWidget = WeakSizeWidget.Pin();
-	if (!ensure(WeakWidget.IsValid()))
+	const TSharedPtr<SWidget> Widget = SizeWidget.Get().Pin();
+	if (!ensure(Widget.IsValid()))
 	{
 		return RawDistance;
 	}
 
-	return RawDistance / (double(Resolution.Get()) / FMath::Min(WeakWidget->GetCachedGeometry().Size.X, WeakWidget->GetCachedGeometry().Size.Y));
+	return RawDistance / (double(Resolution.Get()) / FMath::Min(Widget->GetCachedGeometry().Size.X, Widget->GetCachedGeometry().Size.Y));
 }
 
 FString SVoxelGraphPreviewRuler::GetDistanceText() const

@@ -1,4 +1,4 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -38,7 +38,7 @@ struct VOXELGRAPHCORE_API FVoxelRuntimeParameter_SculptStorage : public FVoxelRu
 	TSharedPtr<FVoxelSculptStorageData> Data;
 	TOptional<FVoxelTransformRef> SurfaceToWorldOverride;
 
-	mutable FVoxelCriticalSection CriticalSection;
-	mutable int32 VoxelSize = 0;
+	mutable FVoxelFastCriticalSection CriticalSection;
+	mutable float VoxelSize = 0.f;
 	mutable TSharedPtr<const TVoxelComputeValue<FVoxelSurface>> Compute_RequiresLock;
 };

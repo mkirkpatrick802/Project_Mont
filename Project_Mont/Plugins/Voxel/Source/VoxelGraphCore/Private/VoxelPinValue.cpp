@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelPinValue.h"
 #include "EdGraph/EdGraphPin.h"
@@ -7,7 +7,7 @@ FVoxelTerminalPinValue::FVoxelTerminalPinValue(const FVoxelPinType& Type)
 	: FVoxelPinValueBase(Type)
 {
 	ensure(!Type.IsBuffer());
-	Fixup();
+	Fixup(nullptr);
 }
 
 FVoxelPinValue FVoxelTerminalPinValue::AsValue() const
@@ -24,14 +24,14 @@ FVoxelPinValue::FVoxelPinValue(const FVoxelPinType& Type)
 {
 	// Exposed buffers should be arrays
 	ensure(!Type.IsBuffer() || Type.IsBufferArray());
-	Fixup();
+	Fixup(nullptr);
 }
 
 FVoxelPinValue FVoxelPinValue::MakeFromPinDefaultValue(const UEdGraphPin& Pin)
 {
 	const FVoxelPinType Type = FVoxelPinType(Pin.PinType).GetPinDefaultValueType();
-	if (!ensureVoxelSlow(Type.IsValid()) ||
-		!ensureVoxelSlow(!Type.IsBuffer()))
+	if (!ensure(Type.IsValid()) ||
+		!ensure(!Type.IsBuffer()))
 	{
 		return {};
 	}
@@ -55,7 +55,7 @@ FVoxelPinValue FVoxelPinValue::MakeFromK2PinDefaultValue(const UEdGraphPin & Pin
 	return Result;
 }
 
-FVoxelPinValue FVoxelPinValue::MakeStruct(const FConstVoxelStructView Struct)
+FVoxelPinValue FVoxelPinValue::MakeStruct(FConstVoxelStructView Struct)
 {
 	return FVoxelPinValue(Super::MakeStruct(Struct));
 }
@@ -85,7 +85,7 @@ FVoxelPinValue FVoxelPinValue::MakeFromProperty(const FProperty& Property, const
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-void FVoxelPinValue::Fixup(const FVoxelPinType& NewType)
+void FVoxelPinValue::Fixup(const FVoxelPinType& NewType, UObject* Outer)
 {
 	if (!IsValid() ||
 		!CanBeCastedTo(NewType))
@@ -93,7 +93,7 @@ void FVoxelPinValue::Fixup(const FVoxelPinType& NewType)
 		*this = FVoxelPinValue(NewType);
 	}
 
-	Fixup();
+	Fixup(Outer);
 }
 
 bool FVoxelPinValue::ImportFromUnrelated(FVoxelPinValue Other)
@@ -187,63 +187,12 @@ bool FVoxelPinValue::ImportFromUnrelated(FVoxelPinValue Other)
 	return ImportFromString(Other.ExportToString());
 }
 
-bool FVoxelPinValue::Serialize(FArchive& Ar)
-{
-	INLINE_LAMBDA
-	{
-		if (!Ar.IsSaving())
-		{
-			return;
-		}
-
-		EnumValueName = {};
-
-		if (!Type.Is<uint8>())
-		{
-			return;
-		}
-
-		const UEnum* Enum = Type.GetEnum();
-		if (!Enum ||
-			!ensure(Enum->IsValidEnumValue(Byte)))
-		{
-			return;
-		}
-
-		EnumValueName = Enum->GetNameByValue(Byte);
-	};
-
-	// Returning false to fallback to default serialization
-	return false;
-}
-
 void FVoxelPinValue::PostSerialize(const FArchive& Ar)
 {
 	if (Enum_DEPRECATED != 0)
 	{
 		Byte = Enum_DEPRECATED;
 	}
-
-	if (!Ar.IsLoading() ||
-		EnumValueName.IsNone() ||
-		!ensure(Type.Is<uint8>()))
-	{
-		return;
-	}
-
-	const UEnum* Enum = Type.GetEnum();
-	if (!Enum)
-	{
-		return;
-	}
-
-	const int64 EnumValue = Enum->GetValueByName(EnumValueName);
-	if (!ensure(FVoxelUtilities::IsValidUINT8(EnumValue)))
-	{
-		return;
-	}
-
-	Byte = EnumValue;
 }
 
 FVoxelTerminalPinValue FVoxelPinValue::AsTerminalValue() const
@@ -337,7 +286,7 @@ uint32 FVoxelPinValue::GetHash_Array() const
 		GetTypeHash(Array[0]);
 }
 
-void FVoxelPinValue::Fixup_Array()
+void FVoxelPinValue::Fixup_Array(UObject* Outer)
 {
 	for (FVoxelTerminalPinValue& Value : Array)
 	{
@@ -346,7 +295,7 @@ void FVoxelPinValue::Fixup_Array()
 		{
 			Value = FVoxelTerminalPinValue(Type.GetInnerType());
 		}
-		Value.Fixup();
+		Value.Fixup(Outer);
 	}
 }
 

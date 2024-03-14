@@ -1,4 +1,4 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelParameterPath.h"
 
@@ -73,17 +73,9 @@ bool FVoxelParameterPath::ImportTextItem(
 	return true;
 }
 
-FVoxelParameterPath FVoxelParameterPath::MakeEmpty()
-{
-	FVoxelParameterPath Path;
-	return Path;
-}
-
 FVoxelParameterPath FVoxelParameterPath::Make(const FGuid& Guid)
 {
-	FVoxelParameterPath Path;
-	Path.Guids.Add(Guid);
-	return Path;
+	return { { Guid } };
 }
 
 FString FVoxelParameterPath::ToString() const
@@ -106,7 +98,7 @@ FVoxelParameterPath FVoxelParameterPath::GetParent() const
 	FVoxelParameterPath Result = *this;
 	if (ensure(Result.Guids.Num() > 0))
 	{
-		Result.Guids.Pop();
+		Result.Guids.Pop(false);
 	}
 	return Result;
 }
@@ -145,11 +137,11 @@ bool FVoxelParameterPath::StartsWith(const FVoxelParameterPath& Other) const
 	return true;
 }
 
-FVoxelParameterPath FVoxelParameterPath::MakeRelativeTo(const FVoxelParameterPath& BasePath) const
+FVoxelParameterPath FVoxelParameterPath::MakeRelative(const FVoxelParameterPath& BasePath) const
 {
 	if (!ensure(StartsWith(BasePath)))
 	{
-		return MakeEmpty();
+		return {};
 	}
 
 	FVoxelParameterPath Result;

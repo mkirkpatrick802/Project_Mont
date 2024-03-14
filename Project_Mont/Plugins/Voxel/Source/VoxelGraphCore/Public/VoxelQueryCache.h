@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -10,7 +10,7 @@ class VOXELGRAPHCORE_API FVoxelQueryCache
 public:
 	struct FEntry
 	{
-		FVoxelCriticalSection CriticalSection;
+		FVoxelFastCriticalSection CriticalSection;
 		FVoxelFutureValue Value;
 	};
 
@@ -32,6 +32,6 @@ public:
 	}
 
 private:
-	FVoxelCriticalSection CriticalSection;
-	TVoxelMap<FVoxelPinRuntimeId, TSharedPtr<FEntry>> Entries;
+	FVoxelFastCriticalSection CriticalSection;
+	TVoxelAddOnlyMap<FVoxelPinRuntimeId, TSharedPtr<FEntry>> Entries;
 };

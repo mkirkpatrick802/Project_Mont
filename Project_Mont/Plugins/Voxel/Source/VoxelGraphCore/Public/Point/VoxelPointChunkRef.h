@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -8,17 +8,14 @@
 struct FVoxelPointSet;
 struct FVoxelChunkedPointSet;
 class FVoxelRuntime;
-class IVoxelRuntimeProvider;
 class FVoxelDependencyTracker;
 
 struct VOXELGRAPHCORE_API FVoxelPointChunkProviderRef
 {
 public:
-	TWeakInterfacePtr<IVoxelRuntimeProvider> RuntimeProvider;
-	TArray<FVoxelGraphNodeRef> TerminalGraphInstanceCallstack;
-	FVoxelGraphNodeRef NodeRef;
+	TWeakObjectPtr<const UObject> RuntimeProvider;
+	FVoxelNodePath NodePath;
 
-	FString ToDebugString() const;
 	TSharedPtr<FVoxelRuntime> GetRuntime(FString* OutError) const;
 	TSharedPtr<const FVoxelChunkedPointSet> GetChunkedPointSet(FString* OutError = nullptr) const;
 
@@ -26,7 +23,7 @@ public:
 	FORCEINLINE UWorld* GetWorld() const
 	{
 		checkVoxelSlow(IsInGameThread());
-		if (const UObject* Object = RuntimeProvider.GetObject())
+		if (const UObject* Object = RuntimeProvider.Get())
 		{
 			return Object->GetWorld();
 		}
@@ -40,12 +37,20 @@ public:
 	{
 		return
 			RuntimeProvider == Other.RuntimeProvider &&
-			TerminalGraphInstanceCallstack == Other.TerminalGraphInstanceCallstack &&
-			NodeRef == Other.NodeRef;
+			NodePath == Other.NodePath;
 	}
-
-	VOXELGRAPHCORE_API friend FArchive& operator<<(FArchive& Ar, FVoxelPointChunkProviderRef& Ref);
-	VOXELGRAPHCORE_API friend uint32 GetTypeHash(const FVoxelPointChunkProviderRef& Ref);
+	FORCEINLINE friend FArchive& operator<<(FArchive& Ar, FVoxelPointChunkProviderRef& Ref)
+	{
+		Ar << Ref.RuntimeProvider;
+		Ar << Ref.NodePath;
+		return Ar;
+	}
+	FORCEINLINE friend uint32 GetTypeHash(const FVoxelPointChunkProviderRef& Ref)
+	{
+		return FVoxelUtilities::MurmurHashMulti(
+			GetTypeHash(Ref.RuntimeProvider),
+			GetTypeHash(Ref.NodePath));
+	}
 };
 
 struct VOXELGRAPHCORE_API FVoxelPointChunkRef

@@ -1,25 +1,26 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelMinimal.h"
+#include "VoxelBuffer.h"
 #include "VoxelObjectPinType.h"
 #include "VoxelObjectWithGuid.h"
-#include "Material/VoxelMaterialBlending.h"
+#include "VoxelParameterProvider.h"
 #include "VoxelMaterialDefinitionInterface.generated.h"
 
 class UVoxelMaterialDefinition;
 class UVoxelMaterialDefinitionInstance;
-class UVoxelParameterContainer_DEPRECATED;
 
 UCLASS(Abstract, BlueprintType, meta = (AssetColor = Red))
-class VOXELGRAPHCORE_API UVoxelMaterialDefinitionInterface : public UVoxelObjectWithGuid
+class VOXELGRAPHCORE_API UVoxelMaterialDefinitionInterface
+	: public UVoxelObjectWithGuid
+	, public IVoxelParameterProvider
 {
 	GENERATED_BODY()
 
 public:
 	virtual UVoxelMaterialDefinition* GetDefinition() const VOXEL_PURE_VIRTUAL({});
-	virtual FVoxelPinValue GetParameterValue(const FGuid& Guid) const VOXEL_PURE_VIRTUAL({});
 
 public:
 	UMaterialInterface* GetPreviewMaterial();
@@ -27,6 +28,27 @@ public:
 private:
 	TSharedPtr<FVoxelMaterialRef> PrivatePreviewMaterial;
 	TWeakObjectPtr<UMaterialInterface> PrivatePreviewMaterialParent;
+};
+
+constexpr uint16 GVoxelInvalidMaterialId = MAX_uint16;
+
+USTRUCT(DisplayName = "Voxel Material Definition")
+struct FVoxelMaterialDefinitionRef
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	uint16 Index = 0;
+};
+checkStatic(sizeof(FVoxelMaterialDefinitionRef) == sizeof(uint16));
+
+DECLARE_VOXEL_TERMINAL_BUFFER(FVoxelMaterialDefinitionBuffer, FVoxelMaterialDefinitionRef);
+
+USTRUCT()
+struct VOXELGRAPHCORE_API FVoxelMaterialDefinitionBuffer final : public FVoxelSimpleTerminalBuffer
+{
+	GENERATED_BODY()
+	GENERATED_VOXEL_TERMINAL_BUFFER_BODY(FVoxelMaterialDefinitionBuffer, FVoxelMaterialDefinitionRef);
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -76,14 +98,13 @@ constexpr int32 GVoxelMaterialDefinitionMax = 1 << 12;
 class VOXELGRAPHCORE_API FVoxelMaterialDefinitionManager : public FVoxelSingleton
 {
 public:
-	const TSharedRef<FVoxelMaterialDefinitionDynamicMaterialParameter> DynamicParameter = MakeShared<FVoxelMaterialDefinitionDynamicMaterialParameter>();
+	const TSharedRef<FVoxelMaterialDefinitionDynamicMaterialParameter> DynamicParameter = MakeVoxelShared<FVoxelMaterialDefinitionDynamicMaterialParameter>();
 
 	FVoxelMaterialDefinitionManager();
 
-	int32 Register_GameThread(UVoxelMaterialDefinitionInterface& MaterialDefinition);
-	UVoxelMaterialDefinitionInterface* GetMaterialDefinition_GameThread(int32 Index);
-	TWeakObjectPtr<UVoxelMaterialDefinitionInterface> GetMaterialDefinition_AnyThread(int32 Index);
-	TSharedPtr<FVoxelMaterialRef> GetMaterial_AnyThread(int32 Index);
+	FVoxelMaterialDefinitionRef Register_GameThread(UVoxelMaterialDefinitionInterface& Material);
+	UVoxelMaterialDefinitionInterface* GetMaterial_GameThread(const FVoxelMaterialDefinitionRef& Ref);
+	TWeakObjectPtr<UVoxelMaterialDefinitionInterface> GetMaterial_AnyThread(const FVoxelMaterialDefinitionRef& Ref);
 
 	//~ Begin FVoxelSingleton Interface
 	virtual void Tick() override;
@@ -100,16 +121,15 @@ public:
 
 private:
 	bool bMaterialRefreshQueued = false;
-	TSet<TObjectPtr<UVoxelMaterialDefinition>> MaterialDefinitionsToRebuild;
+	TSet<UVoxelMaterialDefinition*> MaterialDefinitionsToRebuild;
 
-	TVoxelArray<TObjectPtr<UVoxelMaterialDefinitionInterface>> MaterialDefinitions;
-	TVoxelMap<TObjectPtr<UVoxelMaterialDefinitionInterface>, int32> MaterialDefinitionToIndex;
+	TVoxelArray<UVoxelMaterialDefinitionInterface*> Materials;
+	TVoxelMap<UVoxelMaterialDefinitionInterface*, FVoxelMaterialDefinitionRef> MaterialRefs;
 
 	TUniquePtr<FVoxelMaterialParameterData::FCachedParameters> CachedParameters;
 
-	FVoxelCriticalSection CriticalSection;
-	TVoxelArray<TWeakObjectPtr<UVoxelMaterialDefinitionInterface>> WeakMaterialDefinitions_RequiresLock;
-	TVoxelArray<TSharedPtr<FVoxelMaterialRef>> MaterialRefs_RequiresLock;
+	FVoxelFastCriticalSection CriticalSection;
+	TVoxelArray<TWeakObjectPtr<UVoxelMaterialDefinitionInterface>> WeakMaterials_RequiresLock;
 };
 
 extern VOXELGRAPHCORE_API FVoxelMaterialDefinitionManager* GVoxelMaterialDefinitionManager;
@@ -118,23 +138,22 @@ extern VOXELGRAPHCORE_API FVoxelMaterialDefinitionManager* GVoxelMaterialDefinit
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-DECLARE_VOXEL_OBJECT_PIN_TYPE(FVoxelMaterialBlending);
+DECLARE_VOXEL_OBJECT_PIN_TYPE(FVoxelMaterialDefinitionRef);
 
 USTRUCT()
-struct VOXELGRAPHCORE_API FVoxelMaterialBlendingPinType : public FVoxelObjectPinType
+struct VOXELGRAPHCORE_API FVoxelMaterialDefinitionRefPinType : public FVoxelObjectPinType
 {
 	GENERATED_BODY()
 
-	DEFINE_VOXEL_OBJECT_PIN_TYPE(FVoxelMaterialBlending, UVoxelMaterialDefinitionInterface)
+	DEFINE_VOXEL_OBJECT_PIN_TYPE(FVoxelMaterialDefinitionRef, UVoxelMaterialDefinitionInterface)
 	{
 		if (bSetObject)
 		{
-			Object = GVoxelMaterialDefinitionManager->GetMaterialDefinition_AnyThread(Struct.GetBestIndex());
+			Object = GVoxelMaterialDefinitionManager->GetMaterial_AnyThread(Struct);
 		}
 		else
 		{
-			const int32 Index = GVoxelMaterialDefinitionManager->Register_GameThread(*Object);
-			Struct = FVoxelMaterialBlending::FromIndex(Index);
+			Struct = GVoxelMaterialDefinitionManager->Register_GameThread(*Object);
 		}
 	}
 };

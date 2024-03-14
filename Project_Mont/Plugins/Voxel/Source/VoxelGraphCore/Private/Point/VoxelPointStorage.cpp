@@ -1,4 +1,4 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "Point/VoxelPointStorage.h"
 #include "Point/VoxelPointStorageData.h"
@@ -19,7 +19,7 @@ void UVoxelPointStorage::Serialize(FArchive& Ar)
 		Data = MakeVoxelShared<FVoxelPointStorageData>(GetFName());
 	}
 
-	FVoxelUtilities::SerializeBulkData(this, BulkData, Ar, [&](FArchive& BulkDataAr)
+	FVoxelObjectUtilities::SerializeBulkData(this, BulkData, Ar, [&](FArchive& BulkDataAr)
 	{
 		Data->Serialize(BulkDataAr);
 	});

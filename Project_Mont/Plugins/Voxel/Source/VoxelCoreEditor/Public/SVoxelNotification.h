@@ -1,4 +1,4 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -13,12 +13,11 @@ public:
 	VOXEL_SLATE_ARGS()
 	{
 		SLATE_ATTRIBUTE(int32, Count);
-		SLATE_ATTRIBUTE(FOptionalSize, MaxDesiredWidth)
 	};
 
 	void Construct(
 		const FArguments& Args,
-		const TSharedRef<FVoxelMessage>& Message);
+		const TSharedRef<FTokenizedMessage>& Message);
 
 	//~ Begin INotificationWidget Interface
 	virtual void OnSetCompletionState(SNotificationItem::ECompletionState State) override
@@ -39,5 +38,5 @@ private:
 		const TSharedRef<SVerticalBox>& VBox,
 		TSharedPtr<SHorizontalBox>& HBox,
 		const TSharedRef<IMessageToken>& MessageToken,
-		float Padding);
+		const float Padding);
 };

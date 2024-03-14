@@ -1,343 +1,567 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelCoreMinimal.h"
+#include "VoxelMinimal/Containers/VoxelStaticArray.h"
+#include "VoxelMinimal/Utilities/VoxelBaseUtilities.h"
+#include "VoxelMinimal/Utilities/VoxelVectorUtilities.h"
+#include "VoxelMinimal/Utilities/VoxelIntVectorUtilities.h"
+#include "Algo/IsSorted.h"
+#include "VoxelMathUtilities.generated.h"
+
+UENUM(BlueprintType)
+enum class EVoxelFalloff : uint8
+{
+	Linear,
+	Smooth,
+	Spherical,
+	Tip
+};
+
+template<typename T>
+struct TVoxelWelfordVariance
+{
+	T Average = FVoxelUtilities::MakeSafe<T>();
+	T ScaledVariance = FVoxelUtilities::MakeSafe<T>();
+	int32 Num = 0;
+
+	FORCEINLINE void Add(const T& Value)
+	{
+		Num++;
+
+		const T Delta = Value - Average;
+		Average += Delta / Num;
+		ScaledVariance += Delta * (Value - Average);
+	}
+
+	FORCEINLINE T GetVariance() const
+	{
+		ensureVoxelSlow(Num > 0);
+		if (Num <= 1)
+		{
+			return FVoxelUtilities::MakeSafe<T>();
+		}
+		else
+		{
+			return ScaledVariance / (Num - 1);
+		}
+	}
+};
 
 namespace FVoxelUtilities
 {
-	// Unlike DivideAndRoundDown, actually floors the result even if Dividend < 0
-	template<typename DividendType, typename DivisorType>
-	FORCEINLINE constexpr DividendType DivideFloor(DividendType Dividend, DivisorType Divisor)
+	template<
+		typename ArrayTypeA,
+		typename ArrayTypeB,
+		typename OutArrayTypeA,
+		typename OutArrayTypeB,
+		typename PredicateType>
+		void DiffSortedArrays(
+		const ArrayTypeA& ArrayA,
+		const ArrayTypeB& ArrayB,
+		OutArrayTypeA& OutOnlyInA,
+		OutArrayTypeB& OutOnlyInB,
+		PredicateType Less)
 	{
-		checkStatic(std::is_same_v<DividendType, int32> || std::is_same_v<DividendType, int64>);
-		checkStatic(std::is_same_v<DivisorType, int32> || std::is_same_v<DivisorType, int64>);
-		checkStatic(std::is_same_v<DividendType, DivisorType> || std::is_same_v<DividendType, int64>);
+		VOXEL_FUNCTION_COUNTER();
 
-		const DividendType Q = Dividend / Divisor;
-		const DividendType R = Dividend % Divisor;
-		return R ? (Q - ((Dividend < 0) ^ (Divisor < 0))) : Q;
-	}
-	template<typename T>
-	FORCEINLINE T DivideFloor_Positive(T Dividend, T Divisor)
-	{
-		checkVoxelSlow(Dividend >= 0);
-		checkVoxelSlow(Divisor > 0);
-		return Dividend / Divisor;
-	}
-	// ~2x faster than DivideFloor
-	FORCEINLINE int32 DivideFloor_FastLog2(const int32 Dividend, const int32 DivisorLog2)
-	{
-		checkVoxelSlow(DivisorLog2 >= 0);
-		ensureVoxelSlow(DivisorLog2 < 32);
-		constexpr int32 Offset = 1 << 30;
-		checkVoxelSlow(Dividend < Offset);
-		checkVoxelSlow(Dividend > -Offset);
-		// Make the dividend positive to be able to use bit shifts
-		const int32 Result = ((Dividend + Offset) >> DivisorLog2) - (Offset >> DivisorLog2);
-		checkVoxelSlow(Result == DivideFloor(Dividend, 1 << DivisorLog2));
-		return Result;
-	}
+		checkVoxelSlow(Algo::IsSorted(ArrayA, Less));
+		checkVoxelSlow(Algo::IsSorted(ArrayB, Less));
 
-	// Unlike DivideAndRoundUp, actually ceils the result even if Dividend < 0
-	template<typename DividendType, typename DivisorType>
-	FORCEINLINE constexpr DividendType DivideCeil(const DividendType Dividend, const DivisorType Divisor)
-	{
-		checkStatic(std::is_same_v<DividendType, int32> || std::is_same_v<DividendType, int64>);
-		checkStatic(std::is_same_v<DivisorType, int32> || std::is_same_v<DivisorType, int64>);
-		checkStatic(std::is_same_v<DividendType, DivisorType> || std::is_same_v<DividendType, int64>);
-
-		return (Dividend > 0) ? 1 + (Dividend - 1) / Divisor : (Dividend / Divisor);
-	}
-	template<typename T>
-	FORCEINLINE T DivideCeil_Positive(T Dividend, T Divisor)
-	{
-		checkVoxelSlow(Dividend >= 0);
-		checkVoxelSlow(Divisor > 0);
-		return (Dividend + Divisor - 1) / Divisor;
-	}
-
-	//////////////////////////////////////////////////////////////////////////////
-	//////////////////////////////////////////////////////////////////////////////
-	//////////////////////////////////////////////////////////////////////////////
-
-	template<int32 Base, int32 InValue, typename = std::enable_if_t<(InValue > 0)>>
-	FORCEINLINE constexpr int32 FloorLog()
-	{
-		int32 Value = InValue;
-
-		int32 Exponent = -1;
-		while (Value)
+		int64 IndexA = 0;
+		int64 IndexB = 0;
+		while (IndexA < ArrayA.Num() && IndexB < ArrayB.Num())
 		{
-			Value /= Base;
-			Exponent++;
+			const auto& A = ArrayA[IndexA];
+			const auto& B = ArrayB[IndexB];
+
+			if (Less(A, B))
+			{
+				OutOnlyInA.Add(A);
+				IndexA++;
+			}
+			else if (Less(B, A))
+			{
+				OutOnlyInB.Add(B);
+				IndexB++;
+			}
+			else
+			{
+				IndexA++;
+				IndexB++;
+			}
 		}
 
-		int64 Result = 1;
-		for (int32 Index = 0; Index < Exponent; Index++)
+		while (IndexA < ArrayA.Num())
 		{
-			Result *= Base;
+			OutOnlyInA.Add(ArrayA[IndexA]);
+			IndexA++;
 		}
 
-		if (InValue == Result)
+		while (IndexB < ArrayB.Num())
 		{
-			return Exponent;
+			OutOnlyInB.Add(ArrayB[IndexB]);
+			IndexB++;
+		}
+
+		checkVoxelSlow(IndexA == ArrayA.Num());
+		checkVoxelSlow(IndexB == ArrayB.Num());
+	}
+
+	//////////////////////////////////////////////////////////////////////////////
+	//////////////////////////////////////////////////////////////////////////////
+	//////////////////////////////////////////////////////////////////////////////
+
+	template<typename T>
+	FORCEINLINE T Get2DIndex(const int32 SizeX, const int32 SizeY, const int32 X, const int32 Y)
+	{
+		checkVoxelSlow(0 <= X && X < SizeX);
+		checkVoxelSlow(0 <= Y && Y < SizeY);
+		checkVoxelSlow(int64(SizeX) * int64(SizeY) <= TNumericLimits<T>::Max());
+		return T(X) + T(Y) * SizeX;
+	}
+	template<typename T>
+	FORCEINLINE T Get2DIndex(const int32 Size, const int32 X, const int32 Y)
+	{
+		return Get2DIndex<T>(Size, Size, X, Y);
+	}
+	template<typename T>
+	FORCEINLINE T Get2DIndex(const FIntPoint& Size, const int32 X, const int32 Y)
+	{
+		return Get2DIndex<T>(Size.X, Size.Y, X, Y);
+	}
+	template<typename T>
+	FORCEINLINE T Get2DIndex(const int32 Size, const FIntPoint& Position)
+	{
+		return Get2DIndex<T>(Size, Position.X, Position.Y);
+	}
+	template<typename T>
+	FORCEINLINE T Get2DIndex(const FIntPoint& Size, const FIntPoint& Position)
+	{
+		return Get2DIndex<T>(Size, Position.X, Position.Y);
+	}
+
+	//////////////////////////////////////////////////////////////////////////////
+	//////////////////////////////////////////////////////////////////////////////
+	//////////////////////////////////////////////////////////////////////////////
+
+	template<typename T>
+	FORCEINLINE T Get3DIndex(const FIntVector& Size, const int32 X, const int32 Y, const int32 Z)
+	{
+		checkVoxelSlow(0 <= X && X < Size.X);
+		checkVoxelSlow(0 <= Y && Y < Size.Y);
+		checkVoxelSlow(0 <= Z && Z < Size.Z);
+		checkVoxelSlow(int64(Size.X) * int64(Size.Y) * int64(Size.Z) <= TNumericLimits<T>::Max());
+		return T(X) + T(Y) * Size.X + T(Z) * Size.X * Size.Y;
+	}
+	template<typename T>
+	FORCEINLINE T Get3DIndex(const int32 Size, const int32 X, const int32 Y, const int32 Z)
+	{
+		return Get3DIndex<T>(FIntVector(Size), X, Y, Z);
+	}
+	template<typename T>
+	FORCEINLINE T Get3DIndex(const FIntVector& Size, const FIntVector& Position)
+	{
+		return Get3DIndex<T>(Size, Position.X, Position.Y, Position.Z);
+	}
+	template<typename T>
+	FORCEINLINE T Get3DIndex(const int32 Size, const FIntVector& Position)
+	{
+		return Get3DIndex<T>(FIntVector(Size), Position);
+	}
+
+	template<typename T>
+	FORCEINLINE FIntVector Break3DIndex_Log2(const int32 SizeLog2, const T Index)
+	{
+		const int32 X = (Index >> (0 * SizeLog2)) & ((1 << SizeLog2) - 1);
+		const int32 Y = (Index >> (1 * SizeLog2)) & ((1 << SizeLog2) - 1);
+		const int32 Z = (Index >> (2 * SizeLog2)) & ((1 << SizeLog2) - 1);
+		checkVoxelSlow(Get3DIndex<T>(1 << SizeLog2, X, Y, Z) == Index);
+		return { X, Y, Z };
+	}
+
+	template<typename T>
+	FORCEINLINE FIntVector Break3DIndex(const FIntVector& Size, T Index)
+	{
+		const T OriginalIndex = Index;
+
+		const int32 Z = Index / (Size.X * Size.Y);
+		checkVoxelSlow(0 <= Z && Z < Size.Z);
+		Index -= Z * Size.X * Size.Y;
+
+		const int32 Y = Index / Size.X;
+		checkVoxelSlow(0 <= Y && Y < Size.Y);
+		Index -= Y * Size.X;
+
+		const int32 X = Index;
+		checkVoxelSlow(0 <= X && X < Size.X);
+
+		checkVoxelSlow(Get3DIndex<T>(Size, X, Y, Z) == OriginalIndex);
+
+		return { X, Y, Z };
+	}
+	template<typename T>
+	FORCEINLINE FIntVector Break3DIndex(const int32 Size, const T Index)
+	{
+		return FVoxelUtilities::Break3DIndex<T>(FIntVector(Size), Index);
+	}
+
+	//////////////////////////////////////////////////////////////////////////////
+	//////////////////////////////////////////////////////////////////////////////
+	//////////////////////////////////////////////////////////////////////////////
+
+	FORCEINLINE float LinearFalloff(float Distance, float Radius, float Falloff)
+	{
+		return Distance <= Radius
+			? 1.0f
+			: Radius + Falloff <= Distance
+			? 0.f
+			: 1.0f - (Distance - Radius) / Falloff;
+	}
+	FORCEINLINE float SmoothFalloff(float Distance, float Radius, float Falloff)
+	{
+		const float X = LinearFalloff(Distance, Radius, Falloff);
+		return FMath::SmoothStep(0.f, 1.f, X);
+	}
+	FORCEINLINE float SphericalFalloff(float Distance, float Radius, float Falloff)
+	{
+		return Distance <= Radius
+			? 1.0f
+			: Radius + Falloff <= Distance
+			? 0.f
+			: FMath::Sqrt(1.0f - FMath::Square((Distance - Radius) / Falloff));
+	}
+	FORCEINLINE float TipFalloff(float Distance, float Radius, float Falloff)
+	{
+		return Distance <= Radius
+			? 1.0f
+			: Radius + Falloff <= Distance
+			? 0.f
+			: 1.0f - FMath::Sqrt(1.0f - FMath::Square((Falloff + Radius - Distance) / Falloff));
+	}
+
+	// Falloff: between 0 and 1
+	FORCEINLINE float GetFalloff(EVoxelFalloff FalloffType, float Distance, float Radius, float Falloff)
+	{
+		Falloff = FMath::Clamp(Falloff, 0.f, 1.f);
+		if (Falloff == 0.f)
+		{
+			return Distance <= Radius ? 1.f : 0.f;
+		}
+
+		const float RelativeRadius = Radius * (1.f - Falloff);
+		const float RelativeFalloff = Radius * Falloff;
+		switch (FalloffType)
+		{
+		default: VOXEL_ASSUME(false);
+		case EVoxelFalloff::Linear:
+		{
+			return LinearFalloff(Distance, RelativeRadius, RelativeFalloff);
+		}
+		case EVoxelFalloff::Smooth:
+		{
+			return SmoothFalloff(Distance, RelativeRadius, RelativeFalloff);
+		}
+		case EVoxelFalloff::Spherical:
+		{
+			return SphericalFalloff(Distance, RelativeRadius, RelativeFalloff);
+		}
+		case EVoxelFalloff::Tip:
+		{
+			return TipFalloff(Distance, RelativeRadius, RelativeFalloff);
+		}
+		}
+	}
+
+	//////////////////////////////////////////////////////////////////////////////
+	//////////////////////////////////////////////////////////////////////////////
+	//////////////////////////////////////////////////////////////////////////////
+
+	FORCEINLINE float SmoothMin(const float DistanceA, const float DistanceB, const float Smoothness)
+	{
+		const float H = FMath::Clamp(0.5f + 0.5f * (DistanceB - DistanceA) / Smoothness, 0.0f, 1.0f);
+		return FMath::Lerp(DistanceB, DistanceA, H) - Smoothness * H * (1.0f - H);
+	}
+	FORCEINLINE float SmoothMax(const float DistanceA, const float DistanceB, const float Smoothness)
+	{
+		return -SmoothMin(-DistanceA, -DistanceB, Smoothness);
+	}
+
+	// See https://www.iquilezles.org/www/articles/smin/smin.htm
+	// Unlike SmoothMin this is order-independent
+	FORCEINLINE float ExponentialSmoothMin(float DistanceA, float DistanceB, float Smoothness)
+	{
+		ensureVoxelSlow(Smoothness > 0);
+		const float H = FMath::Exp(-DistanceA / Smoothness) + FMath::Exp(-DistanceB / Smoothness);
+		return -FMath::Loge(H) * Smoothness;
+	}
+
+	//////////////////////////////////////////////////////////////////////////////
+	//////////////////////////////////////////////////////////////////////////////
+	//////////////////////////////////////////////////////////////////////////////
+
+	// H00
+	FORCEINLINE float HermiteP0(float T)
+	{
+		return (1 + 2 * T) * FMath::Square(1 - T);
+	}
+	// H10
+	FORCEINLINE float HermiteD0(float T)
+	{
+		return T * FMath::Square(1 - T);
+	}
+
+	// H01
+	FORCEINLINE float HermiteP1(float T)
+	{
+		return FMath::Square(T) * (3 - 2 * T);
+	}
+	// H11
+	FORCEINLINE float HermiteD1(float T)
+	{
+		return FMath::Square(T) * (T - 1);
+	}
+
+	//////////////////////////////////////////////////////////////////////////////
+	//////////////////////////////////////////////////////////////////////////////
+	//////////////////////////////////////////////////////////////////////////////
+
+	template<typename VectorType>
+	FORCEINLINE bool SegmentAreIntersecting(
+		const VectorType& StartA,
+		const VectorType& EndA,
+		const VectorType& StartB,
+		const VectorType& EndB)
+	{
+		const VectorType VectorA = EndA - StartA;
+		const VectorType VectorB = EndB - StartB;
+
+		const auto S =
+			(VectorA.X * (StartA.Y - StartB.Y) - VectorA.Y * (StartA.X - StartB.X)) /
+			(VectorA.X * VectorB.Y - VectorA.Y * VectorB.X);
+
+		const auto T =
+			(VectorB.X * (StartB.Y - StartA.Y) - VectorB.Y * (StartB.X - StartA.X)) /
+			(VectorB.X * VectorA.Y - VectorB.Y * VectorA.X);
+
+		return
+			0 <= S && S <= 1 &&
+			0 <= T && T <= 1;
+	}
+
+	FORCEINLINE bool RayTriangleIntersection(
+		const FVector3f& RayOrigin,
+		const FVector3f& RayDirection,
+		const FVector3f& VertexA,
+		const FVector3f& VertexB,
+		const FVector3f& VertexC,
+		const bool bAllowNegativeTime,
+		float& OutTime,
+		FVector3f* OutBarycentrics = nullptr)
+	{
+		const FVector3f Diff = RayOrigin - VertexA;
+		const FVector3f Edge1 = VertexB - VertexA;
+		const FVector3f Edge2 = VertexC - VertexA;
+		const FVector3f Normal = FVector3f::CrossProduct(Edge1, Edge2);
+
+		// With:
+		// Q = Diff, D = RayDirection, E1 = Edge1, E2 = Edge2, N = Cross(E1, E2)
+		//
+		// Solve:
+		// Q + t * D = b1 * E1 + b2 * E2
+		//
+		// Using:
+		//   |Dot(D, N)| * b1 = sign(Dot(D, N)) * Dot(D, Cross(Q, E2))
+		//   |Dot(D, N)| * b2 = sign(Dot(D, N)) * Dot(D, Cross(E1, Q))
+		//   |Dot(D, N)| * t = -sign(Dot(D, N)) * Dot(Q, N)
+
+		float Dot = RayDirection.Dot(Normal);
+		float Sign;
+		if (Dot > KINDA_SMALL_NUMBER)
+		{
+			Sign = 1;
+		}
+		else if (Dot < -KINDA_SMALL_NUMBER)
+		{
+			Sign = -1;
+			Dot = -Dot;
 		}
 		else
 		{
-			return Exponent - 1;
+			// Ray and triangle are parallel
+			return false;
 		}
-	}
-	template<int32 Base, int32 InValue, typename = std::enable_if_t<(InValue > 0)>>
-	FORCEINLINE constexpr int32 CeilLog()
-	{
-		int32 Value = InValue;
 
-		int32 Exponent = -1;
-		while (Value)
+		const float DotTimesB1 = Sign * RayDirection.Dot(Diff.Cross(Edge2));
+		if (DotTimesB1 < 0)
 		{
-			Value /= Base;
-			Exponent++;
+			// b1 < 0, no intersection
+			return false;
 		}
 
-		int64 Result = 1;
-		for (int32 Index = 0; Index < Exponent; Index++)
+		const float DotTimesB2 = Sign * RayDirection.Dot(Edge1.Cross(Diff));
+		if (DotTimesB2 < 0)
 		{
-			Result *= Base;
+			// b2 < 0, no intersection
+			return false;
 		}
 
-		if (InValue == Result)
+		if (DotTimesB1 + DotTimesB2 > Dot)
 		{
-			return Exponent;
+			// b1 + b2 > 1, no intersection
+			return false;
 		}
-		else
+
+		// Line intersects triangle, check if ray does.
+		const float DotTimesT = -Sign * Diff.Dot(Normal);
+		if (DotTimesT < 0 && !bAllowNegativeTime)
 		{
-			return Exponent + 1;
+			// t < 0, no intersection
+			return false;
 		}
-	}
-	template<int32 Base, int32 InValue, typename = std::enable_if_t<(InValue > 0) && FloorLog<Base, InValue>() == CeilLog<Base, InValue>()>>
-	FORCEINLINE constexpr int32 ExactLog()
-	{
-		int32 Value = InValue;
-		int32 Exponent = -1;
-		while (Value)
+
+		// Ray intersects triangle.
+		OutTime = DotTimesT / Dot;
+
+		if (OutBarycentrics)
 		{
-			Value /= Base;
-			Exponent++;
+			OutBarycentrics->Y = DotTimesB1 / Dot;
+			OutBarycentrics->Z = DotTimesB2 / Dot;
+			OutBarycentrics->X = 1 - OutBarycentrics->Y - OutBarycentrics->Z;
 		}
-		return Exponent;
+
+		return true;
+	}
+
+	FORCEINLINE FVector3f GetTriangleCrossProduct(const FVector3f& A, const FVector3f& B, const FVector3f& C)
+	{
+		return FVector3f::CrossProduct(C - A, B - A);
+	}
+	FORCEINLINE FVector3f GetTriangleNormal(const FVector3f& A, const FVector3f& B, const FVector3f& C)
+	{
+		return GetTriangleCrossProduct(A, B, C).GetSafeNormal();
+	}
+	FORCEINLINE float GetTriangleArea(const FVector3f& A, const FVector3f& B, const FVector3f& C)
+	{
+		return GetTriangleCrossProduct(A, B, C).Size() / 2.f;
+	}
+	FORCEINLINE bool IsTriangleValid(const FVector3f& A, const FVector3f& B, const FVector3f& C, float Tolerance = KINDA_SMALL_NUMBER)
+	{
+		return GetTriangleArea(A, B, C) > Tolerance;
+	}
+
+	FORCEINLINE FVector GetTriangleNormal(const FVector& A, const FVector& B, const FVector& C)
+	{
+		return FVector::CrossProduct(C - A, B - A).GetSafeNormal();
+	}
+	FORCEINLINE double GetTriangleArea(const FVector& A, const FVector& B, const FVector& C)
+	{
+		return FVector::CrossProduct(C - A, B - A).Size() / 2.f;
+	}
+	FORCEINLINE bool IsTriangleValid(const FVector& A, const FVector& B, const FVector& C, float Tolerance = KINDA_SMALL_NUMBER)
+	{
+		return GetTriangleArea(A, B, C) > Tolerance;
 	}
 
 	//////////////////////////////////////////////////////////////////////////////
 	//////////////////////////////////////////////////////////////////////////////
 	//////////////////////////////////////////////////////////////////////////////
 
-	template<int32 Value, typename = std::enable_if_t<(Value > 0)>>
-	constexpr int32 FloorLog2() { return FloorLog<2, Value>(); }
-
-	template<int32 Value, typename = std::enable_if_t<(Value > 0)>>
-	constexpr int32 CeilLog2() { return CeilLog<2, Value>(); }
-
-	template<int32 Value, typename = std::enable_if_t<(Value > 0) && FloorLog2<Value>() == CeilLog2<Value>()>>
-	constexpr int32 ExactLog2() { return ExactLog<2, Value>(); }
+	VOXELCORE_API FQuat MakeQuaternionFromEuler(double Pitch, double Yaw, double Roll);
+	VOXELCORE_API FQuat MakeQuaternionFromBasis(const FVector& X, const FVector& Y, const FVector& Z);
+	VOXELCORE_API FQuat MakeQuaternionFromZ(const FVector& Z);
 
 	//////////////////////////////////////////////////////////////////////////////
 	//////////////////////////////////////////////////////////////////////////////
 	//////////////////////////////////////////////////////////////////////////////
 
-	template<int32 Value, typename = std::enable_if_t<(Value > 0)>>
-	constexpr int32 FloorLog10() { return FloorLog<10, Value>(); }
-
-	template<int32 Value, typename = std::enable_if_t<(Value > 0)>>
-	constexpr int32 CeilLog10() { return CeilLog<10, Value>(); }
-
-	template<int32 Value, typename = std::enable_if_t<(Value > 0) && FloorLog10<Value>() == CeilLog10<Value>()>>
-	constexpr int32 ExactLog10() { return ExactLog<10, Value>(); }
-
-	//////////////////////////////////////////////////////////////////////////////
-	//////////////////////////////////////////////////////////////////////////////
-	//////////////////////////////////////////////////////////////////////////////
-
-	FORCEINLINE int32 ExactLog2(const int32 X)
+	FORCEINLINE FVector2f UnitVectorToOctahedron(FVector3f Unit)
 	{
-		const int32 Log2 = FMath::FloorLog2(X);
-		checkVoxelSlow((1 << Log2) == X);
-		return Log2;
-	}
-	FORCEINLINE int64 IntPow(const int64 Value, const int64 Exponent)
-	{
-		checkVoxelSlow(Exponent >= 0);
-		ensureVoxelSlow(Exponent < 1024);
+		ensureVoxelSlow(Unit.IsNormalized());
 
-		int64 Result = 1;
-		for (int32 Index = 0; Index < Exponent; Index++)
+		const float AbsSum = FMath::Abs(Unit.X) + FMath::Abs(Unit.Y) + FMath::Abs(Unit.Z);
+		Unit.X /= AbsSum;
+		Unit.Y /= AbsSum;
+
+		FVector2f Result = FVector2f(Unit.X, Unit.Y);
+		if (Unit.Z <= 0)
 		{
-			Result *= Value;
+			Result.X = (1 - FMath::Abs(Unit.Y)) * (Unit.X >= 0 ? 1 : -1);
+			Result.Y = (1 - FMath::Abs(Unit.X)) * (Unit.Y >= 0 ? 1 : -1);
 		}
-		return Result;
+		return Result * 0.5f + 0.5f;
 	}
+	FORCEINLINE FVector3f OctahedronToUnitVector(FVector2f Octahedron)
+	{
+		ensureVoxelSlow(0 <= Octahedron.X && Octahedron.X <= 1);
+		ensureVoxelSlow(0 <= Octahedron.Y && Octahedron.Y <= 1);
 
-	template<int32 NumPerChunk>
-	FORCEINLINE int32 GetChunkIndex(const int32 Index)
-	{
-		// Make sure to not use unsigned division as it would add a sign check
-		checkVoxelSlow(Index >= 0);
-		constexpr int32 Log2 = ExactLog2<NumPerChunk>();
-		return Index >> Log2;
-	}
-	template<int32 NumPerChunk>
-	FORCEINLINE int32 GetChunkOffset(const int32 Index)
-	{
-		checkVoxelSlow(Index >= 0);
-		checkStatic(FMath::IsPowerOfTwo(NumPerChunk));
-		return Index & (NumPerChunk - 1);
-	}
+		Octahedron = Octahedron * 2.f - 1.f;
 
-	//////////////////////////////////////////////////////////////////////////////
-	//////////////////////////////////////////////////////////////////////////////
-	//////////////////////////////////////////////////////////////////////////////
+		FVector3f Unit;
+		Unit.X = Octahedron.X;
+		Unit.Y = Octahedron.Y;
+		Unit.Z = 1.f - FMath::Abs(Octahedron.X) - FMath::Abs(Octahedron.Y);
 
-	FORCEINLINE constexpr uint8 ClampToUINT8(const int32 Value)
-	{
-		return FMath::Clamp<int32>(Value, 0, MAX_uint8);
-	}
-	FORCEINLINE constexpr uint16 ClampToUINT16(const int32 Value)
-	{
-		return FMath::Clamp<int32>(Value, 0, MAX_uint16);
-	}
+		const float T = FMath::Max(-Unit.Z, 0.f);
 
-	FORCEINLINE uint8 FloatToUINT8(const float Float)
-	{
-		return ClampToUINT8(FMath::FloorToInt(Float * 255.999f));
-	}
-	FORCEINLINE constexpr float UINT8ToFloat(const uint8 Int)
-	{
-		return Int / 255.f;
-	}
+		Unit.X += Unit.X >= 0 ? -T : T;
+		Unit.Y += Unit.Y >= 0 ? -T : T;
 
-	FORCEINLINE uint16 FloatToUINT16(const float Float)
-	{
-		return ClampToUINT16(FMath::FloorToInt(Float * 65535.999f));
-	}
-	FORCEINLINE constexpr float UINT16ToFloat(const uint16 Int)
-	{
-		return Int / 65535.f;
-	}
+		ensureVoxelSlow(Unit.SizeSquared() >= KINDA_SMALL_NUMBER);
 
-	FORCEINLINE bool IsValidUINT8(const int32 Value)
-	{
-		return 0 <= Value && Value < MAX_uint8;
-	}
-	FORCEINLINE bool IsValidUINT16(const int32 Value)
-	{
-		return 0 <= Value && Value < MAX_uint16;
-	}
-
-	//////////////////////////////////////////////////////////////////////////////
-	//////////////////////////////////////////////////////////////////////////////
-	//////////////////////////////////////////////////////////////////////////////
-
-	FORCEINLINE uint32 ReadBits(uint32 Data, const int32 FirstBit, const int32 NumBits)
-	{
-		checkVoxelSlow(0 <= FirstBit && FirstBit + NumBits <= 32);
-		checkVoxelSlow(0 < NumBits);
-
-		Data <<= 32 - (FirstBit + NumBits);
-		Data >>= 32 - NumBits;
-		return Data;
-	}
-	FORCEINLINE uint64 ReadBits(uint64 Data, const int32 FirstBit, const int32 NumBits)
-	{
-		checkVoxelSlow(0 <= FirstBit && FirstBit + NumBits <= 64);
-		checkVoxelSlow(0 < NumBits);
-
-		Data <<= 64 - (FirstBit + NumBits);
-		Data >>= 64 - NumBits;
-		return Data;
-	}
-	template<typename A, typename B, typename C>
-	void ReadBits(A, B, C) = delete;
-
-	FORCEINLINE float& FloatBits(uint32& Value)
-	{
-		return reinterpret_cast<float&>(Value);
-	}
-	FORCEINLINE uint32& IntBits(float& Value)
-	{
-		return reinterpret_cast<uint32&>(Value);
-	}
-
-	FORCEINLINE const float& FloatBits(const uint32& Value)
-	{
-		return reinterpret_cast<const float&>(Value);
-	}
-	FORCEINLINE const uint32& IntBits(const float& Value)
-	{
-		return reinterpret_cast<const uint32&>(Value);
-	}
-
-	FORCEINLINE float NaN()
-	{
-		return FloatBits(0xFFFFFFFF);
-	}
-	FORCEINLINE bool IsNaN(const float Value)
-	{
-		const bool bIsNaN = (IntBits(Value) & 0x7FFFFFFF) > 0x7F800000;
-		checkVoxelSlow(bIsNaN == FMath::IsNaN(Value));
-		return bIsNaN;
-	}
-	template<typename T>
-	bool IsNaN(T) = delete;
-
-	FORCEINLINE bool SignBit(const float Value)
-	{
-		return IntBits(Value) & (1u << 31);
-	}
-	template<typename T>
-	bool SignBit(const T&) = delete;
-
-	FORCEINLINE int32 GetExponent(const float Value)
-	{
-		return ReadBits(IntBits(Value), 23, 8);
-	}
-
-	//////////////////////////////////////////////////////////////////////////////
-	//////////////////////////////////////////////////////////////////////////////
-	//////////////////////////////////////////////////////////////////////////////
-
-	FORCEINLINE uint32 CountBits(const uint32 Bits)
-	{
-#if PLATFORM_WINDOWS && !PLATFORM_COMPILER_CLANG
-		// Force use the intrinsic
-		return _mm_popcnt_u32(Bits);
-#else
-		return FMath::CountBits(Bits);
-#endif
-	}
-	FORCEINLINE uint32 CountBits(const uint64 Bits)
-	{
-#if PLATFORM_WINDOWS && !PLATFORM_COMPILER_CLANG
-		// Force use the intrinsic
-		return _mm_popcnt_u64(Bits);
-#else
-		return FMath::CountBits(Bits);
-#endif
-	}
-
-	FORCEINLINE uint32 FirstBitLow(const uint32 Bits)
-	{
-#if PLATFORM_WINDOWS && !PLATFORM_COMPILER_CLANG
-		return _tzcnt_u32(Bits);
-#else
-		return __tzcnt_u32(Bits);
-#endif
-	}
-	FORCEINLINE uint32 FirstBitLow(const uint64 Bits)
-	{
-#if PLATFORM_WINDOWS && !PLATFORM_COMPILER_CLANG
-		return _tzcnt_u64(Bits);
-#else
-		return __tzcnt_u64(Bits);
-#endif
+		return Unit.GetUnsafeNormal();
 	}
 }
+
+#define __ISPC_STRUCT_FVoxelOctahedron__
+
+namespace ispc
+{
+	struct FVoxelOctahedron
+	{
+		uint8 X;
+		uint8 Y;
+	};
+}
+
+struct FVoxelOctahedron : ispc::FVoxelOctahedron
+{
+	FVoxelOctahedron() = default;
+	FORCEINLINE explicit FVoxelOctahedron(EForceInit)
+	{
+		X = 0;
+		Y = 0;
+	}
+	FORCEINLINE explicit FVoxelOctahedron(const FVector2f& Octahedron)
+	{
+		X = FVoxelUtilities::FloatToUINT8(Octahedron.X);
+		Y = FVoxelUtilities::FloatToUINT8(Octahedron.Y);
+
+		ensureVoxelSlow(0 <= Octahedron.X && Octahedron.X <= 1);
+		ensureVoxelSlow(0 <= Octahedron.Y && Octahedron.Y <= 1);
+	}
+	FORCEINLINE explicit FVoxelOctahedron(const FVector3f& UnitVector)
+		: FVoxelOctahedron(FVoxelUtilities::UnitVectorToOctahedron(UnitVector))
+	{
+	}
+
+	FORCEINLINE FVector2f GetOctahedron() const
+	{
+		return
+		{
+				FVoxelUtilities::UINT8ToFloat(X),
+				FVoxelUtilities::UINT8ToFloat(Y)
+		};
+	}
+	FORCEINLINE FVector3f GetUnitVector() const
+	{
+		return FVoxelUtilities::OctahedronToUnitVector(GetOctahedron());
+	}
+
+	FORCEINLINE friend FArchive& operator<<(FArchive& Ar, FVoxelOctahedron& Octahedron)
+	{
+		return Ar << Octahedron.X << Octahedron.Y;
+	}
+};

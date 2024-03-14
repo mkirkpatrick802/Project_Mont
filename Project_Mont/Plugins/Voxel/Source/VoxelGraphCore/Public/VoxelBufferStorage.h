@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -18,8 +18,6 @@ struct FVoxelBufferDefinitions
 	static constexpr int32 NumPerChunkLog2 = 12;
 	static constexpr int32 NumPerChunk = 1 << NumPerChunkLog2;
 
-	static_assert(NumPerChunk == 4096, "Update NumPerChunk in ISPC");
-
 	FORCEINLINE static int32 GetChunkIndex(const int32 Index)
 	{
 		return FVoxelUtilities::GetChunkIndex<NumPerChunk>(Index);
@@ -31,7 +29,7 @@ struct FVoxelBufferDefinitions
 };
 checkStatic(FVoxelBufferDefinitions::NumPerChunk * sizeof(float) == GVoxelDefaultAllocationSize);
 
-struct VOXELGRAPHCORE_API FVoxelBufferIterator : FVoxelBufferDefinitions
+struct FVoxelBufferIterator : FVoxelBufferDefinitions
 {
 public:
 	int32 TotalNum = 0;
@@ -39,30 +37,19 @@ public:
 	int32 ChunkOffset = 0;
 	int32 NumToProcess = 0;
 
-	void Initialize(int32 InTotalNum, int32 Index);
-	bool IsValid() const;
-	FVoxelBufferIterator GetHalfIterator() const;
-
-public:
-	FORCEINLINE int32 GetIndex() const
+	FORCEINLINE void Initialize(const int32 InTotalNum, const int32 Index)
 	{
-		return ChunkIndex * NumPerChunk + ChunkOffset;
-	}
-	FORCEINLINE int32 Num() const
-	{
+		TotalNum = InTotalNum;
+		ChunkIndex = GetChunkIndex(Index);
+		ChunkOffset = GetChunkOffset(Index);
+		UpdateNumToProcess();
 		checkVoxelSlow(IsValid());
-		return NumToProcess;
 	}
-	FORCEINLINE int32 AlignedNum() const
+	FORCEINLINE bool IsValid() const
 	{
-		checkVoxelSlow(IsValid());
-		checkStatic(Align(NumPerChunk, MaxISPCWidth) == NumPerChunk);
-		return Align(NumToProcess, MaxISPCWidth);
-	}
-	FORCEINLINE void UpdateNumToProcess()
-	{
-		// NumToProcess might be negative at the end of iteration
-		NumToProcess = FMath::Min(NumPerChunk - ChunkOffset, TotalNum - GetIndex());
+		return
+			ChunkOffset + NumToProcess <= NumPerChunk &&
+			ChunkIndex * NumPerChunk + ChunkOffset + NumToProcess <= TotalNum;
 	}
 
 public:
@@ -83,6 +70,43 @@ public:
 	FORCEINLINE bool operator!=(decltype(nullptr)) const
 	{
 		return NumToProcess > 0;
+	}
+
+public:
+	FORCEINLINE int32 GetIndex() const
+	{
+		return ChunkIndex * NumPerChunk + ChunkOffset;
+	}
+	FORCEINLINE int32 Num() const
+	{
+		checkVoxelSlow(IsValid());
+		return NumToProcess;
+	}
+	FORCEINLINE int32 AlignedNum() const
+	{
+		checkVoxelSlow(IsValid());
+		checkStatic(Align(NumPerChunk, MaxISPCWidth) == NumPerChunk);
+		return Align(NumToProcess, MaxISPCWidth);
+	}
+
+public:
+	FORCEINLINE FVoxelBufferIterator GetHalfIterator() const
+	{
+		checkVoxelSlow(IsValid());
+
+		checkVoxelSlow(TotalNum % 2 == 0);
+		const int32 Index = GetIndex();
+
+		checkVoxelSlow(Index % 2 == 0);
+		const int32 HalfIndex = Index / 2;
+
+		FVoxelBufferIterator HalfIterator;
+		HalfIterator.Initialize(TotalNum / 2, HalfIndex);
+		return HalfIterator;
+	}
+	FORCEINLINE void UpdateNumToProcess()
+	{
+		NumToProcess = FMath::Min(NumPerChunk - ChunkOffset, TotalNum - GetIndex());
 	}
 };
 
@@ -114,13 +138,8 @@ FORCEINLINE FVoxelBufferIteratorImpl MakeVoxelBufferIterator(const int32 Num)
 }
 
 template<typename LambdaType>
-FORCEINLINE void ForeachVoxelBufferChunk_Parallel(
-	const char* Name,
-	const int32 Num,
-	LambdaType&& Lambda)
+FORCEINLINE void ForeachVoxelBufferChunk(const int32 Num, LambdaType&& Lambda)
 {
-	VOXEL_SCOPE_COUNTER_FORMAT_COND(Num > 128, "%S Num=%d", Name, Num);
-
 	if (ShouldRunVoxelTaskInParallel())
 	{
 		constexpr int32 NumPerChunk = FVoxelBufferDefinitions::NumPerChunk;
@@ -141,75 +160,32 @@ FORCEINLINE void ForeachVoxelBufferChunk_Parallel(
 		}
 	}
 }
-template<typename LambdaType>
-FORCEINLINE void ForeachVoxelBufferChunk_Parallel(
-	const int32 Num,
-	LambdaType&& Lambda)
-{
-	ForeachVoxelBufferChunk_Parallel("ForeachVoxelBufferChunk", Num, MoveTemp(Lambda));
-}
-
-template<typename LambdaType>
-FORCEINLINE void ForeachVoxelBufferChunk_Sync(
-	const char* Name,
-	const int32 Num,
-	LambdaType&& Lambda)
-{
-	VOXEL_SCOPE_COUNTER_FORMAT_COND(Num > 128, "%S Num=%d", Name, Num);
-
-	for (const FVoxelBufferIterator& Iterator : MakeVoxelBufferIterator(Num))
-	{
-		Lambda(Iterator);
-	}
-}
-template<typename LambdaType>
-FORCEINLINE void ForeachVoxelBufferChunk_Sync(
-	const int32 Num,
-	LambdaType&& Lambda)
-{
-	ForeachVoxelBufferChunk_Sync("ForeachVoxelBufferChunk", Num, MoveTemp(Lambda));
-}
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-template<int32 InStride>
-struct TVoxelBufferMultiIteratorType
-{
-	static constexpr int32 Stride = InStride;
-};
-
-template<typename... Types>
+template<int32 Count>
 class TVoxelBufferMultiIterator : public FVoxelBufferDefinitions
 {
 public:
-	static constexpr int32 Count = sizeof...(Types);
 	const TVoxelStaticArray<int32, Count> Nums;
-	const TVoxelStaticArray<int32, Count> Strides;
-
-	template<typename T, typename = std::enable_if_t<UE::Core::Private::Tuple::TTypeCountInParameterPack_V<T, Types...> == 1>>
-	static constexpr int32 TypeIndexValue = TTupleIndex<T, TTuple<Types...>>::Value;
 
 	template<typename... ArgTypes>
 	FORCEINLINE explicit TVoxelBufferMultiIterator(ArgTypes... Args)
 		: Nums(Args...)
-		, Strides(Types::Stride...)
 	{
-		checkStatic(sizeof...(Args) == Count);
-
 		UpdateStep();
 	}
 
-public:
-	template<typename Type, int32 TypeIndex = TypeIndexValue<Type>>
-	FORCEINLINE void SetIndex(const int32 Index)
+	template<int32 Index>
+	FORCEINLINE void SetIndex(const int32 InIndex)
 	{
-		checkVoxelSlow(0 <= Index && Index < Nums[TypeIndex]);
-		checkVoxelSlow(Index % Strides[TypeIndex] == 0);
+		checkStatic(0 <= Index && Index < Count);
+		checkVoxelSlow(0 <= InIndex && InIndex < Nums[Index]);
 
-		ChunkIndices[TypeIndex] = GetChunkIndex(Index);
-		ChunkOffsets[TypeIndex] = GetChunkOffset(Index);
+		ChunkIndices[Index] = GetChunkIndex(InIndex);
+		ChunkOffsets[Index] = GetChunkOffset(InIndex);
 
 		UpdateStep();
 	}
@@ -218,7 +194,7 @@ public:
 	{
 		for (int32 Index = 0; Index < Count; Index++)
 		{
-			ChunkOffsets[Index] += Step * Strides[Index];
+			ChunkOffsets[Index] += Step;
 			checkVoxelSlow(ChunkOffsets[Index] <= NumPerChunk);
 
 			if (ChunkOffsets[Index] == NumPerChunk)
@@ -249,24 +225,16 @@ public:
 		return true;
 	}
 
-public:
-	template<typename Type, int32 TypeIndex = TypeIndexValue<Type>>
-	FORCEINLINE int32 Num() const
-	{
-		checkVoxelSlow(Step > 0);
-		return Step * Strides[TypeIndex];
-	}
-
-	template<typename Type, int32 TypeIndex = TypeIndexValue<Type>>
+	template<int32 Index>
 	FORCEINLINE FVoxelBufferIterator Get() const
 	{
-		checkVoxelSlow(Step > 0);
+		checkStatic(0 <= Index && Index < Count);
 
 		FVoxelBufferIterator Iterator;
-		Iterator.TotalNum = Nums[TypeIndex];
-		Iterator.ChunkIndex = ChunkIndices[TypeIndex];
-		Iterator.ChunkOffset = ChunkOffsets[TypeIndex];
-		Iterator.NumToProcess = Step * Strides[TypeIndex];
+		Iterator.TotalNum = Nums[Index];
+		Iterator.ChunkIndex = ChunkIndices[Index];
+		Iterator.ChunkOffset = ChunkOffsets[Index];
+		Iterator.NumToProcess = Step;
 		return Iterator;
 	}
 
@@ -277,18 +245,16 @@ private:
 
 	FORCEINLINE void UpdateStep()
 	{
-		Step = MAX_int32;
+		Step = NumPerChunk;
 
 		for (int32 Index = 0; Index < Count; Index++)
 		{
-			const int32 MaxStep = FMath::Min(
+			Step = FMath::Min3(
+				Step,
 				// Left in chunk
 				NumPerChunk - ChunkOffsets[Index],
 				// Left in array
 				Nums[Index] - ChunkIndices[Index] * NumPerChunk - ChunkOffsets[Index]);
-
-			checkVoxelSlow(MaxStep % Strides[Index] == 0);
-			Step = FMath::Min(Step, MaxStep / Strides[Index]);
 		}
 	}
 };
@@ -359,21 +325,19 @@ public:
 
 public:
 	// Set bAllowGrowth default to true for better allocation reuse
-	void Allocate(int32 Num, bool bAllowGrowth = true);
+	void Allocate(const int32 Num, bool bAllowGrowth = true);
 	void Empty();
-	void Reserve(int32 Num);
+	void Reserve(const int32 Num);
 	void Shrink();
-	void Memzero();
 	int64 GetAllocatedSize() const;
 	bool TryReduceIntoConstant();
 	void FixupAlignmentPaddingData() const;
 	void CheckSlow(const FVoxelPinType& Type) const;
-	TSharedRef<FVoxelBufferStorage> Clone(bool bAllowGrowth = true) const;
-	void SetNumUninitialized(int32 NewNum);
+	TSharedRef<FVoxelBufferStorage> Clone() const;
 	int32 AddUninitialized(int32 NumToAdd);
 	void AddZeroed(int32 NumToAdd);
 	void Append(const FVoxelBufferStorage& BufferStorage, int32 BufferNum);
-	void CopyTo(TVoxelArrayView<uint8> OtherData) const;
+	void CopyTo(const TVoxelArrayView<uint8> OtherData) const;
 
 	FORCEINLINE int32 GetTypeSize() const
 	{
@@ -382,10 +346,6 @@ public:
 	FORCEINLINE int32 Num() const
 	{
 		return ArrayNum;
-	}
-	FORCEINLINE bool CanGrow() const
-	{
-		return bCanGrow;
 	}
 	FORCEINLINE bool IsConstant() const
 	{
@@ -406,32 +366,10 @@ public:
 	}
 
 public:
-	FORCEINLINE void CheckIterator(const FVoxelBufferIterator& Iterator) const
-	{
-		checkVoxelSlow(Iterator.IsValid());
-		checkVoxelSlow(0 <= Iterator.ChunkOffset && Iterator.ChunkOffset < NumPerChunk);
-		checkVoxelSlow(Iterator.TotalNum <= Align(Num(), 8) || IsConstant());
-	}
+	void CheckIterator(const FVoxelBufferIterator& Iterator) const;
 
-	FORCEINLINE uint8* GetByteData(const FVoxelBufferIterator& Iterator)
-	{
-		CheckIterator(Iterator);
-
-		if (IsConstant())
-		{
-			checkVoxelSlow(IsConstant());
-			checkVoxelSlow(Chunks[0]);
-			return static_cast<uint8*>(Chunks[0]);
-		}
-
-		uint8* Chunk = static_cast<uint8*>(Chunks[Iterator.ChunkIndex]);
-		checkVoxelSlow(Chunk);
-		return Chunk + Iterator.ChunkOffset * TypeSize;
-	}
-	FORCEINLINE const uint8* GetByteData(const FVoxelBufferIterator& Iterator) const
-	{
-		return ConstCast(this)->GetByteData(Iterator);
-	}
+	uint8* GetByteData(const FVoxelBufferIterator& Iterator);
+	const uint8* GetByteData(const FVoxelBufferIterator& Iterator) const;
 
 	TVoxelArrayView<uint8> GetByteRawView_NotConstant(const FVoxelBufferIterator& Iterator);
 	TConstVoxelArrayView<uint8> GetByteRawView_NotConstant(const FVoxelBufferIterator& Iterator) const;
@@ -440,7 +378,7 @@ protected:
 	int32 TypeSize = 0;
 	int32 ArrayNum = 0;
 	bool bCanGrow = true;
-	TVoxelInlineArray<void*, 2> Chunks;
+	TVoxelArray<void*, TVoxelInlineAllocator<2>> Chunks;
 
 private:
 	void AddUninitialized_Allocate();
@@ -473,15 +411,6 @@ public:
 	}
 
 public:
-	FORCEINLINE Type* const* GetISPCBuffer()
-	{
-		return ReinterpretCastPtr<Type*>(Chunks.GetData());
-	}
-	FORCEINLINE const Type* const* GetISPCBuffer() const
-	{
-		return ReinterpretCastPtr<const Type*>(Chunks.GetData());
-	}
-
 	FORCEINLINE auto GetData(const FVoxelBufferIterator& Iterator) -> decltype(auto)
 	{
 		if constexpr (std::is_same_v<Type, bool>)
@@ -679,20 +608,6 @@ public:
 };
 
 template<>
-class TVoxelBufferStorage<bool> : public TVoxelBufferStorageBase<bool>
-{
-public:
-	using TVoxelBufferStorageBase::TVoxelBufferStorageBase;
-
-	FORCEINLINE TSharedRef<TVoxelBufferStorage> Clone() const
-	{
-		return StaticCastSharedRef<TVoxelBufferStorage>(FVoxelBufferStorage::Clone());
-	}
-
-	VOXELGRAPHCORE_API int32 CountBits() const;
-};
-
-template<>
 class TVoxelBufferStorage<float> : public TVoxelBufferStorageBase<float>
 {
 public:
@@ -705,34 +620,5 @@ public:
 
 	// Turn -0 into +0
 	VOXELGRAPHCORE_API void FixupSignBit();
-	VOXELGRAPHCORE_API FFloatInterval GetMinMax() const;
 	VOXELGRAPHCORE_API FFloatInterval GetMinMaxSafe() const;
-};
-
-template<>
-class TVoxelBufferStorage<double> : public TVoxelBufferStorageBase<double>
-{
-public:
-	using TVoxelBufferStorageBase::TVoxelBufferStorageBase;
-
-	FORCEINLINE TSharedRef<TVoxelBufferStorage> Clone() const
-	{
-		return StaticCastSharedRef<TVoxelBufferStorage>(FVoxelBufferStorage::Clone());
-	}
-
-	VOXELGRAPHCORE_API FDoubleInterval GetMinMaxSafe() const;
-};
-
-template<>
-class TVoxelBufferStorage<int32> : public TVoxelBufferStorageBase<int32>
-{
-public:
-	using TVoxelBufferStorageBase::TVoxelBufferStorageBase;
-
-	FORCEINLINE TSharedRef<TVoxelBufferStorage> Clone() const
-	{
-		return StaticCastSharedRef<TVoxelBufferStorage>(FVoxelBufferStorage::Clone());
-	}
-
-	VOXELGRAPHCORE_API FInt32Interval GetMinMax() const;
 };

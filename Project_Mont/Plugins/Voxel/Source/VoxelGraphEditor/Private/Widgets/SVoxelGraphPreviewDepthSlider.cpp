@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "SVoxelGraphPreviewDepthSlider.h"
 
@@ -75,7 +75,7 @@ void SVoxelGraphPreviewDepthSlider::Construct(const FArguments& InArgs)
 						.MaxValue(MaxValue)
 						.StepSize(1.f)
 						.Value(Value)
-						.OnValueChanged_Lambda([this](const float NewValue)
+						.OnValueChanged_Lambda([this](float NewValue)
 						{
 							OnValueChanged.ExecuteIfBound(NewValue);
 							Value = NewValue;
@@ -111,7 +111,7 @@ void SVoxelGraphPreviewDepthSlider::Construct(const FArguments& InArgs)
 	];
 }
 
-void SVoxelGraphPreviewDepthSlider::ResetValue(const float NewValue, const bool bKeepRange)
+void SVoxelGraphPreviewDepthSlider::ResetValue(float NewValue, bool bKeepRange)
 {
 	if (NewValue < 100.f &&
 		NewValue > -100.f)
@@ -155,7 +155,7 @@ FText SVoxelGraphPreviewDepthSlider::GetValueText() const
 	return FText::FromString(ValueText.ToString() + ": " + FText::AsNumber(Value / 100.f, &Options).ToString() + " m");
 }
 
-void SVoxelGraphPreviewDepthSlider::CreateMinMaxValue(const bool bMin)
+void SVoxelGraphPreviewDepthSlider::CreateMinMaxValue(bool bMin)
 {
 	SAssignNew((bMin ? MinValueBox : MaxValueBox), SNumericEntryBox<float>)
       	.Justification(ETextJustify::Center)

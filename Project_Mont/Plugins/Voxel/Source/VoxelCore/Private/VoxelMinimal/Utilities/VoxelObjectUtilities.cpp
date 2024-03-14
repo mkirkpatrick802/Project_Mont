@@ -1,13 +1,10 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelMinimal.h"
-#include "EdGraph/EdGraph.h"
 #include "UObject/MetaData.h"
 #include "Misc/UObjectToken.h"
 #include "Serialization/BulkDataReader.h"
 #include "Serialization/BulkDataWriter.h"
-#include "AssetRegistry/AssetData.h"
-#include "AssetRegistry/AssetRegistryModule.h"
 
 #if WITH_EDITOR
 #include "AssetToolsModule.h"
@@ -15,65 +12,12 @@
 #include "Editor/UnrealEdEngine.h"
 #include "ContentBrowserModule.h"
 #include "IContentBrowserSingleton.h"
-#include "Kismet2/KismetEditorUtilities.h"
 #include "Subsystems/AssetEditorSubsystem.h"
+#include "AssetRegistry/AssetRegistryModule.h"
 #endif
 
-bool GVoxelDoNotCreateSubobjects = false;
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
 #if WITH_EDITOR
-TArray<TFunction<bool(const UObject&)>> GVoxelTryFocusObjectFunctions;
-
-VOXEL_RUN_ON_STARTUP_EDITOR(RegisterTryFocusKismet)
-{
-	GVoxelTryFocusObjectFunctions.Add([](const UObject& Object)
-	{
-		const UEdGraph* EdGraph = Cast<UEdGraph>(&Object);
-		if (!EdGraph)
-		{
-			return false;
-		}
-
-		const TSharedPtr<IBlueprintEditor> BlueprintEditor = FKismetEditorUtilities::GetIBlueprintEditorForObject(EdGraph, true);
-		if (!BlueprintEditor.IsValid())
-		{
-			return false;
-		}
-
-		FKismetEditorUtilities::BringKismetToFocusAttentionOnObject(EdGraph);
-		return true;
-	});
-
-	GVoxelTryFocusObjectFunctions.Add([](const UObject& Object)
-	{
-		const UEdGraphNode* EdGraphNode = Cast<UEdGraphNode>(&Object);
-		if (!EdGraphNode)
-		{
-			return false;
-		}
-
-		const TSharedPtr<IBlueprintEditor> BlueprintEditor = FKismetEditorUtilities::GetIBlueprintEditorForObject(EdGraphNode, true);
-		if (!BlueprintEditor.IsValid())
-		{
-			return false;
-		}
-
-		FKismetEditorUtilities::BringKismetToFocusAttentionOnObject(EdGraphNode);
-		return true;
-	});
-}
-#endif
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-#if WITH_EDITOR
-FString FVoxelUtilities::GetClassDisplayName_EditorOnly(const UClass* Class)
+FString FVoxelObjectUtilities::GetClassDisplayName_EditorOnly(const UClass* Class)
 {
 	if (!Class)
 	{
@@ -91,7 +35,7 @@ FString FVoxelUtilities::GetClassDisplayName_EditorOnly(const UClass* Class)
 	return ClassName;
 }
 
-FString FVoxelUtilities::GetPropertyTooltip(const UFunction& Function, const FProperty& Property)
+FString FVoxelObjectUtilities::GetPropertyTooltip(const UFunction& Function, const FProperty& Property)
 {
 	ensure(Property.Owner == &Function);
 
@@ -101,7 +45,7 @@ FString FVoxelUtilities::GetPropertyTooltip(const UFunction& Function, const FPr
 		&Property == Function.GetReturnProperty());
 }
 
-FString FVoxelUtilities::GetPropertyTooltip(const FString& FunctionTooltip, const FString& PropertyName, const bool bIsReturnPin)
+FString FVoxelObjectUtilities::GetPropertyTooltip(const FString& FunctionTooltip, const FString& PropertyName, bool bIsReturnPin)
 {
 	VOXEL_FUNCTION_COUNTER();
 
@@ -192,86 +136,18 @@ FString FVoxelUtilities::GetPropertyTooltip(const FString& FunctionTooltip, cons
 
 	return FunctionTooltip;
 }
-#endif
 
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-#if WITH_EDITOR
-TMap<FName, FString> FVoxelUtilities::GetMetadata(const UObject* Object)
+TMap<FName, FString> FVoxelObjectUtilities::GetMetadata(const UObject* Object)
 {
 	if (!ensure(Object))
 	{
 		return {};
 	}
 
-	return Object->GetPackage()->GetMetaData()->ObjectMetaDataMap.FindRef(Object);
-}
-#endif
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-#if WITH_EDITOR
-FString FVoxelUtilities::SanitizeCategory(const FString& Category)
-{
-	return FString::Join(ParseCategory(Category), TEXT("|"));
+	return Object->GetOutermost()->GetMetaData()->ObjectMetaDataMap.FindRef(Object);
 }
 
-TArray<FString> FVoxelUtilities::ParseCategory(const FString& Category)
-{
-	TArray<FString> Categories;
-	Category.ParseIntoArray(Categories, TEXT("|"));
-
-	for (FString& SubCategory : Categories)
-	{
-		SubCategory = FName::NameToDisplayString(SubCategory.TrimStartAndEnd(), false);
-		// Check is canon
-		ensure(SubCategory == FName::NameToDisplayString(SubCategory.TrimStartAndEnd(), false));
-	}
-
-	if (Categories.Num() == 0)
-	{
-		ensure(Category.IsEmpty());
-		Categories.Add("");
-	}
-
-	return Categories;
-}
-
-FString FVoxelUtilities::MakeCategory(const TArray<FString>& Categories)
-{
-	return SanitizeCategory(FString::Join(Categories, TEXT("|")));
-}
-
-bool FVoxelUtilities::IsSubCategory(const FString& Category, const FString& SubCategory)
-{
-	const TArray<FString> Categories = ParseCategory(Category);
-	const TArray<FString> SubCategories = ParseCategory(SubCategory);
-	if (Categories.Num() > SubCategories.Num())
-	{
-		return false;
-	}
-
-	for (int32 Index = 0; Index < Categories.Num(); Index++)
-	{
-		if (Categories[Index] != SubCategories[Index])
-		{
-			return false;
-		}
-	}
-	return true;
-}
-#endif
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-#if WITH_EDITOR
-void FVoxelUtilities::CreateNewAsset_Deferred(UClass* Class, const FString& BaseName, const FString& Suffix, TFunction<void(UObject*)> SetupObject)
+void FVoxelObjectUtilities::CreateNewAsset_Deferred(UClass* Class, const FString& BaseName, const FString& Suffix, TFunction<void(UObject*)> SetupObject)
 {
 	// Create an appropriate and unique name
 	FString AssetName;
@@ -293,7 +169,7 @@ void FVoxelUtilities::CreateNewAsset_Deferred(UClass* Class, const FString& Base
 	ContentBrowser.CreateNewAsset(AssetName, FPackageName::GetLongPackagePath(PackageName), Class, Factory->GetUFactory());
 }
 
-UObject* FVoxelUtilities::CreateNewAsset_Direct(UClass* Class, const FString& BaseName, const FString& Suffix)
+UObject* FVoxelObjectUtilities::CreateNewAsset_Direct(UClass* Class, const FString& BaseName, const FString& Suffix)
 {
 	FString NewPackageName;
 	FString NewAssetName;
@@ -314,86 +190,136 @@ UObject* FVoxelUtilities::CreateNewAsset_Direct(UClass* Class, const FString& Ba
 	}
 
 	FAssetRegistryModule::AssetCreated(Object);
-	(void)Object->MarkPackageDirty();
+	Object->MarkPackageDirty();
 	return Object;
 }
 #endif
 
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
+TSharedRef<FUObjectToken> FVoxelObjectUtilities::MakeSafeObjectToken(UObject* Object)
+{
+	if (!Object)
+	{
+		return FUObjectToken::Create(Object);
+	}
+
+	if (AActor* Actor = Cast<AActor>(Object))
+	{
+		FText Text;
+#if WITH_EDITOR
+		Text = FText::FromString(Actor->GetActorLabel());
+#endif
+		const TSharedRef<FUObjectToken> Token = FUObjectToken::Create(Actor, Text);
 
 #if WITH_EDITOR
-void FVoxelUtilities::FocusObject(const UObject* Object)
-{
-	VOXEL_FUNCTION_COUNTER();
-
-	if (!ensureVoxelSlow(Object))
-	{
-		return;
-	}
-
-	bool bFunctionSuccessful = false;
-	for (const TFunction<bool(const UObject&)>& Function : GVoxelTryFocusObjectFunctions)
-	{
-		if (Function(*Object))
+		Token->OnMessageTokenActivated(MakeLambdaDelegate([WeakActor = MakeWeakObjectPtr(Actor)](const TSharedRef<IMessageToken>&)
 		{
-			ensure(!bFunctionSuccessful);
-			bFunctionSuccessful = true;
-		}
-	}
-	if (bFunctionSuccessful)
-	{
-		return;
-	}
+			AActor* ActorPtr = WeakActor.Get();
+			if (!ActorPtr)
+			{
+				return;
+			}
 
-	if (const AActor* Actor = Cast<AActor>(Object))
-	{
-		GEditor->SelectNone(false, true);
-		GEditor->SelectActor(ConstCast(Actor), true, false, true);
-		GEditor->NoteSelectionChange();
-		GEditor->MoveViewportCamerasToActor(*ConstCast(Actor), false);
-		return;
-	}
-
-	if (const UActorComponent* Component = Cast<UActorComponent>(Object))
-	{
-		GEditor->SelectNone(false, true);
-		GEditor->SelectComponent(ConstCast(Component), true, false, true);
-		GEditor->NoteSelectionChange();
-
-		if (const USceneComponent* SceneComponent = Cast<USceneComponent>(Component))
-		{
-			GEditor->MoveViewportCamerasToComponent(SceneComponent, false);
-		}
-
-		return;
-	}
-
-	if (!Object->HasAnyFlags(RF_Transient))
-	{
-		// If we are a subobject of an asset, use the asset
-		Object = Object->GetOutermostObject();
-	}
-
-	// Check if we can open an asset editor (OpenEditorForAsset return value is unreliable)
-	const FAssetToolsModule& AssetToolsModule = FModuleManager::LoadModuleChecked<FAssetToolsModule>(TEXT("AssetTools"));
-	const TSharedPtr<IAssetTypeActions> AssetTypeActions = AssetToolsModule.Get().GetAssetTypeActionsForClass(Object->GetClass()).Pin();
-	if (!AssetTypeActions)
-	{
-		return;
-	}
-
-	GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(Object);
-}
-
-void FVoxelUtilities::FocusObject(const UObject& Object)
-{
-	FocusObject(&Object);
-}
+			GEditor->SelectNone(false, true);
+			GEditor->SelectActor(ActorPtr, true, false, true);
+			GEditor->NoteSelectionChange();
+			GEditor->MoveViewportCamerasToActor(*ActorPtr, false);
+		}));
 #endif
 
-void FVoxelUtilities::InvokeFunctionWithNoParameters(UObject* Object, UFunction* Function)
+		return Token;
+	}
+
+	if (UActorComponent* Component = Cast<UActorComponent>(Object))
+	{
+		FText Text;
+#if WITH_EDITOR
+		if (const AActor* Owner = Component->GetOwner())
+		{
+			Text = FText::FromString(Owner->GetActorLabel() + "." + Component->GetName());
+		}
+#endif
+		const TSharedRef<FUObjectToken> Token = FUObjectToken::Create(Component, Text);
+
+#if WITH_EDITOR
+		Token->OnMessageTokenActivated(MakeLambdaDelegate([WeakComponent = MakeWeakObjectPtr(Component)](const TSharedRef<IMessageToken>&)
+		{
+			UActorComponent* ComponentPtr = WeakComponent.Get();
+			if (!ComponentPtr)
+			{
+				return;
+			}
+
+			GEditor->SelectNone(false, true);
+			GEditor->SelectComponent(ComponentPtr, true, false, true);
+			GEditor->NoteSelectionChange();
+
+			if (const USceneComponent* SceneComponent = Cast<USceneComponent>(ComponentPtr))
+			{
+				GEditor->MoveViewportCamerasToComponent(SceneComponent, false);
+			}
+		}));
+#endif
+
+		return Token;
+	}
+
+	const auto GetObjectDisplayName = [](const UObject* InObject)
+	{
+		if (FUObjectToken::DefaultOnGetObjectDisplayName().IsBound())
+		{
+			return FUObjectToken::DefaultOnGetObjectDisplayName().Execute(InObject, false).ToString();
+		}
+		else
+		{
+			return InObject->GetName();
+		}
+	};
+
+	FString Text = GetObjectDisplayName(Object);
+
+	if (!Object->HasAllFlags(RF_Transient))
+	{
+		// Find the first outer which is an actual package
+		while (
+			Object &&
+			Object->GetOuter() &&
+			!Object->GetOuter()->IsA<UPackage>())
+		{
+			Object = Object->GetOuter();
+			Text = GetObjectDisplayName(Object) + "." + Text;
+		}
+	}
+
+	const TSharedRef<FUObjectToken> Token = FUObjectToken::Create(Object, FText::FromString(Text));
+	ConstCast(Token->GetOriginalObjectPathName()) = Object->GetPathName();
+
+#if WITH_EDITOR
+	Token->OnMessageTokenActivated(MakeLambdaDelegate([WeakObject = MakeWeakObjectPtr(Object)](const TSharedRef<IMessageToken>& InToken)
+	{
+		UObject* ObjectPtr = WeakObject.Get();
+		if (!ObjectPtr)
+		{
+			return;
+		}
+
+		// Check if we can open an asset editor (OpenEditorForAsset return value is unreliable)
+		const FAssetToolsModule& AssetToolsModule = FModuleManager::LoadModuleChecked<FAssetToolsModule>(TEXT("AssetTools"));
+		const TSharedPtr<IAssetTypeActions> AssetTypeActions = AssetToolsModule.Get().GetAssetTypeActionsForClass(ObjectPtr->GetClass()).Pin();
+
+		if (!AssetTypeActions)
+		{
+			(void)FUObjectToken::DefaultOnMessageTokenActivated().ExecuteIfBound(InToken);
+			return;
+		}
+
+		GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(ObjectPtr);
+	}));
+#endif
+
+	return Token;
+}
+
+void FVoxelObjectUtilities::InvokeFunctionWithNoParameters(UObject* Object, UFunction* Function)
 {
 	VOXEL_FUNCTION_COUNTER();
 
@@ -420,7 +346,59 @@ void FVoxelUtilities::InvokeFunctionWithNoParameters(UObject* Object, UFunction*
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-bool FVoxelUtilities::ShouldSerializeBulkData(FArchive& Ar)
+bool FVoxelObjectUtilities::PropertyFromText_Direct(const FProperty& Property, const FString& Text, void* Data, UObject* Owner)
+{
+	return Property.ImportText_Direct(*Text, Data, Owner, PPF_None) != nullptr;
+}
+
+bool FVoxelObjectUtilities::PropertyFromText_InContainer(const FProperty& Property, const FString& Text, void* ContainerData, UObject* Owner)
+{
+	return Property.ImportText_InContainer(*Text, ContainerData, Owner, PPF_None) != nullptr;
+}
+
+bool FVoxelObjectUtilities::PropertyFromText_InContainer(const FProperty& Property, const FString& Text, UObject* Owner)
+{
+	check(Owner);
+	check(Owner->GetClass()->IsChildOf(CastChecked<UClass>(Property.Owner.ToUObject())));
+
+	return PropertyFromText_InContainer(Property, Text, static_cast<void*>(Owner), Owner);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+FString FVoxelObjectUtilities::PropertyToText_Direct(const FProperty& Property, const void* Data, const UObject* Owner)
+{
+	VOXEL_FUNCTION_COUNTER();
+
+	FString Value;
+	ensure(Property.ExportText_Direct(Value, Data, Data, ConstCast(Owner), PPF_None));
+	return Value;
+}
+
+FString FVoxelObjectUtilities::PropertyToText_InContainer(const FProperty& Property, const void* ContainerData, const UObject* Owner)
+{
+	VOXEL_FUNCTION_COUNTER();
+
+	FString Value;
+	ensure(Property.ExportText_InContainer(0, Value, ContainerData, ContainerData, ConstCast(Owner), PPF_None));
+	return Value;
+}
+
+FString FVoxelObjectUtilities::PropertyToText_InContainer(const FProperty& Property, const UObject* Owner)
+{
+	check(Owner);
+	check(Owner->GetClass()->IsChildOf(CastChecked<UClass>(Property.Owner.ToUObject())));
+
+	return PropertyToText_InContainer(Property, static_cast<const void*>(Owner), Owner);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+bool FVoxelObjectUtilities::ShouldSerializeBulkData(FArchive& Ar)
 {
 	return
 		Ar.IsPersistent() &&
@@ -429,7 +407,7 @@ bool FVoxelUtilities::ShouldSerializeBulkData(FArchive& Ar)
 		ensure(!Ar.IsTransacting());
 }
 
-void FVoxelUtilities::SerializeBulkData(
+void FVoxelObjectUtilities::SerializeBulkData(
 	UObject* Object,
 	FByteBulkData& BulkData,
 	FArchive& Ar,
@@ -470,7 +448,7 @@ void FVoxelUtilities::SerializeBulkData(
 	}
 }
 
-void FVoxelUtilities::SerializeBulkData(
+void FVoxelObjectUtilities::SerializeBulkData(
 	UObject* Object,
 	FByteBulkData& BulkData,
 	FArchive& Ar,
@@ -497,7 +475,7 @@ void FVoxelUtilities::SerializeBulkData(
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-uint32 FVoxelUtilities::HashProperty(const FProperty& Property, const void* DataPtr)
+uint32 FVoxelObjectUtilities::HashProperty(const FProperty& Property, const void* DataPtr)
 {
 	switch (Property.GetCastFlags())
 	{
@@ -516,9 +494,7 @@ uint32 FVoxelUtilities::HashProperty(const FProperty& Property, const void* Data
 	CASE(FClassProperty);
 	CASE(FNameProperty);
 	CASE(FObjectProperty);
-#if VOXEL_ENGINE_VERSION < 504
 	CASE(FObjectPtrProperty);
-#endif
 	CASE(FWeakObjectProperty);
 #undef CASE
 	default: break;
@@ -624,14 +600,14 @@ VOXEL_RUN_ON_STARTUP_GAME(RegisterVoxelCachedStructOps)
 {
 	GVoxelCachedStructOps.Reserve(8192);
 
-	ForEachObjectOfClass<UScriptStruct>([&](const UScriptStruct& Struct)
+	ForEachObjectOfClass<UScriptStruct>([&](const UScriptStruct* Struct)
 	{
-		GVoxelCachedStructOps.Add(&Struct, Struct.GetCppStructOps());
+		GVoxelCachedStructOps.Add(Struct, Struct->GetCppStructOps());
 	});
 }
 #endif
 
-void FVoxelUtilities::DestroyStruct_Safe(const UScriptStruct* Struct, void* StructMemory)
+void FVoxelObjectUtilities::DestroyStruct_Safe(const UScriptStruct* Struct, void* StructMemory)
 {
 	check(Struct);
 	check(StructMemory);
@@ -658,23 +634,23 @@ void FVoxelUtilities::DestroyStruct_Safe(const UScriptStruct* Struct, void* Stru
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-void FVoxelUtilities::AddStructReferencedObjects(FReferenceCollector& Collector, const FVoxelStructView& StructView)
+void FVoxelObjectUtilities::AddStructReferencedObjects(FReferenceCollector& Collector, const UScriptStruct* Struct, void* StructMemory)
 {
 	VOXEL_FUNCTION_COUNTER();
 
-	if (!ensure(StructView.IsValid()))
+	if (!ensure(Struct))
 	{
 		return;
 	}
 
-	if (StructView.GetStruct()->StructFlags & STRUCT_AddStructReferencedObjects)
+	if (Struct->StructFlags & STRUCT_AddStructReferencedObjects)
 	{
-		StructView.GetStruct()->GetCppStructOps()->AddStructReferencedObjects()(StructView.GetMemory(), Collector);
+		Struct->GetCppStructOps()->AddStructReferencedObjects()(StructMemory, Collector);
 	}
 
-	for (TPropertyValueIterator<const FObjectProperty> It(StructView.GetStruct(), StructView.GetMemory()); It; ++It)
+	for (TPropertyValueIterator<const FObjectProperty> It(Struct, StructMemory); It; ++It)
 	{
-		TObjectPtr<UObject>* ObjectPtr = static_cast<TObjectPtr<UObject>*>(ConstCast(It.Value()));
+		UObject** ObjectPtr = static_cast<UObject**>(ConstCast(It.Value()));
 		Collector.AddReferencedObject(*ObjectPtr);
 	}
 }
@@ -683,51 +659,35 @@ void FVoxelUtilities::AddStructReferencedObjects(FReferenceCollector& Collector,
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-const FBoolProperty& FVoxelUtilities::MakeBoolProperty()
+TUniquePtr<FBoolProperty> FVoxelObjectUtilities::MakeBoolProperty()
 {
-	static const TUniquePtr<FBoolProperty> Property = INLINE_LAMBDA
-	{
-		TUniquePtr<FBoolProperty> Result = MakeUnique<FBoolProperty>(FFieldVariant(), FName(), EObjectFlags());
-		Result->ElementSize = sizeof(bool);
-		return Result;
-	};
-	return *Property;
+	TUniquePtr<FBoolProperty> Property = MakeUnique<FBoolProperty>(FFieldVariant(), FName(), EObjectFlags());
+	Property->ElementSize = sizeof(bool);
+	return Property;
 }
 
-const FFloatProperty& FVoxelUtilities::MakeFloatProperty()
+TUniquePtr<FFloatProperty> FVoxelObjectUtilities::MakeFloatProperty()
 {
-	static const TUniquePtr<FFloatProperty> Property = INLINE_LAMBDA
-	{
-		TUniquePtr<FFloatProperty> Result = MakeUnique<FFloatProperty>(FFieldVariant(), FName(), EObjectFlags());
-		Result->ElementSize = sizeof(float);
-		return Result;
-	};
-	return *Property;
+	TUniquePtr<FFloatProperty> Property = MakeUnique<FFloatProperty>(FFieldVariant(), FName(), EObjectFlags());
+	Property->ElementSize = sizeof(float);
+	return Property;
 }
 
-const FIntProperty& FVoxelUtilities::MakeIntProperty()
+TUniquePtr<FIntProperty> FVoxelObjectUtilities::MakeIntProperty()
 {
-	static const TUniquePtr<FIntProperty> Property = INLINE_LAMBDA
-	{
-		TUniquePtr<FIntProperty> Result = MakeUnique<FIntProperty>(FFieldVariant(), FName(), EObjectFlags());
-		Result->ElementSize = sizeof(int32);
-		return Result;
-	};
-	return *Property;
+	TUniquePtr<FIntProperty> Property = MakeUnique<FIntProperty>(FFieldVariant(), FName(), EObjectFlags());
+	Property->ElementSize = sizeof(int32);
+	return Property;
 }
 
-const FNameProperty& FVoxelUtilities::MakeNameProperty()
+TUniquePtr<FNameProperty> FVoxelObjectUtilities::MakeNameProperty()
 {
-	static const TUniquePtr<FNameProperty> Property = INLINE_LAMBDA
-	{
-		TUniquePtr<FNameProperty> Result = MakeUnique<FNameProperty>(FFieldVariant(), FName(), EObjectFlags());
-		Result->ElementSize = sizeof(FName);
-		return Result;
-	};
-	return *Property;
+	TUniquePtr<FNameProperty> Property = MakeUnique<FNameProperty>(FFieldVariant(), FName(), EObjectFlags());
+	Property->ElementSize = sizeof(FName);
+	return Property;
 }
 
-TUniquePtr<FEnumProperty> FVoxelUtilities::MakeEnumProperty(const UEnum* Enum)
+TUniquePtr<FEnumProperty> FVoxelObjectUtilities::MakeEnumProperty(const UEnum* Enum)
 {
 	TUniquePtr<FEnumProperty> Property = MakeUnique<FEnumProperty>(FFieldVariant(), FName(), EObjectFlags());
 	Property->SetEnum(ConstCast(Enum));
@@ -735,7 +695,7 @@ TUniquePtr<FEnumProperty> FVoxelUtilities::MakeEnumProperty(const UEnum* Enum)
 	return Property;
 }
 
-TUniquePtr<FStructProperty> FVoxelUtilities::MakeStructProperty(const UScriptStruct* Struct)
+TUniquePtr<FStructProperty> FVoxelObjectUtilities::MakeStructProperty(const UScriptStruct* Struct)
 {
 	check(Struct);
 
@@ -745,7 +705,7 @@ TUniquePtr<FStructProperty> FVoxelUtilities::MakeStructProperty(const UScriptStr
 	return Property;
 }
 
-TUniquePtr<FObjectProperty> FVoxelUtilities::MakeObjectProperty(const UClass* Class)
+TUniquePtr<FObjectProperty> FVoxelObjectUtilities::MakeObjectProperty(const UClass* Class)
 {
 	check(Class);
 
@@ -755,7 +715,7 @@ TUniquePtr<FObjectProperty> FVoxelUtilities::MakeObjectProperty(const UClass* Cl
 	return Property;
 }
 
-TUniquePtr<FArrayProperty> FVoxelUtilities::MakeArrayProperty(FProperty* InnerProperty)
+TUniquePtr<FArrayProperty> FVoxelObjectUtilities::MakeArrayProperty(FProperty* InnerProperty)
 {
 	check(InnerProperty);
 
@@ -768,50 +728,207 @@ TUniquePtr<FArrayProperty> FVoxelUtilities::MakeArrayProperty(FProperty* InnerPr
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-bool FVoxelUtilities::PropertyFromText_Direct(const FProperty& Property, const FString& Text, void* Data, UObject* Owner)
-{
-	return Property.ImportText_Direct(*Text, Data, Owner, PPF_None) != nullptr;
-}
-
-bool FVoxelUtilities::PropertyFromText_InContainer(const FProperty& Property, const FString& Text, void* ContainerData, UObject* Owner)
-{
-	return Property.ImportText_InContainer(*Text, ContainerData, Owner, PPF_None) != nullptr;
-}
-
-bool FVoxelUtilities::PropertyFromText_InContainer(const FProperty& Property, const FString& Text, UObject* Owner)
-{
-	check(Owner);
-	check(Owner->GetClass()->IsChildOf(CastChecked<UClass>(Property.Owner.ToUObject())));
-
-	return PropertyFromText_InContainer(Property, Text, static_cast<void*>(Owner), Owner);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-FString FVoxelUtilities::PropertyToText_Direct(const FProperty& Property, const void* Data, const UObject* Owner)
+TArray<UScriptStruct*> GetDerivedStructs(const UScriptStruct* StructType, bool bIncludeBase)
 {
 	VOXEL_FUNCTION_COUNTER();
 
-	FString Value;
-	ensure(Property.ExportText_Direct(Value, Data, Data, ConstCast(Owner), PPF_None));
-	return Value;
+	TArray<UScriptStruct*> Result;
+	ForEachObjectOfClass<UScriptStruct>([&](UScriptStruct* Struct)
+	{
+		if (!Struct->IsChildOf(StructType))
+		{
+			return;
+		}
+		if (!bIncludeBase &&
+			StructType == Struct)
+		{
+			return;
+		}
+
+		Result.Add(Struct);
+	});
+	Result.Shrink();
+	return Result;
 }
 
-FString FVoxelUtilities::PropertyToText_InContainer(const FProperty& Property, const void* ContainerData, const UObject* Owner)
-{
-	VOXEL_FUNCTION_COUNTER();
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
 
-	FString Value;
-	ensure(Property.ExportText_InContainer(0, Value, ContainerData, ContainerData, ConstCast(Owner), PPF_None));
-	return Value;
+bool IsFunctionInput(const FProperty& Property)
+{
+	ensure(Property.Owner.IsA(UFunction::StaticClass()));
+
+	return
+		!Property.HasAnyPropertyFlags(CPF_ReturnParm) &&
+		(!Property.HasAnyPropertyFlags(CPF_OutParm) || Property.HasAnyPropertyFlags(CPF_ReferenceParm));
 }
 
-FString FVoxelUtilities::PropertyToText_InContainer(const FProperty& Property, const UObject* Owner)
-{
-	check(Owner);
-	check(Owner->GetClass()->IsChildOf(CastChecked<UClass>(Property.Owner.ToUObject())));
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
 
-	return PropertyToText_InContainer(Property, static_cast<const void*>(Owner), Owner);
+class FRestoreClassInfo
+{
+public:
+	static const TMap<FName, TObjectPtr<UFunction>>& GetFunctionMap(const UClass* Class)
+	{
+		return ReinterpretCastRef<TMap<FName, TObjectPtr<UFunction>>>(Class->FuncMap);
+	}
+};
+
+TArray<UFunction*> GetClassFunctions(const UClass* Class, const bool bIncludeSuper)
+{
+	TArray<TObjectPtr<UFunction>> Functions;
+	FRestoreClassInfo::GetFunctionMap(Class).GenerateValueArray(Functions);
+
+	if (bIncludeSuper)
+	{
+		const UClass* SuperClass = Class->GetSuperClass();
+		while (SuperClass)
+		{
+			for (auto& It : FRestoreClassInfo::GetFunctionMap(SuperClass))
+			{
+				Functions.Add(It.Value);
+			}
+			SuperClass = Class->GetSuperClass();
+		}
+	}
+
+	return Functions;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+#if WITH_EDITOR
+FString GetStringMetaDataHierarchical(const UStruct* Struct, const FName Name)
+{
+	FString Result;
+	Struct->GetStringMetaDataHierarchical(Name, &Result);
+	return Result;
+}
+#endif
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+void FVoxelNullCheckReferenceCollector::AddStableReference(UObject** Object)
+{
+	const bool bValid = *Object != nullptr;
+	ReferenceCollector.AddStableReference(Object);
+	ensure(bValid == (*Object != nullptr));
+}
+
+void FVoxelNullCheckReferenceCollector::AddStableReferenceArray(TArray<UObject*>* Objects)
+{
+	for (UObject*& Object : *Objects)
+	{
+		AddStableReference(&Object);
+	}
+}
+
+void FVoxelNullCheckReferenceCollector::AddStableReferenceSet(TSet<UObject*>* Objects)
+{
+	for (UObject*& Object : *Objects)
+	{
+		AddStableReference(&Object);
+	}
+}
+
+bool FVoxelNullCheckReferenceCollector::NeedsPropertyReferencer() const
+{
+	return ReferenceCollector.NeedsPropertyReferencer();
+}
+
+bool FVoxelNullCheckReferenceCollector::IsIgnoringArchetypeRef() const
+{
+	return ReferenceCollector.IsIgnoringArchetypeRef();
+}
+
+bool FVoxelNullCheckReferenceCollector::IsIgnoringTransient() const
+{
+	return ReferenceCollector.IsIgnoringTransient();
+}
+
+void FVoxelNullCheckReferenceCollector::AllowEliminatingReferences(const bool bAllow)
+{
+	ReferenceCollector.AllowEliminatingReferences(bAllow);
+}
+
+void FVoxelNullCheckReferenceCollector::SetSerializedProperty(FProperty* InProperty)
+{
+	ReferenceCollector.SetSerializedProperty(InProperty);
+}
+
+FProperty* FVoxelNullCheckReferenceCollector::GetSerializedProperty() const
+{
+	return ReferenceCollector.GetSerializedProperty();
+}
+
+bool FVoxelNullCheckReferenceCollector::MarkWeakObjectReferenceForClearing(UObject** WeakReference)
+{
+	return ReferenceCollector.MarkWeakObjectReferenceForClearing(WeakReference);
+}
+
+void FVoxelNullCheckReferenceCollector::SetIsProcessingNativeReferences(const bool bIsNative)
+{
+	ReferenceCollector.SetIsProcessingNativeReferences(bIsNative);
+}
+
+bool FVoxelNullCheckReferenceCollector::IsProcessingNativeReferences() const
+{
+	return ReferenceCollector.IsProcessingNativeReferences();
+}
+
+bool FVoxelNullCheckReferenceCollector::NeedsInitialReferences() const
+{
+	return ReferenceCollector.NeedsInitialReferences();
+}
+
+void FVoxelNullCheckReferenceCollector::HandleObjectReference(UObject*& InObject, const UObject* InReferencingObject, const FProperty* InReferencingProperty)
+{
+	const bool bValid = InObject != nullptr;
+	ReferenceCollector.AddReferencedObject(InObject, InReferencingObject, InReferencingProperty);
+	ensure(bValid == (InObject != nullptr));
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+struct FVoxelSharedStructOpaque {};
+
+TSharedRef<FVoxelSharedStructOpaque> MakeSharedStruct(const UScriptStruct* Struct, const void* StructToCopyFrom)
+{
+	check(Struct);
+	checkVoxelSlow(UObjectInitialized());
+
+	void* Memory = FVoxelMemory::Malloc(FMath::Max(1, Struct->GetStructureSize()));
+	Struct->InitializeStruct(Memory);
+
+	if (StructToCopyFrom)
+	{
+		Struct->CopyScriptStruct(Memory, StructToCopyFrom);
+	}
+
+	return MakeShareableStruct(Struct, Memory);
+}
+
+TSharedRef<FVoxelSharedStructOpaque> MakeShareableStruct(const UScriptStruct* Struct, void* StructMemory)
+{
+	if (Struct->IsChildOf(StaticStructFast<FVoxelVirtualStruct>()))
+	{
+		const TSharedRef<FVoxelVirtualStruct> SharedRef = MakeVoxelShareable(static_cast<FVoxelVirtualStruct*>(StructMemory));
+		SharedRef->Internal_UpdateWeakReferenceInternal(SharedRef);
+		return ReinterpretCastRef<TSharedRef<FVoxelSharedStructOpaque>>(SharedRef);
+	}
+
+	return TSharedPtr<FVoxelSharedStructOpaque>(static_cast<FVoxelSharedStructOpaque*>(StructMemory), [Struct](void* InMemory)
+	{
+		FVoxelObjectUtilities::DestroyStruct_Safe(Struct, InMemory);
+		FVoxelMemory::Free(InMemory);
+	}).ToSharedRef();
 }

@@ -1,55 +1,16 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "SVoxelGraphSearch.h"
+
 #include "VoxelGraph.h"
+#include "VoxelGraphSearchResult.h"
 #include "VoxelGraphToolkit.h"
-#include "VoxelGraphSearchItem.h"
 #include "VoxelGraphSearchManager.h"
-
-void FVoxelGraphSearchSettings::LoadFromIni()
-{
-#define Load(Variable) GConfig->GetBool(TEXT("VoxelGraphSearch"), TEXT(#Variable), Variable, GEditorPerProjectIni);
-	Load(bSearchNodes);
-	Load(bSearchPins);
-	Load(bSearchParameters);
-	Load(bSearchTypes);
-	Load(bSearchDescriptions);
-	Load(bSearchDefaultValues);
-	Load(bRemoveSpaces);
-#undef Load
-}
-
-bool FVoxelGraphSearchSettings::ShowTag(const EVoxelGraphSearchResultTag Tag) const
-{
-	switch (Tag)
-	{
-	default: ensure(false);
-	case EVoxelGraphSearchResultTag::Special: return true;
-	case EVoxelGraphSearchResultTag::Graph: return true;
-	case EVoxelGraphSearchResultTag::TerminalGraph: return true;
-	case EVoxelGraphSearchResultTag::Node: return bSearchNodes || bSearchPins;
-	case EVoxelGraphSearchResultTag::NodeTitle: return bSearchNodes;
-	case EVoxelGraphSearchResultTag::Pin: return bSearchPins;
-	case EVoxelGraphSearchResultTag::Parameter: return bSearchParameters;
-	case EVoxelGraphSearchResultTag::Input: return bSearchParameters;
-	case EVoxelGraphSearchResultTag::Output: return bSearchParameters;
-	case EVoxelGraphSearchResultTag::LocalVariable: return bSearchParameters;
-	case EVoxelGraphSearchResultTag::Type: return bSearchTypes;
-	case EVoxelGraphSearchResultTag::Description: return bSearchDescriptions;
-	case EVoxelGraphSearchResultTag::DefaultValue: return bSearchDefaultValues;
-	}
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
 
 void SVoxelGraphSearch::Construct(const FArguments& InArgs)
 {
 	WeakToolkit = InArgs._Toolkit;
 	bIsGlobalSearch = InArgs._IsGlobalSearch;
-
-	SearchSettings.LoadFromIni();
 
 	ChildSlot
 	[
@@ -67,14 +28,7 @@ void SVoxelGraphSearch::Construct(const FArguments& InArgs)
 				[
 					SAssignNew(SearchTextField, SSearchBox)
 					.HintText(INVTEXT("Enter function or event name to find references..."))
-					.OnTextCommitted_Lambda([=](const FText& Text, const ETextCommit::Type CommitType)
-					{
-						if (CommitType == ETextCommit::OnEnter)
-						{
-							SearchValue = Text.ToString();
-							MakeSearchQuery(SearchValue);
-						}
-					})
+					.OnTextCommitted(this, &SVoxelGraphSearch::OnSearchTextCommitted)
 					.DelayChangeNotificationsWhileTyping(false)
 				]
 				+ SHorizontalBox::Slot()
@@ -84,16 +38,7 @@ void SVoxelGraphSearch::Construct(const FArguments& InArgs)
 					SNew(SButton)
 					.Visibility(bIsGlobalSearch ? EVisibility::Collapsed : EVisibility::Visible)
 					.VAlign(VAlign_Center)
-					.OnClicked_Lambda([=]
-					{
-						if (const TSharedPtr<SVoxelGraphSearch> GlobalSearch = GVoxelGraphSearchManager->OpenGlobalSearch())
-						{
-							GlobalSearch->SearchSettings = SearchSettings;
-							GlobalSearch->FocusForUse(SearchValue);
-						}
-
-						return FReply::Handled();
-					})
+					.OnClicked(this, &SVoxelGraphSearch::OnOpenGlobalFindResults)
 					.ToolTipText(INVTEXT("Find in all Voxel Graphs"))
 					[
 						SNew(STextBlock)
@@ -116,26 +61,10 @@ void SVoxelGraphSearch::Construct(const FArguments& InArgs)
 					[
 						SAssignNew(TreeView, STreeViewType)
 						.ItemHeight(24.f)
-						.TreeItemsSource(&RootItems)
+						.TreeItemsSource(&ItemsFound)
 						.OnGenerateRow(this, &SVoxelGraphSearch::OnGenerateRow)
-						.OnGetChildren_Lambda([=](const TSharedPtr<FVoxelGraphSearchItem> Item, TArray<TSharedPtr<FVoxelGraphSearchItem>>& OutChildren)
-						{
-							if (!ensure(Item))
-							{
-								return;
-							}
-
-							OutChildren.Append(Item->GetChildren());
-						})
-						.OnMouseButtonDoubleClick_Lambda([=](const TSharedPtr<FVoxelGraphSearchItem> Item)
-						{
-							if (!ensure(Item))
-							{
-								return;
-							}
-
-							Item->OnClick();
-						})
+						.OnGetChildren(this, &SVoxelGraphSearch::OnGetChildren)
+						.OnMouseButtonDoubleClick(this, &SVoxelGraphSearch::OnTreeSelectionDoubleClicked)
 						.SelectionMode(ESelectionMode::Multi)
 					]
 				]
@@ -195,11 +124,20 @@ void SVoxelGraphSearch::FocusForUse(const FString& NewSearchTerms)
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
+void SVoxelGraphSearch::OnSearchTextCommitted(const FText& Text, const ETextCommit::Type CommitType)
+{
+	if (CommitType == ETextCommit::OnEnter)
+	{
+		SearchValue = Text.ToString();
+		MakeSearchQuery(SearchValue);
+	}
+}
+
 TSharedRef<SWidget> SVoxelGraphSearch::CreateSearchSettingsWidget()
 {
 	FMenuBuilder MenuBuilder(true, nullptr);
 
-#define Add(Label, ToolTip, Variable) \
+#define ADD_ENTRY(Label, ToolTip, Variable) \
 	MenuBuilder.AddMenuEntry( \
 		INVTEXT(Label), \
 		INVTEXT(ToolTip), \
@@ -207,7 +145,6 @@ TSharedRef<SWidget> SVoxelGraphSearch::CreateSearchSettingsWidget()
 		FUIAction(FExecuteAction::CreateLambda([this] \
 		{ \
 			SearchSettings.Variable = !SearchSettings.Variable; \
-			GConfig->SetBool(TEXT("VoxelGraphSearch"), TEXT(#Variable), SearchSettings.Variable, GEditorPerProjectIni); \
 			MakeSearchQuery(SearchValue); \
 		}), \
 		FCanExecuteAction(), \
@@ -220,42 +157,42 @@ TSharedRef<SWidget> SVoxelGraphSearch::CreateSearchSettingsWidget()
 
 	MenuBuilder.BeginSection("", INVTEXT("Show in Search Results"));
 	{
-		Add("Nodes", "Search through nodes", bSearchNodes);
-		Add("Pins", "Search through node pins", bSearchPins);
-		Add("Parameters", "Search through the graph parameter list", bSearchParameters);
-		Add("Type", "Compare the search term to parameter/pin types in lookup", bSearchTypes);
-		Add("Description", "Search node/parameter/pin descriptions", bSearchDescriptions);
-		Add("Default Value", "Compare the search term parameter/pin default values in lookup", bSearchDefaultValues);
+		ADD_ENTRY("Nodes", "Search through nodes", bNodesLookup);
+		ADD_ENTRY("Pins", "Search through node pins", bPinsLookup);
+		ADD_ENTRY("Parameters", "Search through the graph parameter list", bParametersLookup);
+		ADD_ENTRY("Parameters Getters and Setters", "Search for parameter getters and setters used within the graph", bParameterGettersAndSettersLookup);
+		ADD_ENTRY("Type", "Compare the search term to parameter/pin types in lookup", bTypesLookup);
+		ADD_ENTRY("Default Value", "Compare the search term parameter/pin default values in lookup", bDefaultValueLookup);
+		ADD_ENTRY("Description", "Search node/parameter/pin descriptions", bDescriptionLookup);
 	}
 	MenuBuilder.EndSection();
 
 	MenuBuilder.BeginSection("", INVTEXT("Misc"));
 	{
-		Add("Remove spaces in Search Results", "Will remove spaces from search lookup string, which will make search results more lenient for partial matches", bRemoveSpaces);
+		ADD_ENTRY("Remove spaces in Search Results", "Will remove spaces from search lookup string, which will make search results more lenient for partial matches", bRemoveSpacesInLookup);
 	}
 	MenuBuilder.EndSection();
 
-#undef Add
+#undef ADD_ENTRY
 
 	return MenuBuilder.MakeWidget();
 }
 
-TSharedRef<ITableRow> SVoxelGraphSearch::OnGenerateRow(TSharedPtr<FVoxelGraphSearchItem> Item, const TSharedRef<STableViewBase>& OwnerTable) const
+FReply SVoxelGraphSearch::OnOpenGlobalFindResults() const
 {
-	TSharedRef<SWidget> IconWidget = SNullWidget::NullWidget;
+	if (const TSharedPtr<SVoxelGraphSearch> GlobalSearch = FVoxelGraphSearchManager::Get().OpenGlobalSearch())
 	{
-		FSlateColor IconColor = FLinearColor::White;
-		if (const FSlateBrush* Icon = Item->GetIcon(IconColor))
-		{
-			IconWidget =
-				SNew(SImage)
-				.Image(Icon)
-				.ColorAndOpacity(IconColor);
-		}
+		GlobalSearch->SearchSettings = SearchSettings;
+		GlobalSearch->FocusForUse(SearchValue);
 	}
 
+	return FReply::Handled();
+}
+
+TSharedRef<ITableRow> SVoxelGraphSearch::OnGenerateRow(TSharedPtr<FVoxelGraphSearchResult> Item, const TSharedRef<STableViewBase>& OwnerTable) const
+{
 	return
-		SNew(STableRow<TSharedPtr<FVoxelGraphSearchItem>>, OwnerTable)
+		SNew(STableRow<TSharedPtr<FVoxelGraphSearchResult>>, OwnerTable)
 		.Style(&FAppStyle::GetWidgetStyle<FTableRowStyle>("ShowParentsTableView.Row"))
 		[
 			SNew(SHorizontalBox)
@@ -263,7 +200,7 @@ TSharedRef<ITableRow> SVoxelGraphSearch::OnGenerateRow(TSharedPtr<FVoxelGraphSea
 			.VAlign(VAlign_Center)
 			.AutoWidth()
 			[
-				IconWidget
+				Item->GetIcon()
 			]
 			+ SHorizontalBox::Slot()
 			.VAlign(VAlign_Center)
@@ -271,8 +208,18 @@ TSharedRef<ITableRow> SVoxelGraphSearch::OnGenerateRow(TSharedPtr<FVoxelGraphSea
 			.Padding(2.f)
 			[
 				SNew(SVoxelDetailText)
-				.Text(FText::FromString(Item->GetName().Replace(TEXT("\n"), TEXT(" "))))
+				.Text(Item->GetName())
 				.HighlightText(HighlightText)
+			]
+			+ SHorizontalBox::Slot()
+			.VAlign(VAlign_Center)
+			.AutoWidth()
+			.Padding(2.f)
+			[
+				SNew(SVoxelDetailText)
+				.Text(Item->GetSubName())
+				.HighlightText(HighlightText)
+				.ColorAndOpacity(FSlateColor::UseSubduedForeground())
 			]
 			+ SHorizontalBox::Slot()
 			.HAlign(HAlign_Right)
@@ -281,12 +228,31 @@ TSharedRef<ITableRow> SVoxelGraphSearch::OnGenerateRow(TSharedPtr<FVoxelGraphSea
 			.Padding(2.f)
 			[
 				SNew(SVoxelDetailText)
-				.Text(FText::FromString(Item->GetComment()))
+				.Text(Item->GetComment())
 				.HighlightText(HighlightText)
 			]
 		];
 }
 
+void SVoxelGraphSearch::OnGetChildren(TSharedPtr<FVoxelGraphSearchResult> Item, TArray<TSharedPtr<FVoxelGraphSearchResult>>& OutChildren) const
+{
+	if (!ensure(Item))
+	{
+		return;
+	}
+
+	OutChildren.Append(Item->Children);
+}
+
+void SVoxelGraphSearch::OnTreeSelectionDoubleClicked(TSharedPtr<FVoxelGraphSearchResult> Item) const
+{
+	if (!ensure(Item))
+	{
+		return;
+	}
+
+	Item->OnClick(WeakToolkit);
+}
 
 void SVoxelGraphSearch::MakeSearchQuery(const FString& SearchQuery)
 {
@@ -309,68 +275,107 @@ void SVoxelGraphSearch::MakeSearchQuery(const FString& SearchQuery)
 		SearchQuery.ParseIntoArray(Tokens, TEXT(" "), true);
 	}
 
-	RootItems.Reset();
+	ItemsFound = {};
 
-	const TSharedRef<FVoxelGraphSearchItem::FContext> Context = MakeVoxelShared<FVoxelGraphSearchItem::FContext>();
-	Context->Tokens = Tokens;
-	Context->Settings = SearchSettings;
-
+	TArray<TSharedPtr<FVoxelGraphSearchResult>> ItemsToExpand;
 	if (Tokens.Num() > 0)
 	{
 		HighlightText = FText::FromString(SearchValue);
-
-		if (bIsGlobalSearch)
-		{
-			UVoxelGraph::LoadAllGraphs();
-
-			ForEachObjectOfClass_Copy<UVoxelGraph>([&](UVoxelGraph& Graph)
-			{
-				const TSharedRef<FVoxelGraphSearchItem_Graph> Item = MakeVoxelShared<FVoxelGraphSearchItem_Graph>(&Graph);
-				Item->Initialize(Context);
-
-				if (Item->GetChildren().Num() > 0)
-				{
-					RootItems.Add(Item);
-				}
-			});
-		}
-		else
-		{
-			const TSharedPtr<FVoxelGraphToolkit> Toolkit = WeakToolkit.Pin();
-			if (!ensure(Toolkit))
-			{
-				return;
-			}
-
-			const TSharedRef<FVoxelGraphSearchItem_Graph> Item = MakeVoxelShared<FVoxelGraphSearchItem_Graph>(Toolkit->Asset);
-			Item->Initialize(Context);
-			RootItems.Add(Item);
-		}
+		ItemsToExpand = MatchTokens(Tokens);
 	}
 
-	if (RootItems.Num() == 0)
+	if (ItemsFound.Num() == 0)
 	{
-		RootItems.Add(MakeVoxelShared<FVoxelGraphSearchItem_Text>(EVoxelGraphSearchResultTag::Special, "", "No Results found"));
+		ItemsFound.Add(MakeVoxelShared<FVoxelGraphSearchTextResult>("No Results found"));
 	}
 
 	TreeView->RequestTreeRefresh();
 
-	TSet<TSharedPtr<FVoxelGraphSearchItem>> AllItems;
-	TArray<TSharedPtr<FVoxelGraphSearchItem>> QueuedItems = RootItems;
-	while (QueuedItems.Num() > 0)
+	for (const TSharedPtr<FVoxelGraphSearchResult>& Item : ItemsToExpand)
 	{
-		const TSharedPtr<FVoxelGraphSearchItem> Item = QueuedItems.Pop(false);
-		if (AllItems.Contains(Item))
+		TreeView->SetItemExpansion(Item, true);
+	}
+}
+
+TArray<TSharedPtr<FVoxelGraphSearchResult>> SVoxelGraphSearch::MatchTokens(const TArray<FString>& Tokens)
+{
+	TArray<TSharedPtr<FVoxelGraphSearchResult>> AllItems;
+	if (bIsGlobalSearch)
+	{
+		TMap<UObject*, UVoxelGraph*> Assets = FVoxelGraphSearchManager::Get().GetAllLookupGraphs();
+
+		for (const auto& It : Assets)
+		{
+			if (!ensure(It.Key) ||
+				!ensure(It.Value))
+			{
+				continue;
+			}
+
+			const TSharedRef<FVoxelGraphSearchAssetResult> AssetResult = MakeVoxelShared<FVoxelGraphSearchAssetResult>(It.Key->GetPackage()->GetPathName(), It.Value);
+			MatchGraphAsset(It.Value, Tokens, AssetResult, AllItems);
+
+			if (AssetResult->Children.Num() > 0)
+			{
+				AllItems.Add(AssetResult);
+				ItemsFound.Add(AssetResult);
+			}
+		}
+		return AllItems;
+	}
+
+	const TSharedPtr<FVoxelGraphToolkit> Toolkit = WeakToolkit.Pin();
+	if (!ensure(Toolkit))
+	{
+		return AllItems;
+	}
+
+	MatchGraphAsset(Toolkit->Asset, Tokens, nullptr, AllItems);
+	return AllItems;
+}
+
+void SVoxelGraphSearch::MatchGraphAsset(UVoxelGraph* Graph, const TArray<FString>& Tokens, const TSharedPtr<FVoxelGraphSearchResult>& AssetResult, TArray<TSharedPtr<FVoxelGraphSearchResult>>& AllItems)
+{
+	if (!ensure(Graph))
+	{
+		return;
+	}
+
+	{
+		const TSharedPtr<FVoxelGraphSearchResult> GraphResult = MakeVoxelShared<FVoxelGraphSearchGraphResult>(Graph);
+		if (GraphResult->MatchesTokens(Tokens, SearchSettings, AllItems))
+		{
+			AllItems.Add(GraphResult);
+			if (AssetResult)
+			{
+				AssetResult->AddChild(GraphResult);
+			}
+			else
+			{
+				ItemsFound.Add(GraphResult);
+			}
+		}
+	}
+
+	for (UVoxelGraph* InlineMacro : Graph->InlineMacros)
+	{
+		if (!ensure(InlineMacro))
 		{
 			continue;
 		}
 
-		AllItems.Add(Item);
-		QueuedItems.Append(Item->GetChildren());
-	}
-
-	for (const TSharedPtr<FVoxelGraphSearchItem>& Item : AllItems)
-	{
-		TreeView->SetItemExpansion(Item, true);
+		const TSharedPtr<FVoxelGraphSearchResult> GraphResult = MakeVoxelShared<FVoxelGraphSearchGraphResult>(InlineMacro);
+		if (GraphResult->MatchesTokens(Tokens, SearchSettings, AllItems))
+		{
+			AllItems.Add(GraphResult);
+			if (AssetResult)
+			{
+				AssetResult->AddChild(GraphResult);
+			}
+			else
+			{
+				ItemsFound.Add(GraphResult);
+			}
+		}
 	}
 }

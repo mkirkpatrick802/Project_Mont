@@ -1,9 +1,8 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelDynamicValue.h"
+#include "VoxelDependency.h"
 #include "VoxelTaskGroup.h"
-#include "VoxelTaskGroupScope.h"
-#include "VoxelDependencyTracker.h"
 
 class VOXELGRAPHCORE_API FVoxelDynamicValueState final
 	: public FVoxelDynamicValueStateBase
@@ -13,9 +12,9 @@ public:
 	const TSharedRef<const FVoxelComputeValue> ComputeLambda;
 	const FName Name;
 	const FVoxelPinType Type;
-	const bool bRunSynchronously;
+	const EVoxelTaskThread Thread;
 	const FVoxelTaskPriority Priority;
-	const TSharedRef<FVoxelTerminalGraphInstance> TerminalGraphInstance;
+	const TSharedRef<FVoxelQueryContext> Context;
 	const TSharedRef<const FVoxelQueryParameters> Parameters;
 	const TSharedRef<FVoxelTaskReferencer> Referencer;
 
@@ -36,24 +35,24 @@ private:
 		const TSharedRef<const FVoxelComputeValue>& ComputeLambda,
 		const FName Name,
 		const FVoxelPinType& Type,
-		const bool bRunSynchronously,
+		const EVoxelTaskThread Thread,
 		const FVoxelTaskPriority& Priority,
-		const TSharedRef<FVoxelTerminalGraphInstance>& TerminalGraphInstance,
+		const TSharedRef<FVoxelQueryContext>& Context,
 		const TSharedRef<const FVoxelQueryParameters>& Parameters,
 		const TSharedRef<FVoxelTaskReferencer>& Referencer)
 		: ComputeLambda(ComputeLambda)
-		, Name(Name)
+		, Name(FVoxelUtilities::AppendName(TEXT("DynamicValue - "), Name))
 		, Type(Type)
-		, bRunSynchronously(bRunSynchronously)
+		, Thread(Thread)
 		, Priority(Priority)
-		, TerminalGraphInstance(TerminalGraphInstance)
+		, Context(Context)
 		, Parameters(Parameters)
 		, Referencer(Referencer)
 		, OnChangedImpl(MakeVoxelShared<FOnChangedImpl>(Name))
 	{
 	}
 
-	FVoxelCriticalSection CriticalSection;
+	FVoxelFastCriticalSection CriticalSection;
 	TSharedPtr<FVoxelTaskGroup> Group;
 	TSharedPtr<FVoxelDependencyTracker> DependencyTracker;
 	int32 ValueCounter = 0;
@@ -72,7 +71,7 @@ private:
 		void Execute(const FVoxelRuntimePinValue& NewValue, int32 NewValueCounter);
 
 	private:
-		FVoxelCriticalSection CriticalSection;
+		FVoxelFastCriticalSection CriticalSection;
 		FOnChanged OnChanged;
 		int32 LastValueCounter = -1;
 		FVoxelRuntimePinValue PendingValue;
@@ -147,13 +146,14 @@ void FVoxelDynamicValueState::Compute_RequiresLock_WillUnlock()
 	}
 
 	ensure(!Group);
-	if (bRunSynchronously)
+	if (Thread == EVoxelTaskThread::GameThread &&
+		IsInGameThread())
 	{
-		Group = FVoxelTaskGroup::CreateSynchronous(Name, Referencer, TerminalGraphInstance);
+		Group = FVoxelTaskGroup::CreateSynchronous(Name, Referencer, Context);
 	}
 	else
 	{
-		Group = FVoxelTaskGroup::Create(Name, Priority, Referencer, TerminalGraphInstance);
+		Group = FVoxelTaskGroup::Create(Name, Priority, Referencer, Context);
 	}
 
 	DependencyTracker.Reset();
@@ -168,12 +168,13 @@ void FVoxelDynamicValueState::Compute_RequiresLock_WillUnlock()
 		return;
 	}
 
-	MakeVoxelTask("Setup")
+	MakeVoxelTask(STATIC_FNAME("FVoxelDynamicValueState_Setup"))
+	.Thread(Thread)
 	.Execute(MakeWeakPtrLambda(this, [this]
 	{
 		const TSharedRef<FVoxelDependencyTracker> NewDependencyTracker = FVoxelDependencyTracker::Create(Name);
 		const FVoxelQuery Query = FVoxelQuery::Make(
-			TerminalGraphInstance,
+			Context,
 			Parameters,
 			NewDependencyTracker);
 
@@ -183,7 +184,8 @@ void FVoxelDynamicValueState::Compute_RequiresLock_WillUnlock()
 			FutureValue = FVoxelRuntimePinValue(Type);
 		}
 
-		MakeVoxelTask()
+		MakeVoxelTask(STATIC_FNAME("FVoxelDynamicValueState_Wait"))
+		.Thread(Thread)
 		.Dependency(FutureValue)
 		.Execute(MakeWeakPtrLambda(this, [this, NewDependencyTracker, FutureValue]
 		{
@@ -191,15 +193,9 @@ void FVoxelDynamicValueState::Compute_RequiresLock_WillUnlock()
 		}));
 	}));
 
-	if (!bRunSynchronously)
+	if (Scope.GetGroup().bIsSynchronous)
 	{
-		return;
-	}
-
-	FString Error;
-	if (!Group->TryRunSynchronously(&Error))
-	{
-		ensureMsgf(Group->ShouldExit(), TEXT("Failed to run %s synchronously: %s"), *Name.ToString(), *Error);
+		Scope.GetGroup().TryRunSynchronously_Ensure();
 	}
 }
 
@@ -257,7 +253,7 @@ void FVoxelDynamicValueState::OnComputed(
 ///////////////////////////////////////////////////////////////////////////////
 
 TSharedRef<FVoxelDynamicValueStateBase> FVoxelDynamicValueFactoryBase::ComputeState(
-	const TSharedRef<FVoxelTerminalGraphInstance>& TerminalGraphInstance,
+	const TSharedRef<FVoxelQueryContext>& Context,
 	const TSharedRef<const FVoxelQueryParameters>& Parameters) const
 {
 	ensure(Compute);
@@ -269,9 +265,9 @@ TSharedRef<FVoxelDynamicValueStateBase> FVoxelDynamicValueFactoryBase::ComputeSt
 		Compute.ToSharedRef(),
 		Name,
 		Type,
-		bPrivateRunSynchronously,
+		PrivateThread,
 		PrivatePriority,
-		TerminalGraphInstance,
+		Context,
 		Parameters,
 		Referencer.ToSharedRef()));
 

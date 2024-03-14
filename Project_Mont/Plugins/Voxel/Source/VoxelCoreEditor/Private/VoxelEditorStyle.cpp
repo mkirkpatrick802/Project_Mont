@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelEditorStyle.h"
 #include "VoxelEditorMinimal.h"
@@ -21,91 +21,48 @@ VOXEL_CONSOLE_COMMAND(
 	FVoxelEditorStyle::ReloadTextures();
 }
 
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
+TSharedPtr<FVoxelStyleSet> GVoxelEditorStyle;
+constexpr const TCHAR* GVoxelStyleSetName = TEXT("VoxelStyle");
 
-FVoxelSlateStyleSet::FVoxelSlateStyleSet(const FName Name)
-	: FSlateStyleSet(Name)
+FVoxelStyleSet::FVoxelStyleSet(const FName& InStyleSetName) : FSlateStyleSet(InStyleSetName)
 {
-	FSlateStyleSet::SetContentRoot(FVoxelUtilities::GetPlugin().GetBaseDir() / TEXT("Resources/EditorIcons"));
-	FSlateStyleSet::SetCoreContentRoot(FPaths::EngineContentDir() / TEXT("Editor/Slate"));
-}
+	FVoxelStyleSet::SetContentRoot(FVoxelSystemUtilities::GetPlugin().GetBaseDir() / TEXT("Resources/EditorIcons"));
+	FVoxelStyleSet::SetCoreContentRoot(FPaths::EngineContentDir() / TEXT("Editor/Slate"));
 
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-TArray<FVoxelStyleSetFactory> GVoxelStyleSetFactories;
-
-class FVoxelGlobalSlateStyleSet : public FVoxelSlateStyleSet
-{
-public:
-	FVoxelGlobalSlateStyleSet()
-		: FVoxelSlateStyleSet("VoxelStyle")
+	GOnVoxelModuleUnloaded_DoCleanup.AddLambda([]
 	{
-		for (const FVoxelStyleSetFactory& Factory : GVoxelStyleSetFactories)
+		if (GVoxelEditorStyle)
 		{
-			CopyFrom(*Factory());
+			FVoxelEditorStyle::Shutdown();
 		}
-	}
-
-	void CopyFrom(const FVoxelSlateStyleSet& Other)
-	{
-		VOXEL_FUNCTION_COUNTER();
-
-#define Copy(Variable) \
-		for (const auto& It : Other.Variable) \
-		{ \
-			Variable.Add(It.Key, It.Value); \
-		} \
-		ConstCast(Other.Variable).Empty(); // Brushes are freed on destruction
-
-		Copy(WidgetStyleValues);
-		Copy(FloatValues);
-		Copy(Vector2DValues);
-		Copy(ColorValues);
-		Copy(SlateColorValues);
-		Copy(MarginValues);
-		Copy(BrushResources);
-		Copy(Sounds);
-		Copy(FontInfoResources);
-		Copy(DynamicBrushes);
-
-#undef Copy
-	}
-};
-TSharedPtr<FVoxelGlobalSlateStyleSet> GVoxelGlobalStyleSet;
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-const FSlateStyleSet& FVoxelEditorStyle::Get()
-{
-	if (!GVoxelGlobalStyleSet)
-	{
-		GVoxelGlobalStyleSet = MakeVoxelShared<FVoxelGlobalSlateStyleSet>();
-
-		GOnVoxelModuleUnloaded_DoCleanup.AddLambda([]
-		{
-			if (GVoxelGlobalStyleSet)
-			{
-				Shutdown();
-			}
-		});
-	}
-	return *GVoxelGlobalStyleSet;
+	});
 }
 
-void FVoxelEditorStyle::AddFactory(const FVoxelStyleSetFactory& Factory)
+void FVoxelStyleSet::InitModule(FVoxelStyleSet& Style, const FOnVoxelStyleReinitialize& Delegate)
 {
-	GVoxelStyleSetFactories.Add(Factory);
+	check(!FSlateStyleRegistry::FindSlateStyle(GVoxelStyleSetName));
 
-	if (GVoxelGlobalStyleSet)
-	{
-		GVoxelGlobalStyleSet->CopyFrom(*Factory());
-	}
+#define CopyResources(Variable) \
+	for (const auto& It : Style.Variable) \
+	{ \
+		Variable.Add(It.Key, It.Value); \
+	} \
+	Style.Variable.Empty();
+
+	CopyResources(WidgetStyleValues);
+	CopyResources(FloatValues);
+	CopyResources(Vector2DValues);
+	CopyResources(ColorValues);
+	CopyResources(SlateColorValues);
+	CopyResources(MarginValues);
+	CopyResources(BrushResources);
+	CopyResources(Sounds);
+	CopyResources(FontInfoResources);
+	CopyResources(DynamicBrushes);
+
+#undef CopyResources
+
+	Styles.Add(Delegate);
 }
 
 void FVoxelEditorStyle::Register()
@@ -121,7 +78,7 @@ void FVoxelEditorStyle::Unregister()
 void FVoxelEditorStyle::Shutdown()
 {
 	Unregister();
-	GVoxelGlobalStyleSet.Reset();
+	GVoxelEditorStyle.Reset();
 }
 
 void FVoxelEditorStyle::ReloadTextures()
@@ -131,18 +88,33 @@ void FVoxelEditorStyle::ReloadTextures()
 
 void FVoxelEditorStyle::ReinitializeStyle()
 {
+	TArray<FOnVoxelStyleReinitialize> Delegates = GVoxelEditorStyle->Styles;
+
 	Shutdown();
-	GVoxelGlobalStyleSet = MakeVoxelShared<FVoxelGlobalSlateStyleSet>();
+	GVoxelEditorStyle = MakeVoxelShared<FVoxelStyleSet>(GVoxelStyleSetName);
+
+	for (const FOnVoxelStyleReinitialize& Delegate : Delegates)
+	{
+		if (Delegate.IsBound())
+		{
+			GVoxelEditorStyle->InitModule(*Delegate.Execute(), Delegate);
+		}
+	}
 
 	Register();
 }
 
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
+const FVoxelStyleSet& FVoxelEditorStyle::Get()
+{
+	if (!GVoxelEditorStyle)
+	{
+		GVoxelEditorStyle = MakeVoxelShared<FVoxelStyleSet>(GVoxelStyleSetName);
+	}
+	return *GVoxelEditorStyle;
+}
 
 // Run this last, after all styles are registered
-VOXEL_RUN_ON_STARTUP(RegisterVoxelEditorStyle, EditorCommandlet, -999)
+VOXEL_RUN_ON_STARTUP(RegisterVoxelEditorStyle, Editor, -999)
 {
 	FVoxelEditorStyle::Register();
 }

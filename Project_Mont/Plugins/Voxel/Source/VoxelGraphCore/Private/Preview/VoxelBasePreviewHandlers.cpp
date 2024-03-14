@@ -1,4 +1,4 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "Preview/VoxelBasePreviewHandlers.h"
 
@@ -224,7 +224,7 @@ FVoxelFutureValue FVoxelPreviewHandler_DistanceField::GetFinalValue(
 		return Value;
 	}
 
-	return FVoxelRuntimePinValue::Make(Value.Get<FVoxelSurface>().GetDistance());
+	return Value.Get<FVoxelSurface>().GetDistance(Query);
 }
 
 void FVoxelPreviewHandler_DistanceField::GenerateColors(const FVoxelRuntimePinValue& Value, TVoxelArrayView<FLinearColor> Colors) const

@@ -1,8 +1,9 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "SVoxelCurveTemplateBar.h"
-#include "SVoxelCurveThumbnail.h"
 #include "CurveEditor.h"
+#include "SVoxelCurveThumbnail.h"
+#include "NiagaraEditorSettings.h"
 
 void SVoxelCurveTemplateBar::Construct(const FArguments& InArgs, const TSharedRef<FCurveEditor>& InCurveEditor)
 {
@@ -20,7 +21,6 @@ void SVoxelCurveTemplateBar::Construct(const FArguments& InArgs, const TSharedRe
 			.Text(INVTEXT("Templates"))
 		]);
 
-#if 0 // TODO ERLANDAS
 	for (const FNiagaraCurveTemplate& CurveTemplate : GetDefault<UNiagaraEditorSettings>()->GetCurveTemplates())
 	{
 		UCurveFloat* FloatCurveAsset = Cast<UCurveFloat>(CurveTemplate.CurveAsset.TryLoad());
@@ -40,7 +40,6 @@ void SVoxelCurveTemplateBar::Construct(const FArguments& InArgs, const TSharedRe
 				SNew(SVoxelCurveThumbnail, &FloatCurveAsset->FloatCurve)
 			]);
 	}
-#endif
 
 	ChildSlot
 	[
@@ -48,7 +47,7 @@ void SVoxelCurveTemplateBar::Construct(const FArguments& InArgs, const TSharedRe
 	];
 }
 
-FReply SVoxelCurveTemplateBar::CurveTemplateClicked(const TWeakObjectPtr<UCurveFloat> WeakFloatCurveAsset) const
+FReply SVoxelCurveTemplateBar::CurveTemplateClicked(TWeakObjectPtr<UCurveFloat> WeakFloatCurveAsset) const
 {
 	const UCurveFloat* FloatCurveAsset = WeakFloatCurveAsset.Get();
 	if (!ensure(FloatCurveAsset))

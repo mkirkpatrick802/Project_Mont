@@ -1,10 +1,10 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelSculptEdMode.h"
 #include "VoxelSculptToolkit.h"
-#include "VoxelGraph.h"
+#include "VoxelParameterContainer.h"
 #include "Sculpt/VoxelSculptStorage.h"
-#include "Sculpt/VoxelSculptBlueprintLibrary.h"
+#include "Sculpt/VoxelSculptFunctionLibrary.h"
 #include "EdModeInteractiveToolsContext.h"
 #include "BaseBehaviors/ClickDragBehavior.h"
 #include "BaseBehaviors/MouseHoverBehavior.h"
@@ -14,89 +14,6 @@ DEFINE_VOXEL_COMMANDS(FVoxelSculptCommands);
 void FVoxelSculptCommands::RegisterCommands()
 {
 	VOXEL_UI_COMMAND(Sculpt, "Sculpt", "Sculpt", EUserInterfaceActionType::ToggleButton, {});
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-void AVoxelPreviewActor::LoadGraphFromConfig()
-{
-	VOXEL_FUNCTION_COUNTER();
-
-	FString GraphString;
-	if (!GConfig->GetString(
-		TEXT("VoxelSculptTool"),
-		TEXT("Graph"),
-		GraphString,
-		GEditorPerProjectIni))
-	{
-		return;
-	}
-
-	ensureVoxelSlow(FVoxelUtilities::PropertyFromText_InContainer(
-		FindFPropertyChecked(AVoxelPreviewActor, Graph_NewProperty),
-		GraphString,
-		this));
-}
-
-void AVoxelPreviewActor::SaveGraphToConfig() const
-{
-	VOXEL_FUNCTION_COUNTER();
-
-	GConfig->SetString(
-		TEXT("VoxelSculptTool"),
-		TEXT("Graph"),
-		*FVoxelUtilities::PropertyToText_InContainer(FindFPropertyChecked(AVoxelPreviewActor, Graph_NewProperty), this),
-		GEditorPerProjectIni);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-void AVoxelPreviewActor::LoadParametersFromConfig()
-{
-	VOXEL_FUNCTION_COUNTER();
-
-	// Always reset to avoid orphans
-	ParameterOverrides = {};
-
-	if (!Graph)
-	{
-		return;
-	}
-
-	FString ParameterOverridesString;
-	if (!GConfig->GetString(
-		*("VoxelSculptTool." + Graph->GetPathName()),
-		TEXT("ParameterOverrides"),
-		ParameterOverridesString,
-		GEditorPerProjectIni))
-	{
-		return;
-	}
-
-	ensureVoxelSlow(FVoxelUtilities::PropertyFromText_InContainer(
-		FindFPropertyChecked(AVoxelPreviewActor, ParameterOverrides),
-		ParameterOverridesString,
-		this));
-}
-
-void AVoxelPreviewActor::SaveParametersToConfig() const
-{
-	VOXEL_FUNCTION_COUNTER();
-
-	if (!Graph)
-	{
-		return;
-	}
-
-	GConfig->SetString(
-		*("VoxelSculptTool." + Graph->GetPathName()),
-		TEXT("ParameterOverrides"),
-		*FVoxelUtilities::PropertyToText_InContainer(FindFPropertyChecked(AVoxelPreviewActor, ParameterOverrides), this),
-		GEditorPerProjectIni);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -127,8 +44,33 @@ void UVoxelSculptTool::Setup()
 	PreviewActor->SetActorLabel("VoxelSculptActor");
 	PreviewActor->bCreateRuntimeOnBeginPlay = false;
 	PreviewActor->DefaultRuntimeParameters.Add<FVoxelRuntimeParameter_DisableCollision>();
-	PreviewActor->LoadGraphFromConfig();
-	PreviewActor->LoadParametersFromConfig();
+
+	FString ProviderString;
+	if (GConfig->GetString(
+		TEXT("VoxelSculptTool"),
+		TEXT("Provider"),
+		ProviderString,
+		GEditorPerProjectIni))
+	{
+		FVoxelObjectUtilities::PropertyFromText_InContainer(
+			FindFPropertyChecked(UVoxelParameterContainer, Provider),
+			ProviderString,
+			PreviewActor->ParameterContainer);
+	}
+
+	FString ValueOverridesString;
+	if (GConfig->GetString(
+		TEXT("VoxelSculptTool"),
+		TEXT("ValueOverrides"),
+		ValueOverridesString,
+		GEditorPerProjectIni))
+	{
+		FVoxelObjectUtilities::PropertyFromText_InContainer(
+			FindFPropertyChecked(UVoxelParameterContainer, ValueOverrides),
+			ValueOverridesString,
+			PreviewActor->ParameterContainer);
+	}
+
 	PreviewActor->FinishSpawning(FTransform::Identity);
 
 	AddToolPropertySource(PreviewActor);
@@ -192,8 +134,22 @@ void UVoxelSculptTool::Shutdown(EToolShutdownType ShutdownType)
 		return;
 	}
 
-	PreviewActor->SaveGraphToConfig();
-	PreviewActor->SaveParametersToConfig();
+	GConfig->SetString(
+		TEXT("VoxelSculptTool"),
+		TEXT("Provider"),
+		*FVoxelObjectUtilities::PropertyToText_InContainer(
+			FindFPropertyChecked(UVoxelParameterContainer, Provider),
+			PreviewActor->ParameterContainer),
+		GEditorPerProjectIni);
+
+	GConfig->SetString(
+		TEXT("VoxelSculptTool"),
+		TEXT("ValueOverrides"),
+		*FVoxelObjectUtilities::PropertyToText_InContainer(
+			FindFPropertyChecked(UVoxelParameterContainer, ValueOverrides),
+			PreviewActor->ParameterContainer),
+		GEditorPerProjectIni);
+
 	PreviewActor->Destroy();
 
 	USelection::SelectionChangedEvent.RemoveAll(this);
@@ -296,7 +252,7 @@ bool UVoxelSculptTool::DoEdit() const
 		return false;
 	}
 
-	UVoxelSculptBlueprintLibrary::ApplySculpt(
+	UVoxelSculptFunctionLibrary::ApplySculpt(
 		PreviewActor->TargetActor,
 		PreviewActor);
 

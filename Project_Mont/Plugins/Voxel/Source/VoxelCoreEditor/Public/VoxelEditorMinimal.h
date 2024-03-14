@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -7,10 +7,11 @@
 #include "VoxelEditorStyle.h"
 #include "VoxelTransaction.h"
 #include "SVoxelDetailWidgets.h"
-#include "VoxelEditorUtilities.h"
 #include "VoxelDetailInterface.h"
 #include "SVoxelDetailComboBox.h"
 #include "VoxelThumbnailRenderers.h"
-#include "VoxelStructDetailsWrapper.h"
+#include "VoxelDetailsRefreshOnUndo.h"
+#include "VoxelEditorDetailsUtilities.h"
 #include "VoxelPlaceableItemUtilities.h"
-#include "VoxelInstancedStructDetailsWrapper.h"
+#include "VoxelDetailCategoryInterface.h"
+#include "VoxelStructCustomizationWrapper.h"

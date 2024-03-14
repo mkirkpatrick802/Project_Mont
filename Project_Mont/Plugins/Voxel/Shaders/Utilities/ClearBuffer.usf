@@ -1,4 +1,4 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "Common.ush"
 
@@ -6,7 +6,7 @@ uint Value;
 RWBuffer<uint> BufferToClear;
 
 [numthreads(512, 1, 1)]
-void Main(const uint DispatchThreadId : SV_DispatchThreadID)
+void Main(uint DispatchThreadId : SV_DispatchThreadID)
 {
 	BufferToClear[DispatchThreadId] = Value;
 }

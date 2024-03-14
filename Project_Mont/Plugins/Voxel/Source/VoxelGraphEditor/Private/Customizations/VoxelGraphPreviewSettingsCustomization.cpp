@@ -1,7 +1,7 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelGraphPreviewSettingsCustomization.h"
-#include "Nodes/VoxelGraphNode.h"
+#include "VoxelGraphNodeBase.h"
 #include "Preview/VoxelPreviewHandler.h"
 
 void FVoxelGraphPreviewSettingsCustomization::CustomizeDetails(IDetailLayoutBuilder& DetailLayout)
@@ -11,30 +11,19 @@ void FVoxelGraphPreviewSettingsCustomization::CustomizeDetails(IDetailLayoutBuil
 		return;
 	}
 
-	const TWeakObjectPtr<UVoxelGraphNode> Node = Cast<UVoxelGraphNode>(DetailLayout.GetSelectedObjects()[0].Get());
-	if (!Node.IsValid())
+	const TWeakObjectPtr<UVoxelGraphNodeBase> Node = Cast<UVoxelGraphNodeBase>(DetailLayout.GetSelectedObjects()[0].Get());
+	if (!ensure(Node.IsValid()))
 	{
-		// Comment
 		return;
 	}
 
-	{
-		TArray<FName> CategoryNames;
-		DetailLayout.GetCategoryNames(CategoryNames);
-		for (const FName Name : CategoryNames)
-		{
-			if (Name != STATIC_FNAME("Preview"))
-			{
-				DetailLayout.HideCategory(Name);
-			}
-		}
-	}
+	DetailLayout.HideCategory("Voxel");
 
-	const TSharedRef<IPropertyHandle> PreviewedPinHandle = DetailLayout.GetProperty(GET_MEMBER_NAME_STATIC(UVoxelGraphNode, PreviewedPin), UVoxelGraphNode::StaticClass());
+	const TSharedRef<IPropertyHandle> PreviewedPinHandle = DetailLayout.GetProperty(GET_MEMBER_NAME_STATIC(UVoxelGraphNodeBase, PreviewedPin), UVoxelGraphNodeBase::StaticClass());
 	PreviewedPinHandle->MarkHiddenByCustomization();
-	PreviewedPinHandle->SetOnPropertyValueChanged(FVoxelEditorUtilities::MakeRefreshDelegate(this, DetailLayout));
+	PreviewedPinHandle->SetOnPropertyValueChanged(FVoxelEditorUtilities::MakeRefreshDelegate(PreviewedPinHandle, DetailLayout));
 
-	const TSharedRef<IPropertyHandle> PreviewSettingsHandle = DetailLayout.GetProperty(GET_MEMBER_NAME_STATIC(UVoxelGraphNode, PreviewSettings), UVoxelGraphNode::StaticClass());
+	const TSharedRef<IPropertyHandle> PreviewSettingsHandle = DetailLayout.GetProperty(GET_MEMBER_NAME_STATIC(UVoxelGraphNodeBase, PreviewSettings), UVoxelGraphNodeBase::StaticClass());
 	PreviewSettingsHandle->MarkHiddenByCustomization();
 
 	uint32 NumChildren = 0;
@@ -61,7 +50,7 @@ void FVoxelGraphPreviewSettingsCustomization::CustomizeDetails(IDetailLayoutBuil
 		.MinDesiredWidth(125.f)
 		[
 			SNew(SVoxelDetailComboBox<FName>)
-			.RefreshDelegate(this, DetailLayout)
+			.RefreshDelegate(PreviewedPinHandle, DetailLayout)
 			.Options_Lambda([=]() -> TArray<FName>
 			{
 				if (!ensure(Node.IsValid()))
@@ -81,26 +70,9 @@ void FVoxelGraphPreviewSettingsCustomization::CustomizeDetails(IDetailLayoutBuil
 				return Names;
 			})
 			.CurrentOption(Node->PreviewedPin)
-			.OptionText(MakeLambdaDelegate([=](const FName Option) -> FString
+			.OptionText(MakeLambdaDelegate([](const FName Option)
 			{
-				if (!ensure(Node.IsValid()))
-				{
-					return "INVALID";
-				}
-
-				const UEdGraphPin* Pin = Node->FindPin(Option, EGPD_Output);
-				if (!Pin)
-				{
-					return "INVALID";
-				}
-
-				FString DisplayName = Pin->GetDisplayName().ToString().TrimStartAndEnd();
-				if (DisplayName.IsEmpty())
-				{
-					DisplayName = Pin->PinName.ToString();
-				}
-
-				return DisplayName;
+				return Option.ToString();
 			}))
 			.OnSelection_Lambda([PreviewedPinHandle](const FName NewValue)
 			{
@@ -157,7 +129,7 @@ void FVoxelGraphPreviewSettingsCustomization::CustomizeDetails(IDetailLayoutBuil
 		.MinDesiredWidth(125.f)
 		[
 			SNew(SVoxelDetailComboBox<UScriptStruct*>)
-			.RefreshDelegate(this, DetailLayout)
+			.RefreshDelegate(PreviewedPinHandle, DetailLayout)
 			.Options_Lambda([=]() -> TArray<UScriptStruct*>
 			{
 				if (!ensure(Node.IsValid()))
@@ -166,7 +138,7 @@ void FVoxelGraphPreviewSettingsCustomization::CustomizeDetails(IDetailLayoutBuil
 				}
 
 				TArray<UScriptStruct*> Structs;
-				for (const TSharedRef<const FVoxelPreviewHandler>& Handler : FVoxelPreviewHandler::GetHandlers())
+				for (const FVoxelPreviewHandler* Handler : FVoxelPreviewHandler::GetHandlers())
 				{
 					if (!Handler->SupportsType(PinType))
 					{
@@ -185,7 +157,7 @@ void FVoxelGraphPreviewSettingsCustomization::CustomizeDetails(IDetailLayoutBuil
 				}
 				return Option->GetDisplayNameText().ToString();
 			}))
-			.OnSelection_Lambda([PreviewHandlerHandle, RefreshDelegate = FVoxelEditorUtilities::MakeRefreshDelegate(this, DetailLayout)](UScriptStruct* NewValue)
+			.OnSelection_Lambda([PreviewHandlerHandle, RefreshDelegate = FVoxelEditorUtilities::MakeRefreshDelegate(PreviewHandlerHandle, DetailLayout)](UScriptStruct* NewValue)
 			{
 				FVoxelInstancedStruct* PreviewHandler = nullptr;
 				if (!ensure(FVoxelEditorUtilities::GetPropertyValue(PreviewHandlerHandle, PreviewHandler)))
@@ -203,7 +175,7 @@ void FVoxelGraphPreviewSettingsCustomization::CustomizeDetails(IDetailLayoutBuil
 		]
 	];
 
-	Wrapper = FVoxelInstancedStructDetailsWrapper::Make(PreviewHandlerHandle.ToSharedRef());
+	Wrapper = FVoxelStructCustomizationWrapper::Make(PreviewHandlerHandle.ToSharedRef());
 	if (!Wrapper)
 	{
 		return;

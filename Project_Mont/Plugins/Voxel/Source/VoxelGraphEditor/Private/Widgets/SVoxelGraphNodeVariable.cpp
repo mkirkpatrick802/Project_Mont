@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "SVoxelGraphNodeVariable.h"
 #include "SCommentBubble.h"
@@ -18,12 +18,12 @@ void SVoxelGraphNodeVariable::UpdateGraphNode()
 	InputPins.Empty();
 	OutputPins.Empty();
 
-	LeftNodeBox.Reset();
 	RightNodeBox.Reset();
+	LeftNodeBox.Reset();
 
 	SetupErrorReporting();
 
-	ContentScale.Bind(this, &SGraphNode::GetContentScale);
+	ContentScale.Bind( this, &SGraphNode::GetContentScale );
 
 	const FText NodeTitle = GraphNode->GetNodeTitle(ENodeTitleType::EditableTitle);
 
@@ -143,7 +143,7 @@ void SVoxelGraphNodeVariable::UpdateGraphNode()
 	CreateOutputSideAddButton(RightNodeBox);
 }
 
-const FSlateBrush* SVoxelGraphNodeVariable::GetShadowBrush(const bool bSelected) const
+const FSlateBrush* SVoxelGraphNodeVariable::GetShadowBrush(bool bSelected) const
 {
 	return bSelected ? FAppStyle::GetBrush(TEXT("Graph.VarNode.ShadowSelected")) : FAppStyle::GetBrush(TEXT("Graph.VarNode.Shadow"));
 }

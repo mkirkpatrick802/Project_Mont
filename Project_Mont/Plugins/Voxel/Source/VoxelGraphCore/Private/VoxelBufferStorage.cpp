@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelBufferStorage.h"
 #include "Buffer/VoxelBaseBuffers.h"
@@ -17,48 +17,6 @@ VOXEL_RUN_ON_STARTUP_GAME(InitializeVoxelCheckNaNs)
 	GVoxelCheckNaNs = FParse::Param(FCommandLine::Get(), TEXT("checkVoxelNaNs"));
 }
 #endif
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-void FVoxelBufferIterator::Initialize(const int32 InTotalNum, const int32 Index)
-{
-	checkVoxelSlow(Index <= InTotalNum);
-
-	TotalNum = InTotalNum;
-	ChunkIndex = GetChunkIndex(Index);
-	ChunkOffset = GetChunkOffset(Index);
-	UpdateNumToProcess();
-
-	checkVoxelSlow(IsValid());
-}
-
-bool FVoxelBufferIterator::IsValid() const
-{
-	return
-		ChunkOffset + NumToProcess <= NumPerChunk &&
-		ChunkIndex * NumPerChunk + ChunkOffset + NumToProcess <= TotalNum;
-}
-
-FVoxelBufferIterator FVoxelBufferIterator::GetHalfIterator() const
-{
-	checkVoxelSlow(IsValid());
-
-	checkVoxelSlow(TotalNum % 2 == 0);
-	const int32 Index = GetIndex();
-
-	checkVoxelSlow(Index % 2 == 0);
-	const int32 HalfIndex = Index / 2;
-
-	FVoxelBufferIterator HalfIterator;
-	HalfIterator.Initialize(TotalNum / 2, HalfIndex);
-	return HalfIterator;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
 
 void FVoxelBufferStorage::Allocate(const int32 Num, const bool bAllowGrowth)
 {
@@ -106,7 +64,7 @@ void FVoxelBufferStorage::Empty()
 
 	if (Chunks.Num() > 0)
 	{
-		verify(Chunks.Pop() == nullptr);
+		verify(Chunks.Pop(false) == nullptr);
 		for (void* Chunk : Chunks)
 		{
 			check(Chunk);
@@ -160,16 +118,6 @@ void FVoxelBufferStorage::Shrink()
 	AllocatedSizeTracker = GetAllocatedSize();
 }
 
-void FVoxelBufferStorage::Memzero()
-{
-	VOXEL_FUNCTION_COUNTER_NUM(Num(), 128);
-
-	ForeachVoxelBufferChunk_Sync(Num(), [&](const FVoxelBufferIterator& Iterator)
-	{
-		FVoxelUtilities::Memzero(GetByteRawView_NotConstant(Iterator));
-	});
-}
-
 int64 FVoxelBufferStorage::GetAllocatedSize() const
 {
 	int64 AllocatedSize = Chunks.GetAllocatedSize();
@@ -207,7 +155,7 @@ bool FVoxelBufferStorage::TryReduceIntoConstant()
 		const uint8 Constant = This[0];
 		for (const FVoxelBufferIterator& Iterator : MakeVoxelBufferIterator(Num()))
 		{
-			if (!FVoxelUtilities::AllEqual(This.GetRawView_NotConstant(Iterator), Constant))
+			if (!FVoxelUtilities::AllEqual(Constant, This.GetRawView_NotConstant(Iterator)))
 			{
 				return false;
 			}
@@ -224,7 +172,7 @@ bool FVoxelBufferStorage::TryReduceIntoConstant()
 		const uint16 Constant = This[0];
 		for (const FVoxelBufferIterator& Iterator : MakeVoxelBufferIterator(Num()))
 		{
-			if (!FVoxelUtilities::AllEqual(This.GetRawView_NotConstant(Iterator), Constant))
+			if (!FVoxelUtilities::AllEqual(Constant, This.GetRawView_NotConstant(Iterator)))
 			{
 				return false;
 			}
@@ -241,7 +189,7 @@ bool FVoxelBufferStorage::TryReduceIntoConstant()
 		const uint32 Constant = This[0];
 		for (const FVoxelBufferIterator& Iterator : MakeVoxelBufferIterator(Num()))
 		{
-			if (!FVoxelUtilities::AllEqual(This.GetRawView_NotConstant(Iterator), Constant))
+			if (!FVoxelUtilities::AllEqual(Constant, This.GetRawView_NotConstant(Iterator)))
 			{
 				return false;
 			}
@@ -258,7 +206,7 @@ bool FVoxelBufferStorage::TryReduceIntoConstant()
 		const uint64 Constant = This[0];
 		for (const FVoxelBufferIterator& Iterator : MakeVoxelBufferIterator(Num()))
 		{
-			if (!FVoxelUtilities::AllEqual(This.GetRawView_NotConstant(Iterator), Constant))
+			if (!FVoxelUtilities::AllEqual(Constant, This.GetRawView_NotConstant(Iterator)))
 			{
 				return false;
 			}
@@ -344,7 +292,7 @@ void FVoxelBufferStorage::CheckSlow(const FVoxelPinType& Type) const
 	}
 }
 
-TSharedRef<FVoxelBufferStorage> FVoxelBufferStorage::Clone(const bool bAllowGrowth) const
+TSharedRef<FVoxelBufferStorage> FVoxelBufferStorage::Clone() const
 {
 	VOXEL_FUNCTION_COUNTER_NUM(Num(), 1024);
 
@@ -356,7 +304,7 @@ TSharedRef<FVoxelBufferStorage> FVoxelBufferStorage::Clone(const bool bAllowGrow
 		return Result;
 	}
 
-	Result->Allocate(Num(), bAllowGrowth);
+	Result->Allocate(Num());
 
 	FVoxelBufferIterator Iterator;
 	Iterator.Initialize(Num(), 0);
@@ -369,51 +317,6 @@ TSharedRef<FVoxelBufferStorage> FVoxelBufferStorage::Clone(const bool bAllowGrow
 	}
 
 	return Result;
-}
-
-void FVoxelBufferStorage::SetNumUninitialized(const int32 NewNum)
-{
-	VOXEL_FUNCTION_COUNTER();
-	check(NewNum >= 0);
-
-	if (NewNum == 0)
-	{
-		Empty();
-		return;
-	}
-
-	if (Num() < NewNum)
-	{
-		AddUninitialized(NewNum - Num());
-		return;
-	}
-
-	const int32 OldNum = ArrayNum;
-	ArrayNum = NewNum;
-
-	const int32 OldNumChunks = FMath::DivideAndRoundUp(OldNum, NumPerChunk);
-	const int32 NewNumChunks = FMath::DivideAndRoundUp(NewNum, NumPerChunk);
-
-	if (OldNumChunks == NewNumChunks)
-	{
-		return;
-	}
-	ensure(NewNumChunks < OldNumChunks);
-
-	ensure(Chunks.Pop() == nullptr);
-	ensure(Chunks.Num() == OldNumChunks);
-
-	while (Chunks.Num() > NewNumChunks)
-	{
-		void* Chunk = Chunks.Pop();
-		check(Chunk);
-		FVoxelMemory::Free(Chunk);
-	}
-
-	ensure(Chunks.Num() > 0);
-	Chunks.Add(nullptr);
-
-	AllocatedSizeTracker = GetAllocatedSize();
 }
 
 int32 FVoxelBufferStorage::AddUninitialized(const int32 NumToAdd)
@@ -433,15 +336,10 @@ int32 FVoxelBufferStorage::AddUninitialized(const int32 NumToAdd)
 	const int32 OldNumChunks = FMath::DivideAndRoundUp(OldNum, NumPerChunk);
 	const int32 NewNumChunks = FMath::DivideAndRoundUp(NewNum, NumPerChunk);
 
-	if (OldNumChunks == NewNumChunks)
-	{
-		return OldNum;
-	}
-
 	Chunks.Reserve(NewNumChunks + 1);
 	if (Chunks.Num() > 0)
 	{
-		ensure(Chunks.Pop() == nullptr);
+		ensure(Chunks.Pop(false) == nullptr);
 	}
 	ensure(Chunks.Num() == OldNumChunks);
 
@@ -513,18 +411,15 @@ void FVoxelBufferStorage::Append(const FVoxelBufferStorage& BufferStorage, const
 		return;
 	}
 
-	struct FThis : TVoxelBufferMultiIteratorType<1> {};
-	struct FOther : TVoxelBufferMultiIteratorType<1> {};
-
-	TVoxelBufferMultiIterator<FThis, FOther> Iterator(Num(), BufferStorage.Num());
-	Iterator.SetIndex<FThis>(Index);
-	Iterator.SetIndex<FOther>(0);
+	TVoxelBufferMultiIterator<2> Iterator(Num(), BufferStorage.Num());
+	Iterator.SetIndex<0>(Index);
+	Iterator.SetIndex<1>(0);
 
 	for (; Iterator; ++Iterator)
 	{
 		FVoxelUtilities::Memcpy(
-			GetByteRawView_NotConstant(Iterator.Get<FThis>()),
-			BufferStorage.GetByteRawView_NotConstant(Iterator.Get<FOther>()));
+			GetByteRawView_NotConstant(Iterator.Get<0>()),
+			BufferStorage.GetByteRawView_NotConstant(Iterator.Get<1>()));
 	}
 }
 
@@ -555,7 +450,7 @@ void FVoxelBufferStorage::CopyTo(const TVoxelArrayView<uint8> OtherData) const
 		return;
 	}
 
-	ForeachVoxelBufferChunk_Parallel(Num(), [&](const FVoxelBufferIterator& Iterator)
+	ForeachVoxelBufferChunk(Num(), [&](const FVoxelBufferIterator& Iterator)
 	{
 		VOXEL_SWITCH_TERMINAL_TYPE_SIZE(TypeSize)
 		{
@@ -571,6 +466,36 @@ void FVoxelBufferStorage::CopyTo(const TVoxelArrayView<uint8> OtherData) const
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
+
+// Iterator functions are not perf critical, no need to inline them
+
+void FVoxelBufferStorage::CheckIterator(const FVoxelBufferIterator& Iterator) const
+{
+	check(Iterator.IsValid());
+	check(0 <= Iterator.ChunkOffset && Iterator.ChunkOffset < NumPerChunk);
+	check(Iterator.TotalNum <= Align(Num(), 8) || IsConstant());
+}
+
+uint8* FVoxelBufferStorage::GetByteData(const FVoxelBufferIterator& Iterator)
+{
+	CheckIterator(Iterator);
+
+	if (IsConstant())
+	{
+		check(IsConstant());
+		check(Chunks[0]);
+		return static_cast<uint8*>(Chunks[0]);
+	}
+
+	uint8* Chunk = static_cast<uint8*>(Chunks[Iterator.ChunkIndex]);
+	check(Chunk);
+	return Chunk + Iterator.ChunkOffset * TypeSize;
+}
+
+const uint8* FVoxelBufferStorage::GetByteData(const FVoxelBufferIterator& Iterator) const
+{
+	return ConstCast(this)->GetByteData(Iterator);
+}
 
 TVoxelArrayView<uint8> FVoxelBufferStorage::GetByteRawView_NotConstant(const FVoxelBufferIterator& Iterator)
 {
@@ -625,64 +550,16 @@ void* FVoxelBufferStorage::AllocateChunk(const int32 Num) const
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-int32 TVoxelBufferStorage<bool>::CountBits() const
-{
-	VOXEL_FUNCTION_COUNTER_NUM(Num(), 4096);
-
-	int32 NumBits = 0;
-	ForeachVoxelBufferChunk_Sync(Num(), [&](const FVoxelBufferIterator& Iterator)
-	{
-		NumBits += ispc::VoxelBufferStorage_CountBits(
-			GetData(Iterator),
-			Iterator.Num());
-	});
-
-#if VOXEL_DEBUG
-	int32 ExpectedNum = 0;
-	for (const bool bValue : *this)
-	{
-		if (bValue)
-		{
-			ExpectedNum++;
-		}
-	}
-	check(ExpectedNum == NumBits);
-#endif
-
-	return NumBits;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
 void TVoxelBufferStorage<float>::FixupSignBit()
 {
 	VOXEL_FUNCTION_COUNTER_NUM(Num(), 4096);
 
-	ForeachVoxelBufferChunk_Parallel(Num(), [&](const FVoxelBufferIterator& Iterator)
+	ForeachVoxelBufferChunk(Num(), [&](const FVoxelBufferIterator& Iterator)
 	{
-		FVoxelUtilities::FixupSignBit(GetRawView_NotConstant(Iterator));
+		ispc::VoxelBufferStorage_FixupSignBit(
+			GetData(Iterator),
+			Iterator.Num());
 	});
-}
-
-FFloatInterval TVoxelBufferStorage<float>::GetMinMax() const
-{
-	VOXEL_FUNCTION_COUNTER_NUM(Num(), 4096);
-
-	if (IsConstant())
-	{
-		return FFloatInterval(GetConstant(), GetConstant());
-	}
-
-	FFloatInterval MinMax{ MAX_flt, -MAX_flt };
-	for (const FVoxelBufferIterator& Iterator : MakeVoxelBufferIterator(Num()))
-	{
-		const FFloatInterval IteratorMinMax = FVoxelUtilities::GetMinMax(GetRawView_NotConstant(Iterator));
-		MinMax.Min = FMath::Min(MinMax.Min, IteratorMinMax.Min);
-		MinMax.Max = FMath::Max(MinMax.Max, IteratorMinMax.Max);
-	}
-	return MinMax;
 }
 
 FFloatInterval TVoxelBufferStorage<float>::GetMinMaxSafe() const
@@ -698,44 +575,6 @@ FFloatInterval TVoxelBufferStorage<float>::GetMinMaxSafe() const
 	for (const FVoxelBufferIterator& Iterator : MakeVoxelBufferIterator(Num()))
 	{
 		const FFloatInterval IteratorMinMax = FVoxelUtilities::GetMinMaxSafe(GetRawView_NotConstant(Iterator));
-		MinMax.Min = FMath::Min(MinMax.Min, IteratorMinMax.Min);
-		MinMax.Max = FMath::Max(MinMax.Max, IteratorMinMax.Max);
-	}
-	return MinMax;
-}
-
-FDoubleInterval TVoxelBufferStorage<double>::GetMinMaxSafe() const
-{
-	VOXEL_FUNCTION_COUNTER_NUM(Num(), 4096);
-
-	if (IsConstant())
-	{
-		return FDoubleInterval(GetConstant(), GetConstant());
-	}
-
-	FDoubleInterval MinMax{ MAX_dbl, -MAX_dbl };
-	for (const FVoxelBufferIterator& Iterator : MakeVoxelBufferIterator(Num()))
-	{
-		const FDoubleInterval IteratorMinMax = FVoxelUtilities::GetMinMaxSafe(GetRawView_NotConstant(Iterator));
-		MinMax.Min = FMath::Min(MinMax.Min, IteratorMinMax.Min);
-		MinMax.Max = FMath::Max(MinMax.Max, IteratorMinMax.Max);
-	}
-	return MinMax;
-}
-
-FInt32Interval TVoxelBufferStorage<int32>::GetMinMax() const
-{
-	VOXEL_FUNCTION_COUNTER_NUM(Num(), 4096);
-
-	if (IsConstant())
-	{
-		return FInt32Interval(GetConstant(), GetConstant());
-	}
-
-	FInt32Interval MinMax{ MAX_int32, -MAX_int32 };
-	for (const FVoxelBufferIterator& Iterator : MakeVoxelBufferIterator(Num()))
-	{
-		const FInt32Interval IteratorMinMax = FVoxelUtilities::GetMinMax(GetRawView_NotConstant(Iterator));
 		MinMax.Min = FMath::Min(MinMax.Min, IteratorMinMax.Min);
 		MinMax.Max = FMath::Max(MinMax.Max, IteratorMinMax.Max);
 	}

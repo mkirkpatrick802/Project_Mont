@@ -1,8 +1,8 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelSettings.h"
+#include "VoxelChannel.h"
 #include "VoxelSurface.h"
-#include "Channel/VoxelChannelManager.h"
 
 void UVoxelSettings::UpdateChannels()
 {

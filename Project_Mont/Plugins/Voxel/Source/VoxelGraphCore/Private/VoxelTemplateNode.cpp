@@ -1,9 +1,10 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelTemplateNode.h"
+#include "VoxelMathNodes.h"
+#include "VoxelFunctionNode.h"
 #include "VoxelObjectPinType.h"
-#include "VoxelCompilationGraph.h"
-#include "Nodes/VoxelNode_UFunction.h"
+#include "VoxelCompiledGraph.h"
 #include "FunctionLibrary/VoxelMathFunctionLibrary.h"
 #include "FunctionLibrary/VoxelAutocastFunctionLibrary.h"
 
@@ -22,9 +23,9 @@ TConstVoxelArrayView<FVoxelPinType> FVoxelTemplateNodeUtilities::GetByteTypes()
 		Types.Add(FVoxelPinType::Make<uint8>());
 		Types.Add(FVoxelPinType::Make<FVoxelByteBuffer>());
 
-		ForEachObjectOfClass<UEnum>([&](UEnum& Enum)
+		ForEachObjectOfClass<UEnum>([&](UEnum* Enum)
 		{
-			const FVoxelPinType Type = FVoxelPinType::MakeEnum(&Enum);
+			const FVoxelPinType Type = FVoxelPinType::MakeEnum(Enum);
 			Types.Add(Type);
 			Types.Add(Type.GetBufferType());
 		});
@@ -262,41 +263,41 @@ TSharedPtr<FVoxelNode> FVoxelTemplateNodeUtilities::GetBreakNode(const FVoxelPin
 
 	if (PinType.Is<FVector2D>())
 	{
-		return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, BreakVector2D));
+		return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, BreakVector2D));
 	}
 	else if (PinType.Is<FVector>())
 	{
-		return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, BreakVector));
+		return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, BreakVector));
 	}
 	else if (PinType.Is<FLinearColor>())
 	{
-		return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, BreakLinearColor));
+		return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, BreakLinearColor));
 	}
 
 	if (PinType.Is<FVoxelDoubleVector2D>())
 	{
-		return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, BreakDoubleVector2D));
+		return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, BreakDoubleVector2D));
 	}
 	else if (PinType.Is<FVoxelDoubleVector>())
 	{
-		return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, BreakDoubleVector));
+		return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, BreakDoubleVector));
 	}
 	else if (PinType.Is<FVoxelDoubleLinearColor>())
 	{
-		return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, BreakDoubleLinearColor));
+		return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, BreakDoubleLinearColor));
 	}
 
 	if (PinType.Is<FIntPoint>())
 	{
-		return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, BreakIntPoint));
+		return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, BreakIntPoint));
 	}
 	else if (PinType.Is<FIntVector>())
 	{
-		return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, BreakIntVector));
+		return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, BreakIntVector));
 	}
 	else if (PinType.Is<FIntVector4>())
 	{
-		return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, BreakIntVector4));
+		return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, BreakIntVector4));
 	}
 
 	ensure(false);
@@ -318,41 +319,41 @@ TSharedPtr<FVoxelNode> FVoxelTemplateNodeUtilities::GetMakeNode(const FVoxelPinT
 
 	if (PinType.Is<FVector2D>())
 	{
-		return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, MakeVector2D));
+		return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, MakeVector2D));
 	}
 	else if (PinType.Is<FVector>())
 	{
-		return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, MakeVector));
+		return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, MakeVector));
 	}
 	else if (PinType.Is<FLinearColor>())
 	{
-		return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, MakeLinearColor));
+		return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, MakeLinearColor));
 	}
 
 	if (PinType.Is<FVoxelDoubleVector2D>())
 	{
-		return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, MakeDoubleVector2D));
+		return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, MakeDoubleVector2D));
 	}
 	else if (PinType.Is<FVoxelDoubleVector>())
 	{
-		return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, MakeDoubleVector));
+		return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, MakeDoubleVector));
 	}
 	else if (PinType.Is<FVoxelDoubleLinearColor>())
 	{
-		return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, MakeDoubleLinearColor));
+		return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, MakeDoubleLinearColor));
 	}
 
 	if (PinType.Is<FIntPoint>())
 	{
-		return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, MakeIntPoint));
+		return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, MakeIntPoint));
 	}
 	else if (PinType.Is<FIntVector>())
 	{
-		return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, MakeIntVector));
+		return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, MakeIntVector));
 	}
 	else if (PinType.Is<FIntVector4>())
 	{
-		return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, MakeIntVector4));
+		return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, MakeIntVector4));
 	}
 
 	ensure(false);
@@ -366,149 +367,114 @@ TSharedPtr<FVoxelNode> FVoxelTemplateNodeUtilities::GetMakeNode(const FVoxelPinT
 TSharedPtr<FVoxelNode> FVoxelTemplateNodeUtilities::GetConvertToFloatNode(const FPin* Pin)
 {
 	const int32 Dimension = GetDimension(Pin->Type);
-
-	const TSharedPtr<FVoxelNode> Node =
-		INLINE_LAMBDA -> TSharedPtr<FVoxelNode>
-		{
-			if (IsPinInt(Pin))
-			{
-				switch (Dimension)
-				{
-				default: ensure(false);
-				case 1:
-				{
-					return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelAutocastFunctionLibrary, IntegerToFloat));
-				}
-				case 2:
-				{
-					return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelAutocastFunctionLibrary, IntPointToVector2D));
-				}
-				case 3:
-				{
-					return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelAutocastFunctionLibrary, IntVectorToVector));
-				}
-				case 4:
-				{
-					return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelAutocastFunctionLibrary, IntVector4ToLinearColor));
-				}
-				}
-			}
-			else if (IsPinDouble(Pin))
-			{
-				switch (Dimension)
-				{
-				default: ensure(false);
-				case 1:
-				{
-					return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelAutocastFunctionLibrary, DoubleToFloat));
-				}
-				case 2:
-				{
-					return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelAutocastFunctionLibrary, DoubleVector2DToVector2D));
-				}
-				case 3:
-				{
-					return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelAutocastFunctionLibrary, DoubleVectorToVector));
-				}
-				case 4:
-				{
-					return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelAutocastFunctionLibrary, DoubleLinearColorToLinearColor));
-				}
-				}
-			}
-			else
-			{
-				ensure(false);
-				return nullptr;
-			}
-		};
-
-	if (!Node)
+	if (IsPinInt(Pin))
 	{
+		switch (Dimension)
+		{
+		default: ensure(false);
+		case 1:
+		{
+			return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelAutocastFunctionLibrary, IntegerToFloat));
+		}
+		case 2:
+		{
+			return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelAutocastFunctionLibrary, IntPointToVector2D));
+		}
+		case 3:
+		{
+			return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelAutocastFunctionLibrary, IntVectorToVector));
+		}
+		case 4:
+		{
+			return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelAutocastFunctionLibrary, IntVector4ToLinearColor));
+		}
+		}
+	}
+	else if (IsPinDouble(Pin))
+	{
+		switch (Dimension)
+		{
+		default: ensure(false);
+		case 1:
+		{
+			return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelAutocastFunctionLibrary, DoubleToFloat));
+		}
+		case 2:
+		{
+			return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelAutocastFunctionLibrary, DoubleVector2DToVector2D));
+		}
+		case 3:
+		{
+			return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelAutocastFunctionLibrary, DoubleVectorToVector));
+		}
+		case 4:
+		{
+			return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelAutocastFunctionLibrary, DoubleLinearColorToLinearColor));
+		}
+		}
+	}
+	else
+	{
+		ensure(false);
 		return nullptr;
 	}
-
-	const bool bIsBuffer = Pin->Type.IsBuffer();
-	for (FVoxelPin& VoxelPin : Node->GetPins())
-	{
-		Node->PromotePin_Runtime(VoxelPin, bIsBuffer ? VoxelPin.GetType().GetBufferType() : VoxelPin.GetType().GetInnerType());
-	}
-
-	return Node;
 }
 
 TSharedPtr<FVoxelNode> FVoxelTemplateNodeUtilities::GetConvertToDoubleNode(const FPin* Pin)
 {
 	const int32 Dimension = GetDimension(Pin->Type);
 
-	const TSharedPtr<FVoxelNode> Node =
-		INLINE_LAMBDA -> TSharedPtr<FVoxelNode>
-		{
-			if (IsPinInt(Pin))
-			{
-				switch (Dimension)
-				{
-				default: ensure(false);
-				case 1:
-				{
-					return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelAutocastFunctionLibrary, IntegerToDouble));
-				}
-				case 2:
-				{
-					return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelAutocastFunctionLibrary, IntPointToDoubleVector2D));
-				}
-				case 3:
-				{
-					return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelAutocastFunctionLibrary, IntVectorToDoubleVector));
-				}
-				case 4:
-				{
-					return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelAutocastFunctionLibrary, IntVector4ToDoubleLinearColor));
-				}
-				}
-			}
-			else if (IsPinFloat(Pin))
-			{
-				switch (Dimension)
-				{
-				default: ensure(false);
-				case 1:
-				{
-					return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelAutocastFunctionLibrary, FloatToDouble));
-				}
-				case 2:
-				{
-					return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelAutocastFunctionLibrary, Vector2DToDoubleVector2D));
-				}
-				case 3:
-				{
-					return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelAutocastFunctionLibrary, VectorToDoubleVector));
-				}
-				case 4:
-				{
-					return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelAutocastFunctionLibrary, LinearColorToDoubleLinearColor));
-				}
-				}
-			}
-			else
-			{
-				ensure(false);
-				return nullptr;
-			}
-		};
-
-	if (!Node)
+	if (IsPinInt(Pin))
 	{
+		switch (Dimension)
+		{
+		default: ensure(false);
+		case 1:
+		{
+			return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelAutocastFunctionLibrary, IntegerToDouble));
+		}
+		case 2:
+		{
+			return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelAutocastFunctionLibrary, IntPointToDoubleVector2D));
+		}
+		case 3:
+		{
+			return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelAutocastFunctionLibrary, IntVectorToDoubleVector));
+		}
+		case 4:
+		{
+			return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelAutocastFunctionLibrary, IntVector4ToDoubleLinearColor));
+		}
+		}
+	}
+	else if (IsPinFloat(Pin))
+	{
+		switch (Dimension)
+		{
+		default: ensure(false);
+		case 1:
+		{
+			return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelAutocastFunctionLibrary, FloatToDouble));
+		}
+		case 2:
+		{
+			return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelAutocastFunctionLibrary, Vector2DToDoubleVector2D));
+		}
+		case 3:
+		{
+			return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelAutocastFunctionLibrary, VectorToDoubleVector));
+		}
+		case 4:
+		{
+			return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelAutocastFunctionLibrary, LinearColorToDoubleLinearColor));
+		}
+		}
+	}
+	else
+	{
+		ensure(false);
 		return nullptr;
 	}
-
-	const bool bIsBuffer = Pin->Type.IsBuffer();
-	for (FVoxelPin& VoxelPin : Node->GetPins())
-	{
-		Node->PromotePin_Runtime(VoxelPin, bIsBuffer ? VoxelPin.GetType().GetBufferType() : VoxelPin.GetType().GetInnerType());
-	}
-
-	return Node;
 }
 
 TSharedPtr<FVoxelNode> FVoxelTemplateNodeUtilities::GetMakeNode(const FPin* Pin, const int32 Dimension)
@@ -522,15 +488,15 @@ TSharedPtr<FVoxelNode> FVoxelTemplateNodeUtilities::GetMakeNode(const FPin* Pin,
 		default: ensure(false);
 		case 2:
 		{
-			return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, MakeVector2D));
+			return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, MakeVector2D));
 		}
 		case 3:
 		{
-			return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, MakeVector));
+			return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, MakeVector));
 		}
 		case 4:
 		{
-			return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, MakeLinearColor));
+			return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, MakeLinearColor));
 		}
 		}
 	}
@@ -541,15 +507,15 @@ TSharedPtr<FVoxelNode> FVoxelTemplateNodeUtilities::GetMakeNode(const FPin* Pin,
 		default: ensure(false);
 		case 2:
 		{
-			return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, MakeDoubleVector2D));
+			return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, MakeDoubleVector2D));
 		}
 		case 3:
 		{
-			return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, MakeDoubleVector));
+			return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, MakeDoubleVector));
 		}
 		case 4:
 		{
-			return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, MakeDoubleLinearColor));
+			return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, MakeDoubleLinearColor));
 		}
 		}
 	}
@@ -560,15 +526,15 @@ TSharedPtr<FVoxelNode> FVoxelTemplateNodeUtilities::GetMakeNode(const FPin* Pin,
 		default: ensure(false);
 		case 2:
 		{
-			return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, MakeIntPoint));
+			return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, MakeIntPoint));
 		}
 		case 3:
 		{
-			return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, MakeIntVector));
+			return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, MakeIntVector));
 		}
 		case 4:
 		{
-			return FVoxelNode_UFunction::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, MakeIntVector4));
+			return FVoxelFunctionNode::Make(FindUFunctionChecked(UVoxelMathFunctionLibrary, MakeIntVector4));
 		}
 		}
 	}
@@ -626,6 +592,12 @@ FVoxelTemplateNodeUtilities::FPin* FVoxelTemplateNodeUtilities::ConvertToByte(FP
 
 FVoxelTemplateNodeUtilities::FPin* FVoxelTemplateNodeUtilities::ConvertToFloat(FPin* Pin)
 {
+
+	if (IsPinObject(Pin))
+	{
+		return Pin;
+	}
+
 	if (IsPinFloat(Pin))
 	{
 		return Pin;
@@ -772,7 +744,7 @@ FVoxelTemplateNodeUtilities::FPin* FVoxelTemplateNodeUtilities::ZeroExpandVector
 	}
 
 	FNode& Passthrough = Pin->Node.Graph.NewNode(ENodeType::Passthrough, GetNodeRef());
-	Passthrough.NewInputPin("ZeroScalarInput", ScalarPins[0]->Type, FVoxelPinValue(ScalarPins[0]->Type.GetInnerType()));
+	Passthrough.NewInputPin("ZeroScalarInput", ScalarPins[0]->Type, FVoxelPinValue(ScalarPins[0]->Type));
 	FPin* ZeroScalarPin = &Passthrough.NewOutputPin("ZeroScalarOutput", ScalarPins[0]->Type);
 
 	FNode& MakeNode = CreateNode(Pin, VoxelMakeNode.ToSharedRef());
@@ -805,7 +777,7 @@ TArray<FVoxelTemplateNodeUtilities::FPin*> FVoxelTemplateNodeUtilities::BreakVec
 	return BreakNode(Pin, GetBreakNode(Pin->Type), PinDimension);
 }
 
-TArray<FVoxelTemplateNodeUtilities::FPin*> FVoxelTemplateNodeUtilities::BreakNode(FPin* Pin, const TSharedPtr<FVoxelNode>& BreakVoxelNode, const int32 NumExpectedOutputPins)
+TArray<FVoxelTemplateNodeUtilities::FPin*> FVoxelTemplateNodeUtilities::BreakNode(FPin* Pin, const TSharedPtr<FVoxelNode>& BreakVoxelNode, int32 NumExpectedOutputPins)
 {
 	if (!ensure(BreakVoxelNode))
 	{
@@ -1154,11 +1126,6 @@ void FVoxelTemplateNode::FixupBuffers(
 	for (const FVoxelPinRef& PinRef : Pins)
 	{
 		FVoxelPin& Pin = GetPin(PinRef);
-		if (!Pin.IsPromotable())
-		{
-			continue;
-		}
-
 		Pin.SetType(NewType.IsBuffer() ? Pin.GetType().GetBufferType() : Pin.GetType().GetInnerType());
 	}
 }
@@ -1254,11 +1221,6 @@ void FVoxelTemplateNode::EnforceSameDimensions(
 	const FVoxelPinType& NewType,
 	const TVoxelArray<FVoxelPinRef>& Pins)
 {
-	if (!InPin.IsPromotable())
-	{
-		return;
-	}
-
 	const int32 NewDimension = GetDimension(NewType);
 	if (NewDimension != 1)
 	{
@@ -1271,10 +1233,6 @@ void FVoxelTemplateNode::EnforceSameDimensions(
 		for (const FVoxelPinRef& PinRef : Pins)
 		{
 			FVoxelPin& Pin = GetPin(PinRef);
-			if (!Pin.IsPromotable())
-			{
-				continue;
-			}
 
 			const int32 PinDimension = GetDimension(Pin.GetType());
 			if (PinDimension == 1)
@@ -1294,11 +1252,6 @@ void FVoxelTemplateNode::EnforceSameDimensions(
 			for (const FVoxelPinRef& PinRef : Pins)
 			{
 				FVoxelPin& Pin = GetPin(PinRef);
-				if (!Pin.IsPromotable())
-				{
-					continue;
-				}
-
 				SetPinDimension(Pin, 1);
 			}
 		}
@@ -1308,8 +1261,7 @@ void FVoxelTemplateNode::EnforceSameDimensions(
 	for (const FVoxelPinRef& PinRef : Pins)
 	{
 		FVoxelPin& Pin = GetPin(PinRef);
-		if (Pin.bIsInput ||
-			!Pin.IsPromotable())
+		if (Pin.bIsInput)
 		{
 			continue;
 		}

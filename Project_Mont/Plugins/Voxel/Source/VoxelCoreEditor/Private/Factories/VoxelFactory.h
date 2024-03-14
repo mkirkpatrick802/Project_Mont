@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -29,7 +29,7 @@ public:
 	virtual UFactory* GetUFactory() override { return this; }
 	//~ End IVoxelFactory Interface
 
-	void SetCreateNew(const bool bNewCreateNew)
+	void SetCreateNew(bool bNewCreateNew)
 	{
 		bCreateNew = bNewCreateNew;
 	}

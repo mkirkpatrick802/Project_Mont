@@ -1,9 +1,7 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
-
-#include "VoxelMinimal.h"
+#include "VoxelGraphNodeBase.h"
 #include "VoxelGraph.h"
-#include "VoxelTerminalGraph.h"
 #include "Kismet2/EnumEditorUtils.h"
+#include "NodeDependingOnEnumInterface.h"
 
 class FVoxelGraphEnumManager : public FEnumEditorUtils::INotifyOnEnumChanged
 {
@@ -13,17 +11,39 @@ class FVoxelGraphEnumManager : public FEnumEditorUtils::INotifyOnEnumChanged
 
 	virtual void PostChange(const UUserDefinedEnum* Enum, FEnumEditorUtils::EEnumEditorChangeInfo ChangedType) override
 	{
-		ForEachObjectOfClass<UVoxelGraph>([&](UVoxelGraph& Graph)
+		ForEachObjectOfClass<UVoxelGraph>([&](UVoxelGraph* Graph)
 		{
-			Graph.Fixup();
+			bool bFixup = false;
+			for (const FVoxelGraphParameter& Parameter : Graph->Parameters)
+			{
+				if (!Parameter.Type.Is<uint8>() ||
+					Parameter.Type.GetEnum() != Enum)
+				{
+					continue;
+				}
+
+				bFixup = true;
+				break;
+			}
+
+			if (bFixup)
+			{
+				Graph->FixupParameters();
+			}
 		}, true, RF_ClassDefaultObject | RF_Transient);
 
-		ForEachObjectOfClass<UVoxelTerminalGraph>([&](UVoxelTerminalGraph& TerminalGraph)
+		ForEachObjectOfClass<UVoxelGraphNodeBase>([&](UVoxelGraphNodeBase* Node)
 		{
-			TerminalGraph.Fixup();
-		}, true, RF_ClassDefaultObject | RF_Transient);
+			const INodeDependingOnEnumInterface* NodeDependingOnEnum = Cast<INodeDependingOnEnumInterface>(Node);
 
-		// TODO Reconstruct any node with a pin of type Enum
+			if (!Node->HasAnyFlags(RF_ClassDefaultObject | RF_Transient) &&
+				NodeDependingOnEnum &&
+				Enum == NodeDependingOnEnum->GetEnum() &&
+				NodeDependingOnEnum->ShouldBeReconstructedAfterEnumChanged())
+			{
+				Node->ReconstructNode();
+			}
+		}, true, RF_ClassDefaultObject | RF_Transient);
 	}
 };
 

@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "SVoxelGraphPinSeed.h"
 #include "VoxelPinValue.h"
@@ -64,7 +64,7 @@ TSharedRef<SWidget>	SVoxelGraphPinSeed::GetDefaultValueWidget()
 			[
 				SNew(SButton)
 				.ButtonStyle(FVoxelEditorStyle::Get(), "Graph.Seed.Dice")
-				.OnClicked_Lambda([=]
+				.OnClicked_Lambda([&]
 				{
 					if (!ensure(!GraphPinObj->IsPendingKill()))
 					{

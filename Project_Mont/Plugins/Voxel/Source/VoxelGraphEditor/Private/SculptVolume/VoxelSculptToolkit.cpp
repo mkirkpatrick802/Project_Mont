@@ -1,14 +1,13 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelSculptToolkit.h"
+#include "VoxelRuntimeGraph.h"
 #include "VoxelSculptEdMode.h"
-#include "VoxelTerminalGraph.h"
-#include "VoxelTerminalGraphRuntime.h"
 #include "Widgets/SVoxelGraphSelector.h"
 #include "Toolkits/AssetEditorModeUILayer.h"
-#include "Sculpt/VoxelExecNode_EditSculptSurface.h"
+#include "Sculpt/VoxelEditSculptSurfaceExecNode.h"
 
-void FVoxelSculptToolkit::Init(const TSharedPtr<IToolkitHost>& InitToolkitHost, const TWeakObjectPtr<UEdMode> InOwningMode)
+void FVoxelSculptToolkit::Init(const TSharedPtr<IToolkitHost>& InitToolkitHost, TWeakObjectPtr<UEdMode> InOwningMode)
 {
 	FModeToolkit::Init(InitToolkitHost, InOwningMode);
 
@@ -70,10 +69,15 @@ TSharedPtr<SWidget> FVoxelSculptToolkit::GetInlineContent() const
 			.MinDesiredHeight(100.f)
 			.MaxDesiredHeight(300.f)
 			[
-				SAssignNew(ConstCast(this)->WeakGraphSelector, SVoxelGraphSelector)
-				.IsGraphValid_Lambda([](const UVoxelGraph& Graph)
+				SNew(SVoxelGraphSelector)
+				.IsGraphValid_Lambda([](const UVoxelGraph* Graph)
 				{
-					return Graph.GetMainTerminalGraph().GetRuntime().HasNode<FVoxelExecNode_EditSculptSurface>();
+					if (!ensure(Graph))
+					{
+						return false;
+					}
+
+					return Graph->GetRuntimeGraph().HasNode<FVoxelEditSculptSurfaceExecNode>();
 				})
 				.OnGraphSelected_Lambda(MakeWeakPtrLambda(this, [this](UVoxelGraph* Graph)
 				{
@@ -83,10 +87,7 @@ TSharedPtr<SWidget> FVoxelSculptToolkit::GetInlineContent() const
 						return;
 					}
 
-					PreviewActor->SaveParametersToConfig();
 					PreviewActor->SetGraph(Graph);
-					PreviewActor->LoadParametersFromConfig();
-
 					DetailsView->ForceRefresh();
 					ModeDetailsView->ForceRefresh();
 				}))
@@ -106,14 +107,6 @@ void FVoxelSculptToolkit::OnToolStarted(UInteractiveToolManager* Manager, UInter
 	if (const UVoxelSculptTool* VoxelSculptTool = Cast<UVoxelSculptTool>(Tool))
 	{
 		WeakPreviewActor = VoxelSculptTool->PreviewActor;
-
-		if (VoxelSculptTool->PreviewActor)
-		{
-			if (const TSharedPtr<SVoxelGraphSelector> GraphSelector = WeakGraphSelector.Pin())
-			{
-				GraphSelector->SetSelectedGraph(VoxelSculptTool->PreviewActor->GetGraph());
-			}
-		}
 	}
 }
 

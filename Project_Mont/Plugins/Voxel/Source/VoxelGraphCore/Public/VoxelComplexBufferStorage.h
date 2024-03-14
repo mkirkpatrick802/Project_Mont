@@ -1,4 +1,4 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -80,7 +80,7 @@ private:
 	UScriptStruct* InnerStruct = nullptr;
 	int32 TypeSize = 0;
 	int32 ArrayNum = 0;
-	TVoxelInlineArray<void*, 2> Chunks;
+	TVoxelArray<void*, TVoxelInlineAllocator<2>> Chunks;
 
 	void* AllocateChunk() const;
 

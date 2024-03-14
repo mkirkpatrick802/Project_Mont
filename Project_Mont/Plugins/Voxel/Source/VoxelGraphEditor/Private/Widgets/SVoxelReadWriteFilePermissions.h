@@ -1,10 +1,10 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelEditorMinimal.h"
 
-class SVoxelReadWriteFilePermissionsNotice : public SCompoundWidget
+class VOXELGRAPHEDITOR_API SVoxelReadWriteFilePermissionsNotice : public SCompoundWidget
 {
 public:
 	VOXEL_SLATE_ARGS()
@@ -28,7 +28,7 @@ public:
 
 protected:
 	//~ Begin SCompoundWidget Interface
-	virtual void Tick(const FGeometry& AllottedGeometry, double InCurrentTime, float InDeltaTime) override;
+	virtual void Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime) override;
 	//~ End SCompoundWidget Interface
 
 	private:
@@ -45,7 +45,7 @@ public:
 	static void GetFileStatus(const FString& FilePath, bool& bOutFixupRequired, bool& bOutFixupInProgress, bool& bOutFixupPossible);
 };
 
-class SVoxelReadWriteFilePermissionsPopup : public SCompoundWidget
+class VOXELGRAPHEDITOR_API SVoxelReadWriteFilePermissionsPopup : public SCompoundWidget
 {
 public:
 	VOXEL_SLATE_ARGS()

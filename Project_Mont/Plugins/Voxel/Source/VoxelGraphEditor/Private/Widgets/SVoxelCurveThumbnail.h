@@ -1,9 +1,8 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelEditorMinimal.h"
-#include "Curves/RichCurve.h"
 
 class SVoxelCurveThumbnail : public SLeafWidget
 {

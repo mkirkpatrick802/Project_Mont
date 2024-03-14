@@ -1,13 +1,12 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "Point/VoxelPointChunkRef.h"
 #include "Point/VoxelPointSubsystem.h"
 #include "VoxelQuery.h"
 #include "VoxelRuntime.h"
-#include "VoxelTaskHelpers.h"
+#include "VoxelTaskGroup.h"
+#include "VoxelDependency.h"
 #include "VoxelRuntimeProvider.h"
-#include "VoxelDependencyTracker.h"
-#include "VoxelTerminalGraphInstance.h"
 
 VOXEL_CONSOLE_VARIABLE(
 	VOXELGRAPHCORE_API, float, GVoxelPointCacheDuration, 1,
@@ -41,7 +40,7 @@ public:
 	{
 		VOXEL_FUNCTION_COUNTER();
 		VOXEL_SCOPE_LOCK(CriticalSection);
-		VOXEL_SCOPE_COUNTER_FORMAT("%s", *ChunkRef.ChunkProviderRef.ToDebugString());
+		VOXEL_SCOPE_COUNTER_FORMAT("%s", *ChunkRef.ChunkProviderRef.NodePath.ToDebugString());
 
 		if (const TSharedPtr<const FData> Data = ChunkRefToData_RequiresLock.FindRef(ChunkRef))
 		{
@@ -70,14 +69,10 @@ public:
 		const TSharedRef<FVoxelRuntimeInfo> RuntimeInfo =
 			FVoxelRuntimeInfoBase::MakeFromWorld(World)
 			.EnableParallelTasks()
-			.MakeRuntimeInfo_RequiresDestroy();
-		ON_SCOPE_EXIT
-		{
-			RuntimeInfo->Destroy();
-		};
+			.MakeRuntimeInfo();
 
 		const TSharedRef<FData> Data = MakeVoxelShared<FData>();
-		ChunkRefToData_RequiresLock.Add_CheckNew(ChunkRef, Data);
+		ChunkRefToData_RequiresLock.Add(ChunkRef, Data);
 
 		const TSharedPtr<const FVoxelChunkedPointSet> ChunkedPointSet = ChunkRef.ChunkProviderRef.GetChunkedPointSet(&Data->Error);
 		if (!ChunkedPointSet ||
@@ -89,20 +84,17 @@ public:
 		Data->DependencyTracker = FVoxelDependencyTracker::Create(STATIC_FNAME("FVoxelPointHandle"));
 
 		bool bSuccess = true;
-		TOptional<FVoxelPointSet> OptionalPoints = FVoxelTaskHelpers::TryRunSynchronously(
-			FVoxelTerminalGraphInstance::MakeDummy(RuntimeInfo),
-			[&]() -> TVoxelFutureValue<FVoxelPointSet>
+		TOptional<FVoxelPointSet> OptionalPoints = FVoxelTaskGroup::TryRunSynchronously(FVoxelQueryContext::Make(RuntimeInfo), [&]() -> TVoxelFutureValue<FVoxelPointSet>
+		{
+			const TVoxelFutureValue<FVoxelPointSet> FuturePoints = ChunkedPointSet->GetPoints(*Data->DependencyTracker, ChunkRef.ChunkMin);
+			if (!FuturePoints.IsValid())
 			{
-				const TVoxelFutureValue<FVoxelPointSet> FuturePoints = ChunkedPointSet->GetPoints(*Data->DependencyTracker, ChunkRef.ChunkMin);
-				if (!FuturePoints.IsValid())
-				{
-					bSuccess = false;
-					return FVoxelPointSet();
-				}
+				bSuccess = false;
+				return FVoxelPointSet();
+			}
 
-				return FuturePoints;
-			},
-			&Data->Error);
+			return FuturePoints;
+		}, &Data->Error);
 
 		if (!bSuccess ||
 			!OptionalPoints.IsSet())
@@ -123,40 +115,23 @@ private:
 		TSharedPtr<FVoxelDependencyTracker> DependencyTracker;
 	};
 
-	FVoxelCriticalSection CriticalSection;
+	FVoxelFastCriticalSection CriticalSection;
 	TVoxelMap<FVoxelPointChunkRef, TSharedPtr<const FData>> ChunkRefToData_RequiresLock;
 };
 
-FVoxelPointChunkCache* GVoxelPointChunkCache = new FVoxelPointChunkCache();
+FVoxelPointChunkCache* GVoxelPointChunkCache = MakeVoxelSingleton(FVoxelPointChunkCache);
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
-
-FString FVoxelPointChunkProviderRef::ToDebugString() const
-{
-	VOXEL_FUNCTION_COUNTER();
-
-	TStringBuilderWithBuffer<TCHAR, NAME_SIZE> Result;
-
-	for (const FVoxelGraphNodeRef& CallstackNodeRef : TerminalGraphInstanceCallstack)
-	{
-		Result += TEXT("/");
-		CallstackNodeRef.AppendString(Result);
-	}
-
-	Result += TEXT("/");
-	NodeRef.AppendString(Result);
-
-	return FString(Result.ToView());
-}
 
 TSharedPtr<FVoxelRuntime> FVoxelPointChunkProviderRef::GetRuntime(FString* OutError) const
 {
 	VOXEL_FUNCTION_COUNTER();
 	check(IsInGameThread());
 
-	if (!RuntimeProvider.IsValid())
+	const UObject* RuntimeProviderObject = RuntimeProvider.Get();
+	if (!RuntimeProviderObject)
 	{
 		if (OutError)
 		{
@@ -165,7 +140,17 @@ TSharedPtr<FVoxelRuntime> FVoxelPointChunkProviderRef::GetRuntime(FString* OutEr
 		return {};
 	}
 
-	const TSharedPtr<FVoxelRuntime> Runtime = RuntimeProvider->GetRuntime();
+	const IVoxelRuntimeProvider* RuntimeProviderInterface = Cast<IVoxelRuntimeProvider>(RuntimeProviderObject);
+	if (!ensure(RuntimeProviderInterface))
+	{
+		if (OutError)
+		{
+			*OutError = "Invalid RuntimeProvider";
+		}
+		return {};
+	}
+
+	const TSharedPtr<FVoxelRuntime> Runtime = RuntimeProviderInterface->GetRuntime();
 	if (!Runtime)
 	{
 		if (OutError)
@@ -233,28 +218,15 @@ bool FVoxelPointChunkRef::NetSerialize(FArchive& Ar, UPackageMap& Map)
 	{
 		ensure(IsValid());
 
-		UObject* RuntimeProvider = ChunkProviderRef.RuntimeProvider.GetObject();
-		ensure(RuntimeProvider);
+		UObject* Object = ConstCast(ChunkProviderRef.RuntimeProvider.Get());
+		ensure(Object);
 
-		if (!ensure(Map.SerializeObject(Ar, UObject::StaticClass(), RuntimeProvider)))
+		if (!ensure(Map.SerializeObject(Ar, UObject::StaticClass(), Object)))
 		{
 			return false;
 		}
 
-		{
-			int32 Num = ChunkProviderRef.TerminalGraphInstanceCallstack.Num();
-			Ar << Num;
-		}
-
-		for (FVoxelGraphNodeRef& NodeRef : ChunkProviderRef.TerminalGraphInstanceCallstack)
-		{
-			if (!ensure(NodeRef.NetSerialize(Ar, Map)))
-			{
-				return false;
-			}
-		}
-
-		if (!ensure(ChunkProviderRef.NodeRef.NetSerialize(Ar, Map)))
+		if (!ensure(ChunkProviderRef.NodePath.NetSerialize(Ar, Map)))
 		{
 			return false;
 		}
@@ -265,33 +237,16 @@ bool FVoxelPointChunkRef::NetSerialize(FArchive& Ar, UPackageMap& Map)
 	}
 	else if (Ar.IsLoading())
 	{
-		UObject* RuntimeProvider = nullptr;
-		if (!ensure(Map.SerializeObject(Ar, UObject::StaticClass(), RuntimeProvider)) ||
-			!ensure(RuntimeProvider) ||
-			!ensure(RuntimeProvider->Implements<UVoxelRuntimeProvider>()))
+		UObject* Object = nullptr;
+		if (!ensure(Map.SerializeObject(Ar, UObject::StaticClass(), Object)) ||
+			!ensure(Object))
 		{
 			return false;
 		}
 
-		ChunkProviderRef.RuntimeProvider = CastChecked<IVoxelRuntimeProvider>(RuntimeProvider);
+		ChunkProviderRef.RuntimeProvider = Object;
 
-		{
-			int32 Num = 0;
-			Ar << Num;
-
-			ChunkProviderRef.TerminalGraphInstanceCallstack.Reset();
-			ChunkProviderRef.TerminalGraphInstanceCallstack.SetNum(Num);
-		}
-
-		for (FVoxelGraphNodeRef& NodeRef : ChunkProviderRef.TerminalGraphInstanceCallstack)
-		{
-			if (!ensure(NodeRef.NetSerialize(Ar, Map)))
-			{
-				return false;
-			}
-		}
-
-		if (!ensure(ChunkProviderRef.NodeRef.NetSerialize(Ar, Map)))
+		if (!ensure(ChunkProviderRef.NodePath.NetSerialize(Ar, Map)))
 		{
 			return false;
 		}
@@ -305,35 +260,4 @@ bool FVoxelPointChunkRef::NetSerialize(FArchive& Ar, UPackageMap& Map)
 		ensure(false);
 		return false;
 	}
-}
-
-FArchive& operator<<(FArchive& Ar, FVoxelPointChunkProviderRef& Ref)
-{
-	UObject* Object = Ref.RuntimeProvider.GetObject();
-	Ar << Object;
-
-	if (Ar.IsLoading())
-	{
-		Ref.RuntimeProvider = CastEnsured<IVoxelRuntimeProvider>(Object);
-	}
-
-	Ar << Ref.TerminalGraphInstanceCallstack;
-	Ar << Ref.NodeRef;
-	return Ar;
-}
-
-uint32 GetTypeHash(const FVoxelPointChunkProviderRef& Ref)
-{
-	checkStatic(sizeof(FMinimalName) == sizeof(uint64));
-
-	TVoxelInlineArray<FMinimalName, 16> NodeIds;
-	for (const FVoxelGraphNodeRef& NodeRef : Ref.TerminalGraphInstanceCallstack)
-	{
-		NodeIds.Add(FMinimalName(NodeRef.NodeId));
-	}
-
-	return FVoxelUtilities::MurmurHashMulti(
-		GetTypeHash(Ref.RuntimeProvider),
-		FVoxelUtilities::MurmurHashBytes(MakeByteVoxelArrayView(NodeIds), NodeIds.Num()),
-		GetTypeHash(Ref.NodeRef));
 }

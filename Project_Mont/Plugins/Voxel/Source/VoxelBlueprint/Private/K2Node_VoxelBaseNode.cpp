@@ -1,8 +1,9 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "K2Node_VoxelBaseNode.h"
+
 #include "VoxelPinType.h"
-#include "Widgets/SVoxelPinTypeSelector.h"
+#include "Widgets/SVoxelGraphPinTypeSelector.h"
 
 #include "ToolMenu.h"
 #include "KismetCompiler.h"

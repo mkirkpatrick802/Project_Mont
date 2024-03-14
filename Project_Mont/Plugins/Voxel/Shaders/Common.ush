@@ -1,8 +1,9 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "/Engine/Private/Common.ush"
+#include "/Engine/Private/VertexFactoryCommon.ush"
 #include "VoxelEngineVersion.ush"
 
 #define INTELLISENSE_PARSER __INTELLISENSE__ || __RESHARPER__
@@ -18,8 +19,6 @@
 #define INTELLISENSE_HIDE(...)
 #else
 #define INTELLISENSE_HIDE(...) __VA_ARGS__
-// Const breaks compiler
-#define const
 #endif
 
 #ifndef check
@@ -37,14 +36,6 @@
 #if !VOXEL_DEBUG
 #undef check
 #define check(...)
-#endif
-
-#if VOXEL_ENGINE_VERSION >= 504
-#define UE_504_SWITCH(Before, AfterOrEqual) AfterOrEqual
-#define UE_504_ONLY(...) __VA_ARGS__
-#else
-#define UE_504_SWITCH(Before, AfterOrEqual) Before
-#define UE_504_ONLY(...)
 #endif
 
 #include "/Engine/Private/OctahedralCommon.ush"
@@ -66,27 +57,27 @@
 #define MAX_int32	0x7fffffff
 #define MAX_int64	0x7fffffffffffffff
 
-uint Get3DIndex(const uint3 Size, const uint3 Position)
+uint Get3DIndex(uint3 Size, uint3 Position)
 {
 	check(all(Position < Size));
 	return Position.x + Size.x * Position.y + Size.x * Size.y * Position.z;
 }
 
-float3 DivideByW(const float4 Value)
+float3 DivideByW(float4 Value)
 {
 	return Value.xyz / Value.w;
 }
 
-float3 TransformPosition(const float3 Value, const float4x4 Transform)
+float3 TransformPosition(float3 Value, float4x4 Transform)
 {
 	return DivideByW(mul(float4(Value, 1.f), Transform));
 }
 
-float3 TransformVector(const float3 Value, const float3x3 Transform)
+float3 TransformVector(float3 Value, float3x3 Transform)
 {
 	return mul(Value, Transform);
 }
-float3 TransformVector(const float3 Value, float4x4 Transform)
+float3 TransformVector(float3 Value, float4x4 Transform)
 {
 	return mul(Value, (float3x3)Transform);
 }
@@ -101,7 +92,7 @@ uint MurmurHash32(uint Hash)
 	return Hash;
 }
 
-uint MurmurHash32_uint3(const uint3 Value, const uint Seed = 0)
+uint MurmurHash32_uint3(uint3 Value, uint Seed = 0)
 {
 	const uint Size = 3;
 
@@ -140,30 +131,30 @@ float4 HashInt(uint Hash)
 	return Color;
 }
 
-float4 HashPosition(const uint3 Hash)
+float4 HashPosition(uint3 Hash)
 {
 	return HashInt(Hash.x ^ MurmurHash32(Hash.y) ^ MurmurHash32(MurmurHash32(Hash.z)));
 }
 
-uint FloatToByte(const float Value)
+uint FloatToByte(float Value)
 {
 	return clamp(floor(Value * 255.999f), 0, 255);
 }
-float ByteToFloat(const uint Value)
+float ByteToFloat(uint Value)
 {
 	return Value / 255.f;
 }
 
-uint FloatToNibble(const float Value)
+uint FloatToNibble(float Value)
 {
 	return clamp(floor(Value * 15.999f), 0, 15);
 }
-float NibbleToFloat(const uint Value)
+float NibbleToFloat(uint Value)
 {
 	return Value / 15.f;
 }
 
-uint EncodeColor(const float4 Color)
+uint EncodeColor(float4 Color)
 {
 	return
 		(FloatToByte(Color.b) << 0 ) |
@@ -171,7 +162,7 @@ uint EncodeColor(const float4 Color)
 		(FloatToByte(Color.r) << 16) |
 		(FloatToByte(Color.a) << 24);
 }
-float4 DecodeColor(const uint Color)
+float4 DecodeColor(uint Color)
 {
 	return float4(
 		ByteToFloat((Color >> 16) & 0xFF),
@@ -180,12 +171,12 @@ float4 DecodeColor(const uint Color)
 		ByteToFloat((Color >> 24) & 0xFF));
 }
 
-float GetPixelDepth(const float3 HitPosition, const float4x4 WorldToClip)
+float GetPixelDepth(float3 HitPosition, float4x4 WorldToClip)
 {
 	return TransformPosition(HitPosition, WorldToClip).z;
 }
 
-float RemapValue(const float Value, const float Min, const float Max, const float NewMin, const float NewMax)
+float RemapValue(float Value, float Min, float Max, float NewMin, float NewMax)
 {
 	const float Alpha = (Value - Min) / (Max - Min);
 	return NewMin + Alpha * (NewMax - NewMin);
@@ -208,7 +199,7 @@ float3 UnrotateVector(const float3 Position, const float4 Rotation)
 	return Position + (Rotation.w * T) + cross(Q, T);
 }
 
-float3 SafeInverseVector(const float3 Vector)
+float3 SafeInverseVector(float3 Vector)
 {
 	float3 Result;
 	Result.x = Vector.x != 0.f ? 1.f / Vector.x : 1e9f;
@@ -304,48 +295,48 @@ bool RayTriangleIntersection(
 }
 
 // H00
-float HermiteP0(const float T)
+float HermiteP0(float T)
 {
 	return (1 + 2 * T) * Square(1 - T);
 }
 // H10
-float HermiteD0(const float T)
+float HermiteD0(float T)
 {
 	return T * Square(1 - T);
 }
 
 // H01
-float HermiteP1(const float T)
+float HermiteP1(float T)
 {
 	return Square(T) * (3 - 2 * T);
 }
 // H11
-float HermiteD1(const float T)
+float HermiteD1(float T)
 {
 	return Square(T) * (T - 1);
 }
 
-float DistanceSquared(const float2 A, const float2 B)
+float DistanceSquared(float2 A, float2 B)
 {
 	const float2 C = A - B;
 	return dot(C, C);
 }
-float DistanceSquared(const float3 A, const float3 B)
+float DistanceSquared(float3 A, float3 B)
 {
 	const float3 C = A - B;
 	return dot(C, C);
 }
 
-uint SampleTexture2D_UINT(const Texture2D Texture, const uint2 UVs)
+uint SampleTexture2D_UINT(Texture2D Texture, uint2 UVs)
 {
 	return asuint(Texture[UVs].r);
 }
-uint SampleTexture1D_UINT(const Texture2D Texture, uint Index)
+uint SampleTexture1D_UINT(Texture2D Texture, uint Index)
 {
 	return SampleTexture2D_UINT(Texture, uint2(Index, 0));
 }
 
-float4 GetGatherAlphas(const float2 UVs, const float2 TextureSize, const float Half = 0.5f)
+float4 GetGatherAlphas(float2 UVs, float2 TextureSize, float Half = 0.5f)
 {
 	const float2 Alphas = frac(UVs * TextureSize + Half);
 
@@ -357,7 +348,7 @@ float4 GetGatherAlphas(const float2 UVs, const float2 TextureSize, const float H
 	);
 }
 
-float InterpolateGather(const float X, const float Y, const float Z, const float W, const float2 UVs, const float2 TextureSize)
+float InterpolateGather(float X, float Y, float Z, float W, float2 UVs, float2 TextureSize)
 {
 	const float2 Alphas = frac(UVs * TextureSize + 0.5f);
 
@@ -367,7 +358,7 @@ float InterpolateGather(const float X, const float Y, const float Z, const float
 		Alphas.y);
 }
 
-float3 InterpolateGather(const float3 X, const float3 Y, const float3 Z, const float3 W, const float2 UVs, const float2 TextureSize)
+float3 InterpolateGather(float3 X, float3 Y, float3 Z, float3 W, float2 UVs, float2 TextureSize)
 {
 	const float2 Alphas = frac(UVs * TextureSize + 0.5f);
 

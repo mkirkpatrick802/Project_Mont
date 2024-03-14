@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -53,7 +53,7 @@ public:
 	void Invalidate(FInvalidationParameters Parameters = {});
 
 private:
-	FVoxelCriticalSection CriticalSection;
+	FVoxelFastCriticalSection CriticalSection;
 
 	struct FTrackerRef
 	{
@@ -64,36 +64,67 @@ private:
 
 		bool bHasTag = false;
 		uint64 Tag = 0;
-
-		FORCEINLINE bool operator==(const FTrackerRef& Other) const
-		{
-			if (WeakTracker != Other.WeakTracker ||
-				bHasBounds != Other.bHasBounds ||
-				bHasTag != Other.bHasTag)
-			{
-				return false;
-			}
-
-			if (bHasBounds &&
-				Bounds != Other.Bounds)
-			{
-				return false;
-			}
-
-			if (bHasTag &&
-				Tag != Other.Tag)
-			{
-				return false;
-			}
-
-			return true;
-		}
 	};
 	TVoxelChunkedSparseArray<FTrackerRef> TrackerRefs_RequiresLock;
 
 	FVoxelDependency(
-		FName ClassName,
-		FName InstanceName);
+		const FName ClassName,
+		const FName InstanceName);
 
 	friend FVoxelDependencyTracker;
+};
+
+class VOXELGRAPHCORE_API FVoxelDependencyTracker : public TSharedFromThis<FVoxelDependencyTracker>
+{
+public:
+	const FName Name;
+
+	static TSharedRef<FVoxelDependencyTracker> Create(const FName Name)
+	{
+		return MakeVoxelShareable(new (GVoxelMemory) FVoxelDependencyTracker(Name));
+	}
+	~FVoxelDependencyTracker();
+	UE_NONCOPYABLE(FVoxelDependencyTracker);
+
+	VOXEL_COUNT_INSTANCES();
+
+	FORCEINLINE bool IsInvalidated() const
+	{
+		return bIsInvalidated.Load();
+	}
+	void AddDependency(
+		const TSharedRef<FVoxelDependency>& Dependency,
+		const TOptional<FVoxelBox>& Bounds = {},
+		const TOptional<uint64>& Tag = {});
+
+	// Returns false if already invalidated
+	bool TrySetOnInvalidated(TVoxelUniqueFunction<void()>&& NewOnInvalidated);
+
+	template<typename T>
+	void AddObjectToKeepAlive(const TSharedPtr<T>& ObjectToKeepAlive)
+	{
+		VOXEL_SCOPE_LOCK(CriticalSection);
+		ObjectsToKeepAlive.Add(MakeSharedVoidPtr(ObjectToKeepAlive));
+	}
+
+private:
+	struct FDependencyRef
+	{
+		TWeakPtr<FVoxelDependency> WeakDependency;
+		int32 Index = -1;
+	};
+
+	FVoxelFastCriticalSection CriticalSection;
+	TVoxelAtomic<bool> bIsInvalidated;
+	TVoxelUniqueFunction<void()> OnInvalidated;
+	TVoxelChunkedArray<FDependencyRef> DependencyRefs;
+	TVoxelArray<FSharedVoidPtr> ObjectsToKeepAlive;
+	TVoxelSet<TWeakPtr<FVoxelDependency>> AddedDependencies;
+
+	explicit FVoxelDependencyTracker(const FName& Name);
+
+	void Unregister_RequiresLock();
+
+	friend FVoxelDependency;
+	friend FVoxelDependencyInvalidationScope;
 };

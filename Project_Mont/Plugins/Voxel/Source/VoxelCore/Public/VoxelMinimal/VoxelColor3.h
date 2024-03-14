@@ -1,8 +1,9 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelCoreMinimal.h"
+#include "VoxelMinimal/Utilities/VoxelBaseUtilities.h"
 
 struct FVoxelLinearColor3;
 
@@ -13,7 +14,7 @@ struct FVoxelColor3
 	uint8 B;
 
 	FVoxelColor3() = default;
-	FORCEINLINE FVoxelColor3(const uint8 R, const uint8 G, const uint8 B)
+	FORCEINLINE FVoxelColor3(uint8 R, uint8 G, uint8 B)
 		: R(R)
 		, G(G)
 		, B(B)
@@ -81,7 +82,7 @@ struct FVoxelLinearColor3
 	float B;
 
 	FVoxelLinearColor3() = default;
-	FORCEINLINE FVoxelLinearColor3(const float R, const float G, const float B)
+	FORCEINLINE FVoxelLinearColor3(float R, float G, float B)
 		: R(R)
 		, G(G)
 		, B(B)
@@ -158,7 +159,7 @@ struct FVoxelLinearColor3
 		return *this;
 	}
 
-	FORCEINLINE FVoxelLinearColor3 operator*(const float Scalar) const
+	FORCEINLINE FVoxelLinearColor3 operator*(float Scalar) const
 	{
 		return FVoxelLinearColor3(
 			R * Scalar,
@@ -166,7 +167,7 @@ struct FVoxelLinearColor3
 			B * Scalar);
 	}
 
-	FORCEINLINE FVoxelLinearColor3& operator*=(const float Scalar)
+	FORCEINLINE FVoxelLinearColor3& operator*=(float Scalar)
 	{
 		R *= Scalar;
 		G *= Scalar;
@@ -189,14 +190,14 @@ struct FVoxelLinearColor3
 		return *this;
 	}
 
-	FORCEINLINE FVoxelLinearColor3 operator/(const float Scalar) const
+	FORCEINLINE FVoxelLinearColor3 operator/(float Scalar) const
 	{
 		return FVoxelLinearColor3(
 			R / Scalar,
 			G / Scalar,
 			B / Scalar);
 	}
-	FORCEINLINE FVoxelLinearColor3& operator/=(const float Scalar)
+	FORCEINLINE FVoxelLinearColor3& operator/=(float Scalar)
 	{
 		R /= Scalar;
 		G /= Scalar;
@@ -224,9 +225,8 @@ struct FVoxelLinearColor3
 		return FVoxelUtilities::MurmurHash(Color);
 	}
 };
-static_assert(sizeof(FVoxelLinearColor3) == 3 * sizeof(float), "");
 
-FORCEINLINE FVoxelLinearColor3 operator*(const float Scalar, const FVoxelLinearColor3& Color)
+FORCEINLINE FVoxelLinearColor3 operator*(float Scalar, const FVoxelLinearColor3& Color)
 {
 	return Color.operator*(Scalar);
 }
@@ -239,9 +239,9 @@ FORCEINLINE FVoxelLinearColor3 FVoxelColor3::ToLinear() const
 {
 	return
 	{
-		FLinearColor::sRGBToLinearTable[R],
-		FLinearColor::sRGBToLinearTable[G],
-		FLinearColor::sRGBToLinearTable[B],
+		FVoxelUtilities::sRGBToLinearTable[R],
+		FVoxelUtilities::sRGBToLinearTable[G],
+		FVoxelUtilities::sRGBToLinearTable[B],
 	};
 }
 

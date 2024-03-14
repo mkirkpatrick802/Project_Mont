@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -88,9 +88,6 @@ public:
 			checkVoxelSlow(!AllocationFlags[Result]);
 			AllocationFlags[Result] = true;
 
-#if VOXEL_DEBUG
-			Array[Result].NextFreeIndex = -2;
-#endif
 			return Result;
 		}
 
@@ -98,9 +95,6 @@ public:
 		const int32 BitIndex = AllocationFlags.Add(true);
 		checkVoxelSlow(ArrayIndex == BitIndex);
 
-#if VOXEL_DEBUG
-		Array[ArrayIndex].NextFreeIndex = -2;
-#endif
 		return ArrayIndex;
 	}
 
@@ -117,20 +111,11 @@ public:
 		return Index;
 	}
 
-	template<typename... ArgTypes, typename = std::enable_if_t<TIsConstructible<Type, ArgTypes...>::Value>>
-	FORCEINLINE int32 Emplace(ArgTypes&&... Args)
+	FORCEINLINE Type& Emplace_GetRef()
 	{
 		const int32 Index = AddUninitialized();
 		Type& Value = (*this)[Index];
-		new (&Value) Type(Forward<ArgTypes>(Args)...);
-		return Index;
-	}
-	template<typename... ArgTypes, typename = std::enable_if_t<TIsConstructible<Type, ArgTypes...>::Value>>
-	FORCEINLINE Type& Emplace_GetRef(ArgTypes&&... Args)
-	{
-		const int32 Index = AddUninitialized();
-		Type& Value = (*this)[Index];
-		new (&Value) Type(Forward<ArgTypes>(Args)...);
+		new (&Value) Type(MoveTemp(Value));
 		return Value;
 	}
 

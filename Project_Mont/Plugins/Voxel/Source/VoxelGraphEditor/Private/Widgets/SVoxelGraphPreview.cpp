@@ -1,14 +1,10 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "SVoxelGraphPreview.h"
-#include "VoxelActor.h"
 #include "VoxelGraph.h"
-#include "VoxelGraphTracker.h"
-#include "VoxelTerminalGraph.h"
-#include "VoxelTerminalGraphRuntime.h"
-#include "VoxelTerminalGraphInstance.h"
-#include "VoxelParameterOverridesRuntime.h"
-#include "Preview/VoxelNode_Preview.h"
+#include "VoxelRuntimeGraph.h"
+#include "VoxelParameterValues.h"
+#include "Preview/VoxelPreviewNode.h"
 #include "Preview/VoxelPreviewHandler.h"
 #include "Widgets/SVoxelGraphPreviewImage.h"
 #include "Widgets/SVoxelGraphPreviewStats.h"
@@ -18,10 +14,8 @@
 
 void SVoxelGraphPreview::Construct(const FArguments& Args)
 {
-	VOXEL_FUNCTION_COUNTER();
-
-	SceneComponent = NewObject<UVoxelActorRootComponent>();
-	TransformRef = FVoxelTransformRef::Make(*SceneComponent);
+	WeakGraph = Args._Graph;
+	check(WeakGraph.IsValid());
 
 	FSlimHorizontalToolBarBuilder LeftToolbarBuilder(nullptr, FMultiBoxCustomization::None);
 	LeftToolbarBuilder.SetStyle(&FAppStyle::Get(), "EditorViewportToolBar");
@@ -44,20 +38,17 @@ void SVoxelGraphPreview::Construct(const FArguments& Args)
 			LeftToolbarBuilder.AddToolBarButton(FUIAction(
 				MakeLambdaDelegate([this, Axis]
 				{
-					UVoxelTerminalGraph* TerminalGraph = WeakTerminalGraph.Get();
-					if (!TerminalGraph)
+					UVoxelGraph* Graph = WeakGraph.Get();
+					if (!ensure(Graph))
 					{
 						return;
 					}
 
 					// No transaction for preview
 					// const FVoxelTransaction Transaction(Graph, "Set preview axis");
-					TerminalGraph->PreviewConfig.Axis = Axis;
+					Graph->Preview.Axis = Axis;
 
-					if (DepthSlider)
-					{
-						DepthSlider->ResetValue(TerminalGraph->PreviewConfig.GetAxisLocation(), false);
-					}
+					DepthSlider->ResetValue(Graph->Preview.GetAxisLocation(), false);
 				}),
 				MakeLambdaDelegate([]
 				{
@@ -65,13 +56,13 @@ void SVoxelGraphPreview::Construct(const FArguments& Args)
 				}),
 				MakeLambdaDelegate([this, Axis]
 				{
-					const UVoxelTerminalGraph* TerminalGraph = WeakTerminalGraph.Get();
-					if (!TerminalGraph)
+					const UVoxelGraph* Graph = WeakGraph.Get();
+					if (!ensure(Graph))
 					{
 						return false;
 					}
 
-					return TerminalGraph->PreviewConfig.Axis == Axis;
+					return Graph->Preview.Axis == Axis;
 				})),
 				{},
 				UEnum::GetDisplayValueAsText(Axis),
@@ -92,8 +83,8 @@ void SVoxelGraphPreview::Construct(const FArguments& Args)
 	LeftToolbarBuilder.AddToolBarButton(FUIAction(
 		MakeLambdaDelegate([this]
 		{
-			UVoxelTerminalGraph* TerminalGraph = WeakTerminalGraph.Get();
-			if (!TerminalGraph)
+			UVoxelGraph* Graph = WeakGraph.Get();
+			if (!ensure(Graph))
 			{
 				return;
 			}
@@ -101,25 +92,22 @@ void SVoxelGraphPreview::Construct(const FArguments& Args)
 			// No transaction for preview
 			// const FVoxelTransaction Transaction(Graph, "Reset view");
 
-			TerminalGraph->PreviewConfig.Position = FVector::ZeroVector;
-			TerminalGraph->PreviewConfig.Zoom = 1.f;
+			Graph->Preview.Position = FVector::ZeroVector;
+			Graph->Preview.Zoom = 1.f;
 
-			if (DepthSlider)
-			{
-				DepthSlider->ResetValue(TerminalGraph->PreviewConfig.GetAxisLocation(), false);
-			}
+			DepthSlider->ResetValue(Graph->Preview.GetAxisLocation(), false);
 		}),
 		MakeLambdaDelegate([this]
 		{
-			const UVoxelTerminalGraph* TerminalGraph = WeakTerminalGraph.Get();
-			if (!TerminalGraph)
+			const UVoxelGraph* Graph = WeakGraph.Get();
+			if (!ensure(Graph))
 			{
 				return false;
 			}
 
 			return
-				!TerminalGraph->PreviewConfig.Position.IsZero() ||
-				TerminalGraph->PreviewConfig.Zoom != 1.f;
+				!Graph->Preview.Position.IsZero() ||
+				Graph->Preview.Zoom != 1.f;
 		})),
 		{},
 		INVTEXT("Reset view"),
@@ -161,14 +149,14 @@ void SVoxelGraphPreview::Construct(const FArguments& Args)
 					FUIAction(
 						MakeLambdaDelegate([=]
 						{
-							UVoxelTerminalGraph* TerminalGraph = WeakTerminalGraph.Get();
-							if (!TerminalGraph)
+							UVoxelGraph* Graph = WeakGraph.Get();
+							if (!ensure(Graph))
 							{
 								return;
 							}
 
-							const FVoxelTransaction Transaction(TerminalGraph, "Change preview size");
-							TerminalGraph->PreviewConfig.Resolution = NewPreviewSize;
+							const FVoxelTransaction Transaction(Graph, "Change preview size");
+							Graph->Preview.Resolution = NewPreviewSize;
 
 							QueueUpdate();
 						}),
@@ -178,13 +166,13 @@ void SVoxelGraphPreview::Construct(const FArguments& Args)
 						}),
 						MakeLambdaDelegate([this, NewPreviewSize]
 						{
-							const UVoxelTerminalGraph* TerminalGraph = WeakTerminalGraph.Get();
-							if (!TerminalGraph)
+							const UVoxelGraph* Graph = WeakGraph.Get();
+							if (!ensure(Graph))
 							{
 								return false;
 							}
 
-							return TerminalGraph->PreviewConfig.Resolution == NewPreviewSize;
+							return Graph->Preview.Resolution == NewPreviewSize;
 						})
 					),
 					{},
@@ -214,13 +202,13 @@ void SVoxelGraphPreview::Construct(const FArguments& Args)
 				SNew(SVoxelDetailText)
 				.Text_Lambda([this]
 				{
-					const UVoxelTerminalGraph* TerminalGraph = WeakTerminalGraph.Get();
-					if (!TerminalGraph)
+					const UVoxelGraph* Graph = WeakGraph.Get();
+					if (!ensure(Graph))
 					{
 						return INVTEXT("512x512");
 					}
 
-					return FText::FromString(FString::Printf(TEXT("%dx%d"), TerminalGraph->PreviewConfig.Resolution, TerminalGraph->PreviewConfig.Resolution));
+					return FText::FromString(FString::Printf(TEXT("%dx%d"), Graph->Preview.Resolution, Graph->Preview.Resolution));
 				})
 				.Clipping(EWidgetClipping::ClipToBounds)
 			]
@@ -248,23 +236,23 @@ void SVoxelGraphPreview::Construct(const FArguments& Args)
 						SAssignNew(PreviewImage, SVoxelGraphPreviewImage)
 						.Width_Lambda([this]() -> float
 						{
-							const UVoxelTerminalGraph* TerminalGraph = WeakTerminalGraph.Get();
-							if (!TerminalGraph)
+							const UVoxelGraph* Graph = WeakGraph.Get();
+							if (!ensure(Graph))
 							{
 								return 512;
 							}
 
-							return TerminalGraph->PreviewConfig.Resolution;
+							return Graph->Preview.Resolution;
 						})
 						.Height_Lambda([this]() -> float
 						{
-							const UVoxelTerminalGraph* TerminalGraph = WeakTerminalGraph.Get();
-							if (!TerminalGraph)
+							const UVoxelGraph* Graph = WeakGraph.Get();
+							if (!ensure(Graph))
 							{
 								return 512;
 							}
 
-							return TerminalGraph->PreviewConfig.Resolution;
+							return Graph->Preview.Resolution;
 						})
 						.Cursor(EMouseCursor::Crosshairs)
 						[
@@ -285,13 +273,13 @@ void SVoxelGraphPreview::Construct(const FArguments& Args)
 							SAssignNew(PreviewScale, SVoxelGraphPreviewScale)
 							.Resolution_Lambda([this]
 							{
-								const UVoxelTerminalGraph* TerminalGraph = WeakTerminalGraph.Get();
-								if (!TerminalGraph)
+								const UVoxelGraph* Graph = WeakGraph.Get();
+								if (!ensure(Graph))
 								{
 									return 512;
 								}
 
-								return TerminalGraph->PreviewConfig.Resolution;
+								return Graph->Preview.Resolution;
 							})
 							.Value_Lambda([this]
 							{
@@ -307,15 +295,19 @@ void SVoxelGraphPreview::Construct(const FArguments& Args)
 						.Visibility(EVisibility::HitTestInvisible)
 						[
 							SAssignNew(PreviewRuler, SVoxelGraphPreviewRuler)
+							.SizeWidget_Lambda([PreviewScaleBox]
+							{
+								return PreviewScaleBox;
+							})
 							.Resolution_Lambda([this]
 							{
-								const UVoxelTerminalGraph* TerminalGraph = WeakTerminalGraph.Get();
-								if (!TerminalGraph)
+								const UVoxelGraph* Graph = WeakGraph.Get();
+								if (!ensure(Graph))
 								{
 									return 512;
 								}
 
-								return TerminalGraph->PreviewConfig.Resolution;
+								return Graph->Preview.Resolution;
 							})
 							.Value_Lambda([this]
 							{
@@ -415,13 +407,31 @@ void SVoxelGraphPreview::Construct(const FArguments& Args)
 				.VAlign(VAlign_Fill)
 				.WidthOverride(150.f)
 				[
-					SAssignNew(DepthSliderContainer, SBox)
+					SAssignNew(DepthSlider, SVoxelGraphPreviewDepthSlider)
+					.ValueText(INVTEXT("Depth"))
+					.ToolTipText(INVTEXT("Depth along the axis being previewed"))
+					.Value(WeakGraph->Preview.GetAxisLocation())
+					.MinValue(WeakGraph->Preview.GetAxisLocation() - 100.f)
+					.MaxValue(WeakGraph->Preview.GetAxisLocation() + 100.f)
+					.OnValueChanged_Lambda([&](float NewValue)
+					{
+						UVoxelGraph* Graph = WeakGraph.Get();
+						if (!ensure(Graph))
+						{
+							return;
+						}
+
+						// No transaction for preview
+						// const FVoxelTransaction Transaction(Graph, "Change depth");
+						Graph->Preview.SetAxisLocation(NewValue);
+
+						QueueUpdate();
+					})
 				]
 			]
 		]
 	];
 
-	PreviewRuler->WeakSizeWidget = PreviewScaleBox;
 	PreviewScale->SizeWidget = PreviewScaleBox;
 
 	PreviewStats = SNew(SVoxelGraphPreviewStats);
@@ -446,65 +456,13 @@ void SVoxelGraphPreview::Construct(const FArguments& Args)
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-void SVoxelGraphPreview::SetTerminalGraph(UVoxelTerminalGraph* NewTerminalGraph)
-{
-	QueueUpdate();
-
-	WeakTerminalGraph = NewTerminalGraph;
-
-	if (!NewTerminalGraph)
-	{
-		OnEdGraphChangedPtr.Reset();
-		DepthSlider.Reset();
-		DepthSliderContainer->SetContent(SNullWidget::NullWidget);
-		return;
-	}
-
-	OnEdGraphChangedPtr = MakeSharedVoid();
-
-	GVoxelGraphTracker->OnEdGraphChanged(NewTerminalGraph->GetEdGraph()).Add(FOnVoxelGraphChanged::Make(OnEdGraphChangedPtr, this, [=]
-	{
-		QueueUpdate();
-	}));
-
-	DepthSlider =
-		SNew(SVoxelGraphPreviewDepthSlider)
-		.ToolTipText(INVTEXT("Depth along the axis being previewed"))
-		.ValueText(INVTEXT("Depth"))
-		.Value(NewTerminalGraph->PreviewConfig.GetAxisLocation())
-		.MinValue(NewTerminalGraph->PreviewConfig.GetAxisLocation() - 100.f)
-		.MaxValue(NewTerminalGraph->PreviewConfig.GetAxisLocation() + 100.f)
-		.OnValueChanged_Lambda([=](const float NewValue)
-		{
-			UVoxelTerminalGraph* TerminalGraph = WeakTerminalGraph.Get();
-			if (!TerminalGraph)
-			{
-				return;
-			}
-
-			// No transaction for preview
-			// const FVoxelTransaction Transaction(Graph, "Change depth");
-			TerminalGraph->PreviewConfig.SetAxisLocation(NewValue);
-
-			QueueUpdate();
-		});
-
-	DepthSliderContainer->SetContent(DepthSlider.ToSharedRef());
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
 TSharedRef<SWidget> SVoxelGraphPreview::GetPreviewStats() const
 {
 	return PreviewStats.ToSharedRef();
 }
 
-void SVoxelGraphPreview::AddReferencedObjects(FReferenceCollector& Collector)
+void SVoxelGraphPreview::AddReferencedObjects(FReferenceCollector& Collector) const
 {
-	Collector.AddReferencedObject(SceneComponent);
-
 	if (PreviewHandler)
 	{
 		PreviewHandler->AddStructReferencedObjects(Collector);
@@ -521,18 +479,7 @@ void SVoxelGraphPreview::Tick(const FGeometry& AllottedGeometry, const double In
 
 	SCompoundWidget::Tick(AllottedGeometry, InCurrentTime, InDeltaTime);
 
-	if (ensure(SceneComponent))
-	{
-		const FMatrix PixelToWorld = GetPixelToWorld();
-		const FTransform PixelToWorldTransform(PixelToWorld);
-		ensure(PixelToWorld.Equals(PixelToWorldTransform.ToMatrixWithScale()));
-
-		if (!SceneComponent->GetComponentTransform().Equals(PixelToWorldTransform))
-		{
-			SceneComponent->SetWorldTransform(PixelToWorldTransform);
-			FVoxelTransformRef::NotifyTransformChanged(*SceneComponent);
-		}
-	}
+	TransformProvider->Transform = GetPixelToWorld();
 
 	if (bUpdateQueued)
 	{
@@ -655,19 +602,15 @@ FReply SVoxelGraphPreview::OnMouseMove(const FGeometry& MyGeometry, const FPoint
 
 	bLockCoordinatePending = false;
 
-	UVoxelTerminalGraph* TerminalGraph = WeakTerminalGraph.Get();
-	if (!TerminalGraph)
+	UVoxelGraph* Graph = WeakGraph.Get();
+	if (!ensure(Graph))
 	{
 		return FReply::Handled();
 	}
 
-	TerminalGraph->PreviewConfig.Position += WorldDelta;
+	Graph->Preview.Position += WorldDelta;
 
-	if (DepthSlider)
-	{
-		DepthSlider->ResetValue(TerminalGraph->PreviewConfig.GetAxisLocation(), true);
-	}
-
+	DepthSlider->ResetValue(Graph->Preview.GetAxisLocation(), true);
 	QueueUpdate();
 
 	return FReply::Handled();
@@ -681,30 +624,14 @@ FReply SVoxelGraphPreview::OnMouseWheel(const FGeometry& MyGeometry, const FPoin
 		return FReply::Handled();
 	}
 
-	UVoxelTerminalGraph* TerminalGraph = WeakTerminalGraph.Get();
-	if (!TerminalGraph)
+	UVoxelGraph* Graph = WeakGraph.Get();
+	if (!ensure(Graph))
 	{
 		return FReply::Handled();
 	}
 
-	const double NewZoom = TerminalGraph->PreviewConfig.Zoom * (1. - FMath::Clamp(Delta, -0.5, 0.5));
-
-	const FVector2D PixelDelta = TransformPoint(Inverse(PreviewImage->GetCachedGeometry().GetAccumulatedRenderTransform()), MouseEvent.GetScreenSpacePosition());
-	const FVector OldPosition = GetPixelToWorld().TransformPosition(FVector(PixelDelta, 0));
-
-	TerminalGraph->PreviewConfig.Zoom = FMath::Clamp(NewZoom, 1, 1.e8);
-
-	const FVector NewPosition = GetPixelToWorld().TransformPosition(FVector(PixelDelta, 0));
-
-	FVector PositionDelta = NewPosition - OldPosition;
-	switch (TerminalGraph->PreviewConfig.Axis)
-	{
-	case EVoxelAxis::X: PositionDelta.Z *= -1.f; break;
-	case EVoxelAxis::Y: PositionDelta.Z *= -1.f; break;
-	case EVoxelAxis::Z: PositionDelta.Y *= -1.f; break;
-	}
-
-	TerminalGraph->PreviewConfig.Position -= PositionDelta;
+	const double NewZoom = Graph->Preview.Zoom * (1. - FMath::Clamp(Delta, -0.5, 0.5));
+	Graph->Preview.Zoom = FMath::Clamp(NewZoom, 1, 1.e8);
 
 	QueueUpdate();
 
@@ -719,15 +646,14 @@ void SVoxelGraphPreview::Update()
 {
 	VOXEL_FUNCTION_COUNTER();
 
-	UVoxelTerminalGraph* TerminalGraph = WeakTerminalGraph.Get();
-	if (!TerminalGraph)
+	if (!ensure(WeakGraph.IsValid()))
 	{
 		Message = {};
 		return;
 	}
-	const FVoxelSerializedGraph& SerializedGraph = TerminalGraph->GetRuntime().GetSerializedGraph();
+	const FVoxelRuntimeGraphData& RuntimeData = WeakGraph->GetRuntimeGraph().GetData();
 
-	if (!SerializedGraph.PreviewHandler.IsValid())
+	if (!RuntimeData.PreviewHandler.IsValid())
 	{
 		PreviewHandler.Reset();
 
@@ -737,26 +663,17 @@ void SVoxelGraphPreview::Update()
 
 	Message = {};
 
-	const TSharedRef<FVoxelPreviewHandler> NewPreviewHandler = SerializedGraph.PreviewHandler.Get<FVoxelPreviewHandler>().MakeSharedCopy();
+	const TSharedRef<FVoxelPreviewHandler> NewPreviewHandler = RuntimeData.PreviewHandler.Get<FVoxelPreviewHandler>().MakeSharedCopy();
 
 	if (PreviewHandler &&
-		PreviewHandler->PreviewSize != TerminalGraph->PreviewConfig.Resolution)
+		PreviewHandler->PreviewSize != WeakGraph->Preview.Resolution)
 	{
 		PreviewHandler.Reset();
 	}
 
-	const FVoxelGraphNodeRef NodeRef
-	{
-		FVoxelTerminalGraphRef(TerminalGraph),
-		FVoxelGraphConstants::NodeId_Preview,
-		"Preview Node",
-		{}
-	};
-
 	FVoxelGraphPinRef PinRef;
-	PinRef.NodeRef = NodeRef;
-	PinRef.PinName = VOXEL_PIN_NAME(FVoxelNode_Preview, ValuePin);
-
+	PinRef.Node = FVoxelGraphNodeRef(WeakGraph, FVoxelNodeNames::PreviewNodeId);
+	PinRef.PinName = VOXEL_PIN_NAME(FVoxelPreviewNode, ValuePin);
 	if (PreviewHandler &&
 		PreviewHandler->PinRef != PinRef)
 	{
@@ -779,20 +696,15 @@ void SVoxelGraphPreview::Update()
 	FVoxelRuntimeInfoBase RuntimeInfoBase = FVoxelRuntimeInfoBase::MakePreview();
 	RuntimeInfoBase.LocalToWorld = TransformRef;
 	RuntimeInfoBase.bParallelTasks = true;
-	// Destroy handled by FVoxelPreviewHandler::~FVoxelPreviewHandler
-	const TSharedRef<FVoxelRuntimeInfo> RuntimeInfo = RuntimeInfoBase.MakeRuntimeInfo_RequiresDestroy();
 
-	const TSharedRef<FVoxelTerminalGraphInstance> TerminalGraphInstance = FVoxelTerminalGraphInstance::Make(
-		TerminalGraph->GetGraph(),
-		FVoxelTerminalGraphRef(TerminalGraph),
-		RuntimeInfo,
-		FVoxelParameterOverridesRuntime::Create(&TerminalGraph->GetGraph()));
+	const TSharedRef<FVoxelQueryContext> QueryContext = FVoxelQueryContext::Make(
+		RuntimeInfoBase.MakeRuntimeInfo(),
+		FVoxelParameterValues::Create(WeakGraph.Get()));
 
-	PreviewHandler->PreviewSize = TerminalGraph->PreviewConfig.Resolution;
+	PreviewHandler->PreviewSize = WeakGraph->Preview.Resolution;
 	PreviewHandler->PinRef = PinRef;
-	PreviewHandler->RuntimeInfo = RuntimeInfo;
-	PreviewHandler->TerminalGraphInstance = TerminalGraphInstance;
-	PreviewHandler->Create(SerializedGraph.PreviewedPinType);
+	PreviewHandler->QueryContext = QueryContext;
+	PreviewHandler->Create(RuntimeData.PreviewedPinType);
 
 	PreviewStats->Rows.Reset();
 	PreviewHandler->BuildStats([&](
@@ -845,10 +757,10 @@ void SVoxelGraphPreview::UpdateStats()
 
 FMatrix SVoxelGraphPreview::GetPixelToWorld() const
 {
-	const UVoxelTerminalGraph* TerminalGraph = WeakTerminalGraph.Get();
-	if (!TerminalGraph)
+	const UVoxelGraph* Graph = WeakGraph.Get();
+	if (!ensure(Graph))
 	{
-		return FMatrix::Identity;
+		return FMatrix();
 	}
 
 	const FMatrix Matrix = INLINE_LAMBDA -> FMatrix
@@ -857,7 +769,7 @@ FMatrix SVoxelGraphPreview::GetPixelToWorld() const
 		const FVector Y = FVector::UnitY();
 		const FVector Z = FVector::UnitZ();
 
-		switch (TerminalGraph->PreviewConfig.Axis)
+		switch (Graph->Preview.Axis)
 		{
 		default: ensure(false);
 		case EVoxelAxis::X: return FMatrix(Y, Z, X, FVector::ZeroVector);
@@ -867,10 +779,10 @@ FMatrix SVoxelGraphPreview::GetPixelToWorld() const
 	};
 
 	return
-		FScaleMatrix(1. / TerminalGraph->PreviewConfig.Resolution) *
+		FScaleMatrix(1. / Graph->Preview.Resolution) *
 		FScaleMatrix(2.) *
 		FTranslationMatrix(-FVector::OneVector) *
-		FScaleMatrix(FVector(TerminalGraph->PreviewConfig.Zoom, TerminalGraph->PreviewConfig.Zoom, 1.f)) *
+		FScaleMatrix(FVector(Graph->Preview.Zoom, Graph->Preview.Zoom, 1.f)) *
 		FRotationMatrix(Matrix.Rotator()) *
-		FTranslationMatrix(TerminalGraph->PreviewConfig.Position);
+		FTranslationMatrix(Graph->Preview.Position);
 }

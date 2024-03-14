@@ -1,8 +1,8 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "Material/VoxelMaterialDefinitionInterface.h"
 #include "Material/VoxelMaterialDefinition.h"
-#include "MaterialDomain.h"
+#include "Material/VoxelMaterialDefinitionInstance.h"
 #include "Engine/Texture2D.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -15,7 +15,7 @@ VOXEL_CONSOLE_COMMAND(
 	GVoxelMaterialDefinitionManager->LogIds();
 }
 
-FVoxelMaterialDefinitionManager* GVoxelMaterialDefinitionManager = new FVoxelMaterialDefinitionManager();
+FVoxelMaterialDefinitionManager* GVoxelMaterialDefinitionManager = MakeVoxelSingleton(FVoxelMaterialDefinitionManager);
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -29,14 +29,14 @@ UMaterialInterface* UVoxelMaterialDefinitionInterface::GetPreviewMaterial()
 		return UMaterial::GetDefaultMaterial(MD_Surface);
 	}
 	if (!PrivatePreviewMaterial ||
-		PrivatePreviewMaterialParent != Definition->Material)
+		PrivatePreviewMaterialParent != Definition->PreviewMaterial)
 	{
-		PrivatePreviewMaterial = FVoxelMaterialRef::MakeInstance(Definition->Material);
-		PrivatePreviewMaterialParent = Definition->Material;
+		PrivatePreviewMaterial = FVoxelMaterialRef::MakeInstance(Definition->PreviewMaterial);
+		PrivatePreviewMaterialParent = Definition->PreviewMaterial;
 
 		PrivatePreviewMaterial->SetScalarParameter_GameThread(
 			"PreviewMaterialId",
-			GVoxelMaterialDefinitionManager->Register_GameThread(*this));
+			GVoxelMaterialDefinitionManager->Register_GameThread(*this).Index);
 
 		PrivatePreviewMaterial->SetDynamicParameter_GameThread(
 			"GVoxelMaterialDefinitionManager",
@@ -66,113 +66,78 @@ void FVoxelMaterialDefinitionDynamicMaterialParameter::AddOnChanged(const FSimpl
 
 FVoxelMaterialDefinitionManager::FVoxelMaterialDefinitionManager()
 {
-	MaterialDefinitions.Add(nullptr);
-	WeakMaterialDefinitions_RequiresLock.Add(nullptr);
-	MaterialRefs_RequiresLock.Add(nullptr);
+	Materials.Add(nullptr);
+	WeakMaterials_RequiresLock.Add(nullptr);
 }
 
-int32 FVoxelMaterialDefinitionManager::Register_GameThread(UVoxelMaterialDefinitionInterface& MaterialDefinition)
+FVoxelMaterialDefinitionRef FVoxelMaterialDefinitionManager::Register_GameThread(UVoxelMaterialDefinitionInterface& Material)
 {
 	check(IsInGameThread());
 
-	if (const int32* IndexPtr = MaterialDefinitionToIndex.Find(&MaterialDefinition))
+	if (const FVoxelMaterialDefinitionRef* MaterialRef = MaterialRefs.Find(&Material))
 	{
-		return *IndexPtr;
+		return *MaterialRef;
 	}
 
 	VOXEL_FUNCTION_COUNTER();
 
-	const int32 NewIndex = MaterialDefinitions.Num();
+	const FVoxelMaterialDefinitionRef MaterialRef{ uint16(Materials.Num()) };
 
-	if (NewIndex == GVoxelMaterialDefinitionMax - 1)
+	if (Materials.Num() == GVoxelMaterialDefinitionMax - 1)
 	{
 		VOXEL_MESSAGE(Error, "Max number of voxel materials reached");
 	}
 	else
 	{
-		ensure(MaterialDefinitions.Num() < GVoxelMaterialDefinitionMax);
-		MaterialDefinitions.Add(&MaterialDefinition);
+		ensure(Materials.Num() < GVoxelMaterialDefinitionMax);
+		Materials.Add(&Material);
 
 		VOXEL_SCOPE_LOCK(CriticalSection);
-		WeakMaterialDefinitions_RequiresLock.Add(&MaterialDefinition);
-
-		if (const UVoxelMaterialDefinition* Definition = MaterialDefinition.GetDefinition())
-		{
-			MaterialRefs_RequiresLock.Add(FVoxelMaterialRef::Make(Definition->Material));
-		}
-		else
-		{
-			MaterialRefs_RequiresLock.Add(nullptr);
-		}
+		WeakMaterials_RequiresLock.Add(&Material);
 	}
 
-	MaterialDefinitionToIndex.Add_CheckNew(&MaterialDefinition, NewIndex);
+	MaterialRefs.Add(&Material, MaterialRef);
 	bMaterialRefreshQueued = true;
 
-	if (UVoxelMaterialDefinition* Definition = MaterialDefinition.GetDefinition())
+	if (UVoxelMaterialDefinition* MaterialDefinition = Cast<UVoxelMaterialDefinition>(&Material))
 	{
-		MaterialDefinitionsToRebuild.Add(Definition);
+		MaterialDefinitionsToRebuild.Add(MaterialDefinition);
+	}
+	if (const UVoxelMaterialDefinitionInstance* MaterialInstance = Cast<UVoxelMaterialDefinitionInstance>(&Material))
+	{
+		if (UVoxelMaterialDefinition* MaterialDefinition = MaterialInstance->GetDefinition())
+		{
+			MaterialDefinitionsToRebuild.Add(MaterialDefinition);
+		}
 	}
 
-	return NewIndex;
+	return MaterialRef;
 }
 
-UVoxelMaterialDefinitionInterface* FVoxelMaterialDefinitionManager::GetMaterialDefinition_GameThread(const int32 Index)
+UVoxelMaterialDefinitionInterface* FVoxelMaterialDefinitionManager::GetMaterial_GameThread(const FVoxelMaterialDefinitionRef& Ref)
 {
 	check(IsInGameThread());
 
-	if (!MaterialDefinitions.IsValidIndex(Index))
+	if (!Materials.IsValidIndex(Ref.Index))
 	{
 		return nullptr;
 	}
 
-	return MaterialDefinitions[Index];
+	return Materials[Ref.Index];
 }
 
-TWeakObjectPtr<UVoxelMaterialDefinitionInterface> FVoxelMaterialDefinitionManager::GetMaterialDefinition_AnyThread(const int32 Index)
+TWeakObjectPtr<UVoxelMaterialDefinitionInterface> FVoxelMaterialDefinitionManager::GetMaterial_AnyThread(const FVoxelMaterialDefinitionRef& Ref)
 {
 	VOXEL_SCOPE_LOCK(CriticalSection);
 
-	checkVoxelSlow(MaterialDefinitions.Num() == WeakMaterialDefinitions_RequiresLock.Num());
-	checkVoxelSlow(MaterialDefinitions.Num() == MaterialRefs_RequiresLock.Num());
-
-	if (!WeakMaterialDefinitions_RequiresLock.IsValidIndex(Index))
+	checkVoxelSlow(Materials.Num() == WeakMaterials_RequiresLock.Num());
+	if (!WeakMaterials_RequiresLock.IsValidIndex(Ref.Index))
 	{
 		return nullptr;
 	}
 
-	const TWeakObjectPtr<UVoxelMaterialDefinitionInterface> Result = WeakMaterialDefinitions_RequiresLock[Index];
-	checkVoxelSlow(!Result.IsValid() || Result == MaterialDefinitions[Index]);
-	return Result;
-}
-
-TSharedPtr<FVoxelMaterialRef> FVoxelMaterialDefinitionManager::GetMaterial_AnyThread(const int32 Index)
-{
-	VOXEL_SCOPE_LOCK(CriticalSection);
-
-	checkVoxelSlow(MaterialDefinitions.Num() == WeakMaterialDefinitions_RequiresLock.Num());
-	checkVoxelSlow(MaterialDefinitions.Num() == MaterialRefs_RequiresLock.Num());
-
-	if (!MaterialRefs_RequiresLock.IsValidIndex(Index))
-	{
-		return nullptr;
-	}
-
-	const TSharedPtr<FVoxelMaterialRef> Result = MaterialRefs_RequiresLock[Index];
-
-#if VOXEL_DEBUG
-	if (const UVoxelMaterialDefinitionInterface* MaterialDefinition = MaterialDefinitions[Index])
-	{
-		if (const UVoxelMaterialDefinition* Definition = MaterialDefinition->GetDefinition())
-		{
-			ensureVoxelSlow(
-				!Result.IsValid() ||
-				!Definition->Material ||
-				Result->GetMaterial() == Definition->Material);
-		}
-	}
-#endif
-
+	const TWeakObjectPtr<UVoxelMaterialDefinitionInterface> Result = WeakMaterials_RequiresLock[Ref.Index];
+	checkVoxelSlow(!Result.IsValid() || Result == Materials[Ref.Index]);
 	return Result;
 }
 
@@ -193,34 +158,15 @@ void FVoxelMaterialDefinitionManager::Tick()
 		DynamicParameter->OnChangedMulticast.Broadcast();
 	}
 
-	const TSet<TObjectPtr<UVoxelMaterialDefinition>> MaterialDefinitionsToRebuildCopy = MoveTemp(MaterialDefinitionsToRebuild);
+	const TSet<UVoxelMaterialDefinition*> MaterialDefinitionsToRebuildCopy = MoveTemp(MaterialDefinitionsToRebuild);
 	check(MaterialDefinitionsToRebuild.Num() == 0);
 
 	for (UVoxelMaterialDefinition* Definition : MaterialDefinitionsToRebuildCopy)
 	{
-		if (!ensure(Definition))
+		if (ensure(Definition))
 		{
-			continue;
+			Definition->RebuildTextures();
 		}
-
-		Definition->RebuildTextures();
-
-		const int32* IndexPtr = MaterialDefinitionToIndex.Find(Definition);
-		if (!ensure(IndexPtr))
-		{
-			continue;
-		}
-
-		VOXEL_SCOPE_LOCK(CriticalSection);
-
-		if (!ensure(MaterialRefs_RequiresLock.IsValidIndex(*IndexPtr)))
-		{
-			continue;
-		}
-
-		// TODO Update instances as well
-		// TODO Dependency for auto refresh
-		MaterialRefs_RequiresLock[*IndexPtr] = FVoxelMaterialRef::Make(Definition->Material);
 	}
 }
 
@@ -234,17 +180,16 @@ void FVoxelMaterialDefinitionManager::AddReferencedObjects(FReferenceCollector& 
 
 	Collector.AddReferencedObjects(MaterialDefinitionsToRebuild);
 
-	for (TObjectPtr<UVoxelMaterialDefinitionInterface>& Material : MaterialDefinitions)
+	for (UVoxelMaterialDefinitionInterface*& Material : Materials)
 	{
 		Collector.AddReferencedObject(Material);
 	}
 
-	for (auto It = MaterialDefinitionToIndex.CreateIterator(); It; ++It)
+	for (auto It = MaterialRefs.CreateIterator(); It; ++It)
 	{
-		TObjectPtr<UVoxelMaterialDefinitionInterface> Object = It.Key();
-		Collector.AddReferencedObject(Object);
+		Collector.AddReferencedObject(It.Key());
 
-		if (!ensureVoxelSlow(Object))
+		if (!It.Key())
 		{
 			It.RemoveCurrent();
 		}
@@ -275,7 +220,7 @@ void FVoxelMaterialDefinitionManager::CacheParameters()
 
 	CachedParameters = MakeUnique<FVoxelMaterialParameterData::FCachedParameters>();
 
-	for (UVoxelMaterialDefinitionInterface* Material : MaterialDefinitions)
+	for (UVoxelMaterialDefinitionInterface* Material : Materials)
 	{
 		UVoxelMaterialDefinition* MaterialDefinition = Cast<UVoxelMaterialDefinition>(Material);
 		if (!MaterialDefinition)
@@ -328,9 +273,9 @@ void FVoxelMaterialDefinitionManager::LogIds()
 	VOXEL_FUNCTION_COUNTER();
 	check(IsInGameThread());
 
-	for (int32 Index = 0; Index < MaterialDefinitions.Num(); Index++)
+	for (int32 Index = 0; Index < Materials.Num(); Index++)
 	{
-		if (const UVoxelMaterialDefinitionInterface* Material = MaterialDefinitions[Index])
+		if (const UVoxelMaterialDefinitionInterface* Material = Materials[Index])
 		{
 			LOG_VOXEL(Log, "%d: %s", Index, *Material->GetPathName());
 		}

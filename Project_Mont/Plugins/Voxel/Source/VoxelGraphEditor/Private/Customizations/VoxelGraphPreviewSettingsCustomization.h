@@ -1,8 +1,10 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelEditorMinimal.h"
+
+struct FVoxelGraphToolkit;
 
 class FVoxelGraphPreviewSettingsCustomization : public IDetailCustomization
 {
@@ -14,5 +16,5 @@ public:
 	//~ End IDetailCustomization Interface
 
 private:
-	TSharedPtr<FVoxelInstancedStructDetailsWrapper> Wrapper;
+	TSharedPtr<FVoxelStructCustomizationWrapper> Wrapper;
 };

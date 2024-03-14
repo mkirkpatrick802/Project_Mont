@@ -1,28 +1,22 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "Point/VoxelChunkedPointSet.h"
-#include "VoxelTaskHelpers.h"
-#include "VoxelDependencyTracker.h"
-#include "VoxelTerminalGraphInstance.h"
-#include "Nodes/VoxelNode_Debug.h"
+#include "VoxelDebugNode.h"
+#include "VoxelTaskGroup.h"
+#include "VoxelDependency.h"
 #include "Buffer/VoxelStaticMeshBuffer.h"
 
 FVoxelChunkedPointSet::FVoxelChunkedPointSet(
 	const int32 ChunkSize,
 	const FVoxelPointChunkProviderRef& ChunkProviderRef,
-	const TSharedRef<FVoxelTerminalGraphInstance>& TerminalGraphInstance,
+	const TSharedRef<FVoxelQueryContext>& Context,
 	const TSharedRef<const TVoxelComputeValue<FVoxelPointSet>>& ComputePoints)
 	: ChunkSize(FMath::Max(10, ChunkSize))
 	, ChunkProviderRef(ChunkProviderRef)
-	, TerminalGraphInstance(TerminalGraphInstance)
+	, Context(Context)
 	, ComputePoints(ComputePoints)
 {
 	ensure(ChunkSize > 0);
-}
-
-const FVoxelRuntimeInfo& FVoxelChunkedPointSet::GetRuntimeInfoRef() const
-{
-	return *TerminalGraphInstance->RuntimeInfo;
 }
 
 TVoxelFutureValue<FVoxelPointSet> FVoxelChunkedPointSet::GetPoints(
@@ -45,7 +39,7 @@ TVoxelFutureValue<FVoxelPointSet> FVoxelChunkedPointSet::GetPoints(
 	Parameters->Add<FVoxelPointChunkRefQueryParameter>().ChunkRef = ChunkRef;
 
 	const FVoxelQuery Query = FVoxelQuery::Make(
-		TerminalGraphInstance.ToSharedRef(),
+		Context.ToSharedRef(),
 		Parameters,
 		DependencyTracker.AsShared());
 
@@ -89,7 +83,7 @@ TVoxelFutureValue<FVoxelPointSet> FVoxelChunkedPointSet::GetPoints(
 			const TVoxelFutureValue<FVoxelPointSet> PointsOverride = (*Computes[0])(Query);
 			return
 				MakeVoxelTask()
-				.RunOnGameThread()
+				.Thread(EVoxelTaskThread::GameThread)
 				.Dependency(PointsOverride)
 				.Execute<FVoxelPointSet>([=]
 				{
@@ -127,7 +121,7 @@ TVoxelDynamicValue<FVoxelPointSet> FVoxelChunkedPointSet::GetPointsValue(
 			FVoxelBox(ChunkMin, ChunkMin + ChunkSize),
 			PriorityOffset,
 			GetWorld(), GetLocalToWorld()))
-		.Compute(TerminalGraphInstance.ToSharedRef());
+		.Compute(Context.ToSharedRef());
 }
 
 void FVoxelChunkedPointSet::GetPointsInBounds(
@@ -137,9 +131,9 @@ void FVoxelChunkedPointSet::GetPointsInBounds(
 {
 	VOXEL_FUNCTION_COUNTER();
 
-	FVoxelTaskHelpers::StartAsyncTask<FVoxelPointSet>(
+	FVoxelTaskGroup::StartAsyncTask<FVoxelPointSet>(
 		STATIC_FNAME("FVoxelChunkedPointSet::GetPointsInBounds"),
-		TerminalGraphInstance.ToSharedRef(),
+		Context.ToSharedRef(),
 		[This = AsShared(), ChunkSize = ChunkSize, Bounds = Bounds, ShouldComputeChunk = MoveTemp(ShouldComputeChunk)]() -> TVoxelFutureValue<FVoxelPointSet>
 		{
 			const FIntVector Min = FVoxelUtilities::FloorToInt(Bounds.Min / ChunkSize);
@@ -178,7 +172,7 @@ void FVoxelChunkedPointSet::GetPointsInBounds(
 			}
 
 			return
-				MakeVoxelTask("Merge")
+				MakeVoxelTask(STATIC_FNAME("GetPointsInBounds_Merge"))
 				.Dependencies(FuturePointSets)
 				.Execute<FVoxelPointSet>([=]
 				{

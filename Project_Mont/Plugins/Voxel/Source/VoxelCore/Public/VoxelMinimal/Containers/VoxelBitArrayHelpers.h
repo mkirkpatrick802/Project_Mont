@@ -1,8 +1,9 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelCoreMinimal.h"
+#include "VoxelMinimal/Utilities/VoxelBaseUtilities.h"
 
 struct VOXELCORE_API FVoxelBitArrayHelpers
 {
@@ -14,7 +15,7 @@ struct VOXELCORE_API FVoxelBitArrayHelpers
 #define ShiftOperand(X) (X)
 #endif
 
-	FORCEINLINE static bool IsValidShift(const int32 Value)
+	FORCEINLINE static bool IsValidShift(int32 Value)
 	{
 		// The shift operand is masked with 5
 		return Value >= 0 && Value < 32;
@@ -78,7 +79,7 @@ struct VOXELCORE_API FVoxelBitArrayHelpers
 
 public:
 	template<typename T>
-	FORCEINLINE static bool TestRange(const T& Array, const int32 Index, const int32 Num)
+	FORCEINLINE static bool TestRange(const T& Array, int32 Index, int32 Num)
 	{
 		checkVoxelSlow(0 <= Index && Index + Num <= Array.Num() && Num > 0);
 		const bool bResult = TestRangeImpl(Array.GetWordData(), Index, Num);
@@ -110,7 +111,7 @@ public:
 public:
 	// Test a range, and clears it if all true
 	template<typename T>
-	FORCEINLINE static bool TestAndClearRange(T& Array, const int32 Index, const int32 Num)
+	FORCEINLINE static bool TestAndClearRange(T& Array, int32 Index, int32 Num)
 	{
 		checkVoxelSlow(0 <= Index && Index + Num <= Array.Num() && Num > 0);
 		return TestAndClearRangeImpl(Array.GetWordData(), Index, Num);
@@ -230,44 +231,44 @@ public:
 
 public:
 	FORCEINLINE static uint32 GetPackedSafe(
-		const int32 TypeSizeInBits,
+		int32 TypeSizeInBits,
 		const uint32* RESTRICT ArrayData,
 		const uint32* RESTRICT MaxArrayData,
-		const int64 Index)
+		int64 Index)
 	{
 		return GetOrSetPacked<false>(TypeSizeInBits, nullptr, ArrayData, MaxArrayData, Index, 0);
 	}
 	FORCEINLINE static void SetPackedSafe(
-		const int32 TypeSizeInBits,
+		int32 TypeSizeInBits,
 		uint32* RESTRICT ArrayData,
 		const uint32* RESTRICT MaxArrayData,
-		const int64 Index,
-		const uint32 Value)
+		int64 Index,
+		uint32 Value)
 	{
 		GetOrSetPacked<true>(TypeSizeInBits, ArrayData, nullptr, MaxArrayData, Index, Value);
 	}
 
 	FORCEINLINE static uint32 GetPacked(
-		const int32 TypeSizeInBits,
+		int32 TypeSizeInBits,
 		const uint32* RESTRICT ArrayData,
-		const int64 Index)
+		int64 Index)
 	{
 		return GetPackedSafe(TypeSizeInBits, ArrayData, reinterpret_cast<const uint32*>(-1), Index);
 	}
 	FORCEINLINE static void SetPacked(
-		const int32 TypeSizeInBits,
+		int32 TypeSizeInBits,
 		uint32* RESTRICT ArrayData,
-		const int64 Index,
-		const uint32 Value)
+		int64 Index,
+		uint32 Value)
 	{
 		SetPackedSafe(TypeSizeInBits, ArrayData, reinterpret_cast<const uint32*>(-1), Index, Value);
 	}
 
 	template<typename DataType>
-	FORCEINLINE static std::enable_if_t<!TIsPODType<DataType>::Value, uint32> GetPacked(
-		const int32 TypeSizeInBits,
+	FORCEINLINE static typename TEnableIf<!TIsPODType<DataType>::Value, uint32>::Type GetPacked(
+		int32 TypeSizeInBits,
 		const DataType& Data,
-		const int64 Index)
+		int64 Index)
 	{
 		// eg, uint8
 		checkStatic(TIsPODType<VOXEL_GET_TYPE(*::GetData(Data))>::Value);
@@ -278,11 +279,11 @@ public:
 		return GetPackedSafe(TypeSizeInBits, reinterpret_cast<const uint32*>(DataPtr), reinterpret_cast<const uint32*>(MaxDataPtr), Index);
 	}
 	template<typename DataType>
-	FORCEINLINE static std::enable_if_t<!TIsPODType<DataType>::Value> SetPacked(
-		const int32 TypeSizeInBits,
+	FORCEINLINE static typename TEnableIf<!TIsPODType<DataType>::Value>::Type SetPacked(
+		int32 TypeSizeInBits,
 		DataType& Data,
-		const int64 Index,
-		const uint32 Value)
+		int64 Index,
+		uint32 Value)
 	{
 		// eg, uint8
 		checkStatic(TIsPODType<VOXEL_GET_TYPE(*::GetData(Data))>::Value);
@@ -400,9 +401,9 @@ public:
 	static void CopyImpl(
 		uint32* RESTRICT DstArrayData,
 		const uint32* RESTRICT SrcArrayData,
-		int64 DstStartBit,
-		int64 SrcStartBit,
-		int64 Num);
+		const int64 DstStartBit,
+		const int64 SrcStartBit,
+		const int64 Num);
 
 public:
 	FORCEINLINE static bool Equal(
@@ -439,7 +440,7 @@ public:
 
 public:
 	template<typename T>
-	FORCEINLINE static void SetRange(T& Array, const int32 Index, const int32 Num, const bool bValue)
+	FORCEINLINE static void SetRange(T& Array, int32 Index, int32 Num, bool bValue)
 	{
 		checkVoxelSlow(0 <= Index && Index + Num <= Array.Num());
 		SetRange(Array.GetWordData(), Index, Num, bValue);
@@ -448,102 +449,82 @@ public:
 	static void SetRange(uint32* RESTRICT Data, int32 Index, int32 Num, bool bValue);
 
 public:
-	template<typename WordType, typename LambdaType>
-	FORCEINLINE static bool ForAllSetBitsInWord(WordType Word, const int32 WordIndex, const int32 Num, LambdaType Lambda)
+	template<typename LambdaType>
+	FORCEINLINE static void ForAllSetBits(const uint32* RESTRICT Data, const int32 NumWords, const int32 Num, LambdaType Lambda)
 	{
-		constexpr int32 NumBitsPerWordInLoop = sizeof(WordType) * 8;
-
-		if (!Word)
+		const uint32* RESTRICT DataIt = Data;
+		const uint32* RESTRICT DataEnd = Data + NumWords;
+		while (DataIt != DataEnd)
 		{
-			return false;
-		}
-
-		int32 Index = WordIndex * NumBitsPerWordInLoop;
-
-		do
-		{
-			const uint32 IndexInShiftedWord = FVoxelUtilities::FirstBitLow(Word);
-			Index += IndexInShiftedWord;
-			Word >>= IndexInShiftedWord;
-
-			// Check multiple bits at once in case they're all 1, critical for high throughput in dense words
-			constexpr int32 NumBitsToCheck = 4;
-			constexpr int32 BitsCheckMask = (1 << NumBitsToCheck) - 1;
-			if ((Word & BitsCheckMask) == BitsCheckMask)
+			const uint32 Word = *DataIt;
+			if (!Word)
 			{
-				for (int32 BitIndex = 0; BitIndex < NumBitsToCheck; BitIndex++)
-				{
-					// Last word should be masked properly
-					checkVoxelSlow(Index < Num);
-
-					if constexpr (std::is_same_v<decltype(Lambda(DeclVal<int32>())), void>)
-					{
-						Lambda(Index);
-					}
-					else
-					{
-						if (!Lambda(Index))
-						{
-							return true;
-						}
-					}
-
-					Index++;
-				}
-				Word >>= NumBitsToCheck;
+				DataIt++;
 				continue;
 			}
 
-			// Last word should be masked properly
-			checkVoxelSlow(Index < Num);
-
-			if constexpr (std::is_same_v<decltype(Lambda(DeclVal<int32>())), void>)
+			for (int32 IndexInWord = 0; IndexInWord < NumBitsPerWord; IndexInWord++)
 			{
-				Lambda(Index);
-			}
-			else
-			{
-				if (!Lambda(Index))
+				if (!(Word & (1 << IndexInWord)))
 				{
-					return true;
+					continue;
 				}
-			}
 
-			Word >>= 1;
-			Index += 1;
-		}
-		while (Word);
+				const int32 WordIndex = DataIt - Data;
+				const int32 Index = NumBitsPerWord * WordIndex + IndexInWord;
 
-		return false;
-	}
+				// Last word should be masked properly
+				checkVoxelSlow(Index < Num);
 
-	template<typename LambdaType>
-	FORCEINLINE static void ForAllSetBits(
-		const uint32* RESTRICT Data,
-		const int32 NumWords,
-		const int32 Num,
-		LambdaType Lambda)
-	{
-		const uint64* RESTRICT DataIt = reinterpret_cast<const uint64*>(Data);
-		const uint64* RESTRICT DataEnd = DataIt + FVoxelUtilities::DivideFloor_Positive<int32>(NumWords, 2);
-
-		while (DataIt != DataEnd)
-		{
-			uint64 Word = *DataIt;
-			if (ForAllSetBitsInWord(Word, DataIt - reinterpret_cast<const uint64*>(Data), Num, Lambda))
-			{
-				return;
+				if constexpr (std::is_same_v<decltype(Lambda(DeclVal<int32>())), void>)
+				{
+					Lambda(Index);
+				}
+				else
+				{
+					if (!Lambda(Index))
+					{
+						return;
+					}
+				}
 			}
 			DataIt++;
 		}
+	}
+	static int64 CountSetBits(const uint32* RESTRICT Data, int32 NumWords);
+	static int64 CountSetBits_UpperBound(const uint32* RESTRICT Data, int32 NumBits);
+};
 
-		if (NumWords % 2 == 1)
+template<typename T>
+struct TVoxelPackedBitType
+{
+	uint32 Data;
+
+	TVoxelPackedBitType()
+	{
+		checkVoxelSlow(sizeof(T) <= sizeof(uint32));
+		Data = 0;
+	}
+
+	TVoxelPackedBitType(uint32 InData)
+	{
+		checkVoxelSlow(sizeof(T) <= sizeof(uint32));
+		Data = InData;
+	}
+	TVoxelPackedBitType(T InValue)
+	{
+		// Zero initialize the entire data to be safe
+		Data = 0;
+
+		if (ensureVoxelSlow(sizeof(T) <= sizeof(uint32)))
 		{
-			uint32 Word = *(Data + NumWords - 1);
-			ForAllSetBitsInWord(Word, NumWords - 1, Num, Lambda);
+			*reinterpret_cast<T*>(&Data) = InValue;
 		}
 	}
 
-	static int64 CountSetBits(const uint32* RESTRICT Data, int32 NumWords);
-	static int64 CountSetBits_UpperBound(const uint32* RESTRICT Data, int32 NumBits);
+	operator T() const
+	{
+		checkVoxelSlow(sizeof(T) <= sizeof(uint32));
+		return *reinterpret_cast<const T*>(&Data);
+	}
 };

@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -6,39 +6,20 @@
 #include "VoxelGraphToolkit.h"
 
 class SSearchBox;
-class FVoxelGraphSearchItem;
+class UVoxelGraph;
+struct FVoxelGraphSearchResult;
 struct FVoxelGraphToolkit;
-
-enum class EVoxelGraphSearchResultTag
-{
-	Special,
-	Graph,
-	TerminalGraph,
-	Node,
-	NodeTitle,
-	Pin,
-	Parameter,
-	Input,
-	Output,
-	LocalVariable,
-	Type,
-	Description,
-	DefaultValue,
-};
 
 struct FVoxelGraphSearchSettings
 {
-	bool bSearchNodes = true;
-	bool bSearchPins = true;
-	bool bSearchParameters = true;
-	bool bSearchTypes = true;
-	bool bSearchDescriptions = true;
-	bool bSearchDefaultValues = true;
-
-	bool bRemoveSpaces = false;
-
-	void LoadFromIni();
-	bool ShowTag(EVoxelGraphSearchResultTag Tag) const;
+	bool bNodesLookup = true;
+	bool bPinsLookup = true;
+	bool bParametersLookup = false;
+	bool bParameterGettersAndSettersLookup = true;
+	bool bTypesLookup = false;
+	bool bDefaultValueLookup = false;
+	bool bDescriptionLookup = true;
+	bool bRemoveSpacesInLookup = false;
 };
 
 class SVoxelGraphSearch : public SCompoundWidget
@@ -46,8 +27,7 @@ class SVoxelGraphSearch : public SCompoundWidget
 public:
 	VOXEL_SLATE_ARGS()
 	{
-		FArguments()
-			: _IsGlobalSearch(false)
+		FArguments() : _IsGlobalSearch(false)
 		{
 		}
 
@@ -59,15 +39,21 @@ public:
 	void FocusForUse(const FString& NewSearchTerms);
 
 private:
+	void OnSearchTextCommitted(const FText& Text, ETextCommit::Type CommitType);
+
 	TSharedRef<SWidget> CreateSearchSettingsWidget();
-	TSharedRef<ITableRow> OnGenerateRow(TSharedPtr<FVoxelGraphSearchItem> Item, const TSharedRef<STableViewBase>& OwnerTable) const;
+	FReply OnOpenGlobalFindResults() const;
+
+	TSharedRef<ITableRow> OnGenerateRow(TSharedPtr<FVoxelGraphSearchResult> Item, const TSharedRef<STableViewBase>& OwnerTable) const;
+	void OnGetChildren(TSharedPtr<FVoxelGraphSearchResult> Item, TArray<TSharedPtr<FVoxelGraphSearchResult>>& OutChildren) const;
+	void OnTreeSelectionDoubleClicked(TSharedPtr<FVoxelGraphSearchResult> Item) const;
+
 	void MakeSearchQuery(const FString& SearchQuery);
+	TArray<TSharedPtr<FVoxelGraphSearchResult>> MatchTokens(const TArray<FString>& Tokens);
+	void MatchGraphAsset(UVoxelGraph* Graph, const TArray<FString>& Tokens, const TSharedPtr<FVoxelGraphSearchResult>& AssetResult, TArray<TSharedPtr<FVoxelGraphSearchResult>>& AllItems);
 
 private:
-	using STreeViewType = STreeView<TSharedPtr<FVoxelGraphSearchItem>>;
-
-	TWeakPtr<FVoxelGraphToolkit> WeakToolkit;
-	bool bIsGlobalSearch = false;
+	using STreeViewType = STreeView<TSharedPtr<FVoxelGraphSearchResult>>;
 
 	TSharedPtr<SSearchBox> SearchTextField;
 	TSharedPtr<STreeViewType> TreeView;
@@ -75,7 +61,10 @@ private:
 	FString	SearchValue;
 	FText HighlightText;
 
-	TArray<TSharedPtr<FVoxelGraphSearchItem>> RootItems;
+	TArray<TSharedPtr<FVoxelGraphSearchResult>> ItemsFound;
+
+	TWeakPtr<FVoxelGraphToolkit> WeakToolkit;
+	bool bIsGlobalSearch = false;
 
 	FVoxelGraphSearchSettings SearchSettings;
 };

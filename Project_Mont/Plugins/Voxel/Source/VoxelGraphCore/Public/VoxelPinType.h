@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -10,6 +10,7 @@ struct FEdGraphPinType;
 struct FVoxelBuffer;
 struct FVoxelPinType;
 struct FVoxelPinValue;
+struct FVoxelParameterPath;
 struct FVoxelRuntimePinValue;
 
 template<typename, typename = void>
@@ -41,19 +42,19 @@ struct TIsVoxelObjectStruct
 struct FVoxelWildcard;
 struct FVoxelWildcardBuffer;
 
-template<>
+template <>
 struct TVoxelBufferType<FVoxelWildcard>
 {
 	using Type = FVoxelWildcardBuffer;
 };
 
-template<>
+template <>
 struct TVoxelBufferInnerType<FVoxelWildcardBuffer>
 {
 	using Type = FVoxelWildcard;
 };
 
-template<>
+template <>
 struct TIsVoxelBuffer<FVoxelWildcardBuffer>
 {
 	static constexpr bool Value = true;
@@ -68,6 +69,20 @@ USTRUCT()
 struct FVoxelWildcardBuffer_DEPRECATED
 {
 	GENERATED_BODY()
+};
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+USTRUCT()
+struct VOXELGRAPHCORE_API FVoxelBufferInterface : public FVoxelVirtualStruct
+{
+	GENERATED_BODY()
+	GENERATED_VIRTUAL_STRUCT_BODY()
+
+	virtual int32 Num_Slow() const VOXEL_PURE_VIRTUAL({});
+	virtual bool IsValid_Slow() const VOXEL_PURE_VIRTUAL({});
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -92,6 +107,11 @@ struct TIsSafeVoxelPinType<FVoxelPinValue>
 };
 template<>
 struct TIsSafeVoxelPinType<FVoxelInstancedStruct>
+{
+	static constexpr bool Value = false;
+};
+template<>
+struct TIsSafeVoxelPinType<FVoxelBufferInterface>
 {
 	static constexpr bool Value = false;
 };
@@ -120,6 +140,11 @@ template<>
 struct TIsSafeVoxelPinValue<FVoxelRuntimePinValue>
 {
 	static constexpr bool Value = false;
+};
+template<>
+struct TIsSafeVoxelPinValue<FVoxelBufferInterface>
+{
+	static constexpr bool Value = true;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -273,9 +298,7 @@ public:
 		return MakeImpl(EVoxelPinInternalType::Object, Class);
 	}
 	static FVoxelPinType MakeStruct(UScriptStruct* Struct);
-	static FVoxelPinType MakeFromK2(const FEdGraphPinType& PinType);
-
-	static bool TryParse(const FString& TypeString, FVoxelPinType& OutType);
+	static FVoxelPinType MakeFromK2(const FEdGraphPinType & PinType);
 
 private:
 	FORCEINLINE static FVoxelPinType MakeImpl(const EVoxelPinInternalType Type, UField* Field = nullptr)
@@ -331,15 +354,8 @@ public:
 	bool CanBeCastedTo_K2(const FVoxelPinType& Other) const;
 	bool CanBeCastedTo_Schema(const FVoxelPinType& Other) const;
 
-#if WITH_EDITOR
-	bool HasBufferType_EditorOnly() const;
-#endif
-
 	void PostSerialize(const FArchive& Ar);
 	bool Serialize(FStructuredArchive::FSlot Slot);
-
-private:
-	void Fixup();
 
 public:
 	FVoxelPinType GetExposedType() const;
@@ -440,6 +456,20 @@ public:
 		if constexpr (std::is_same_v<T, FVoxelBuffer>)
 		{
 			return IsBuffer();
+		}
+		else if constexpr (std::is_same_v<T, FVoxelBufferInterface>)
+		{
+			if (IsBuffer())
+			{
+				return true;
+			}
+
+			if (!IsStruct())
+			{
+				return false;
+			}
+
+			return GetStruct()->IsChildOf(StaticStructFast<FVoxelBufferInterface>());
 		}
 		else
 		{
@@ -557,8 +587,6 @@ struct TStructOpsTypeTraits<FVoxelPinType> : public TStructOpsTypeTraitsBase2<FV
 ///////////////////////////////////////////////////////////////////////////////
 
 #if WITH_EDITOR
-VOXELGRAPHCORE_API extern bool GIsVoxelTypeRegistryLoading;
-
 enum class EVoxelPinTypeSetType
 {
 	Set,
@@ -644,12 +672,12 @@ public:
 		ensure(SetType == EVoxelPinTypeSetType::Set);
 		Types.Add(Type);
 	}
-	void Add(const TConstVoxelArrayView<FVoxelPinType> InTypes)
+	void Add(const TConstArrayView<FVoxelPinType> InTypes)
 	{
 		ensure(SetType == EVoxelPinTypeSetType::Set);
 		Types.Append(InTypes);
 	}
-	void Add(const TVoxelSet<FVoxelPinType>& InTypes)
+	void Add(const TSet<FVoxelPinType>& InTypes)
 	{
 		ensure(SetType == EVoxelPinTypeSetType::Set);
 		Types.Append(InTypes);

@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "Sculpt/VoxelGetSculptSurfaceNode.h"
 #include "Sculpt/VoxelSculptStorage.h"
@@ -6,27 +6,78 @@
 #include "VoxelDependency.h"
 #include "VoxelPositionQueryParameter.h"
 
-#if 0 // TODO
-FVoxelBounds FVoxelSculptSurface::GetBounds() const
+DEFINE_VOXEL_NODE_COMPUTE(FVoxelNode_GetSculptSurface, Surface)
 {
-	return FVoxelForwardingSurface::GetBounds();
-}
+	FVoxelTransformRef SurfaceToWorld;
+	TSharedPtr<FVoxelSculptStorageData> Data;
+	float VoxelSize;
+	TSharedPtr<const TVoxelComputeValue<FVoxelSurface>> Compute;
 
-TVoxelFutureValue<FVoxelBuffer> FVoxelSculptSurface::Get(FName Name, const FVoxelQuery& Query) const
-{
-	if (Name != FVoxelSurfaceAttributes::Distance)
+	if (const FVoxelSculptStorageQueryParameter* SculptStorageQueryParameter = Query.GetParameters().Find<FVoxelSculptStorageQueryParameter>())
 	{
-		return Super::Get(Name, Query);
+		// Override used by sculpt tools
+		SurfaceToWorld = SculptStorageQueryParameter->SurfaceToWorld;
+		Data = SculptStorageQueryParameter->Data.ToSharedRef();
+		VoxelSize = SculptStorageQueryParameter->VoxelSize;
+		Compute = SculptStorageQueryParameter->Compute;
+
+		ensure(Compute);
+	}
+	else
+	{
+		// Actual surface
+		const TSharedPtr<const FVoxelRuntimeParameter_SculptStorage> RuntimeParameter = Query.GetInfo(EVoxelQueryInfo::Local).FindParameter<FVoxelRuntimeParameter_SculptStorage>();
+		if (!RuntimeParameter ||
+			!ensure(RuntimeParameter->Data))
+		{
+			// Don't raise error messages, too spammy
+			return {};
+		}
+
+		VOXEL_SCOPE_LOCK(RuntimeParameter->CriticalSection);
+
+		SurfaceToWorld = RuntimeParameter->SurfaceToWorldOverride.IsSet()
+			? RuntimeParameter->SurfaceToWorldOverride.GetValue()
+			: Query.GetLocalToWorld();
+
+		Data = RuntimeParameter->Data.ToSharedRef();
+		VoxelSize = RuntimeParameter->VoxelSize;
+		Compute = RuntimeParameter->Compute_RequiresLock;
 	}
 
-	VOXEL_FUNCTION_COUNTER();
-
-	const FVoxelPositionQueryParameter* PositionQueryParameter = Query.GetParameters().Find<FVoxelPositionQueryParameter>();
-	if (!PositionQueryParameter)
+	if (!Compute)
 	{
-		RaiseQueryError<FVoxelPositionQueryParameter>();
 		return {};
 	}
+
+	const TValue<FVoxelSurface> Surface = (*Compute)(Query);
+
+	return VOXEL_ON_COMPLETE(Surface, SurfaceToWorld, Data, VoxelSize)
+	{
+		FVoxelSurface Result = *Surface;
+
+		Result.SetDistance(Query, GetNodeRef(), [=](const FVoxelQuery& LocalQuery)
+		{
+			return VOXEL_CALL_NODE(FVoxelNode_GetSculptSurface_Distance, DistancePin, LocalQuery)
+			{
+				CalleeNode.SurfaceToWorld = SurfaceToWorld;
+				CalleeNode.Data = Data;
+				CalleeNode.VoxelSize = VoxelSize;
+				CalleeNode.Surface = Surface;
+			};
+		});
+
+		return Result;
+	};
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+DEFINE_VOXEL_NODE_COMPUTE(FVoxelNode_GetSculptSurface_Distance, Distance)
+{
+	FindVoxelQueryParameter(FVoxelPositionQueryParameter, PositionQueryParameter);
 
 	static constexpr float InvalidDensity = std::numeric_limits<float>::infinity();
 
@@ -54,7 +105,7 @@ TVoxelFutureValue<FVoxelBuffer> FVoxelSculptSurface::Get(FName Name, const FVoxe
 		// Needed for BypassTaskQueue to work
 		Lock.Reset();
 
-		return SourceSurface->GetDistance(Query);
+		return Surface->GetDistance(Query);
 	}
 
 	const FVoxelVectorBuffer Positions = PositionQueryParameter->GetPositions();
@@ -244,7 +295,7 @@ TVoxelFutureValue<FVoxelBuffer> FVoxelSculptSurface::Get(FName Name, const FVoxe
 	QueryPositions.Y = FVoxelFloatBuffer::Make(QueryPositionsY);
 	QueryPositions.Z = FVoxelFloatBuffer::Make(QueryPositionsZ);
 
-	TValue<FVoxelFloatBuffer> FutureQueriedDistances;
+	TValue<FVoxelFloatBuffer> QueriedDistances;
 	if (QueryPositions.Num() > 0)
 	{
 		const TSharedRef<FVoxelQueryParameters> Parameters = Query.CloneParameters();
@@ -254,142 +305,75 @@ TVoxelFutureValue<FVoxelBuffer> FVoxelSculptSurface::Get(FName Name, const FVoxe
 		// Needed for BypassTaskQueue to work
 		Lock.Reset();
 
-		FutureQueriedDistances = SourceSurface->GetDistance(NewQuery);
+		QueriedDistances = Surface->GetDistance(NewQuery);
 	}
 	else
 	{
-		FutureQueriedDistances = FVoxelFloatBuffer();
+		QueriedDistances = FVoxelFloatBuffer();
 	}
 
-	return
-		MakeVoxelTask("Unpack")
-		.Dependency(FutureQueriedDistances)
-		.Execute<FVoxelFloatBuffer>([=]() -> FVoxelFloatBuffer
-		{
-			const FVoxelFloatBuffer QueriedDistances = FutureQueriedDistances.Get_CheckCompleted();
-			if (QueriedDistances.Num() > 0)
-			{
-				int32 QueryIndex = 0;
-				for (int32 Index = 0; Index < DensitiesPtr->Num(); Index++)
-				{
-					float& Density = (*DensitiesPtr)[Index];
-					if (Density != InvalidDensity)
-					{
-						continue;
-					}
-
-					if (!ensure(
-						QueriedDistances.IsConstant() ||
-						QueryIndex < QueriedDistances.Num()))
-					{
-						return {};
-					}
-
-					Density = QueriedDistances[QueryIndex++];
-				}
-				ensure(QueriedDistances.IsConstant() || QueryIndex == QueriedDistances.Num());
-			}
-
-			FVoxelFloatBufferStorage FinalDensities;
-			FinalDensities.Allocate(Positions.Num());
-			{
-				VOXEL_SCOPE_COUNTER_FORMAT("TrilinearInterpolation Num=%d", Positions.Num());
-
-				int32 DensityIndex = 0;
-				for (int32 Index = 0; Index < Positions.Num(); Index++)
-				{
-					const FVector3f Position = SurfaceToQuery.InverseTransformPosition(Positions[Index]);
-					if (!(*ShouldInterpolatePtr)[Index])
-					{
-						FinalDensities[Index] = (*DensitiesPtr)[DensityIndex];
-						DensityIndex++;
-						continue;
-					}
-
-					const FVector3f Min = FVoxelUtilities::FloorToFloat(Position);
-					const FVector3f Alpha = Position - Min;
-
-					FinalDensities[Index] = FVoxelUtilities::TrilinearInterpolation(
-						(*DensitiesPtr)[DensityIndex + 0],
-						(*DensitiesPtr)[DensityIndex + 1],
-						(*DensitiesPtr)[DensityIndex + 2],
-						(*DensitiesPtr)[DensityIndex + 3],
-						(*DensitiesPtr)[DensityIndex + 4],
-						(*DensitiesPtr)[DensityIndex + 5],
-						(*DensitiesPtr)[DensityIndex + 6],
-						(*DensitiesPtr)[DensityIndex + 7],
-						Alpha.X,
-						Alpha.Y,
-						Alpha.Z);
-
-					DensityIndex += 8;
-				}
-				ensure(DensityIndex == DensitiesPtr->Num());
-			}
-
-			return FVoxelFloatBuffer::Make(FinalDensities);
-		});
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-DEFINE_VOXEL_NODE_COMPUTE(FVoxelNode_GetSculptSurface, Surface)
-{
-	FVoxelTransformRef SurfaceToWorld;
-	TSharedPtr<FVoxelSculptStorageData> Data;
-	int32 VoxelSize;
-	TSharedPtr<const TVoxelComputeValue<FVoxelSurface>> Compute;
-
-	if (const FVoxelSculptStorageQueryParameter* SculptStorageQueryParameter = Query.GetParameters().Find<FVoxelSculptStorageQueryParameter>())
+	return VOXEL_ON_COMPLETE(PositionQueryParameter, Positions, DensitiesPtr, ShouldInterpolatePtr, SurfaceToQuery, QueriedDistances)
 	{
-		// Override used by sculpt tools
-		SurfaceToWorld = SculptStorageQueryParameter->SurfaceToWorld;
-		Data = SculptStorageQueryParameter->Data.ToSharedRef();
-		VoxelSize = SculptStorageQueryParameter->VoxelSize;
-		Compute = SculptStorageQueryParameter->Compute;
-
-		ensure(Compute);
-	}
-	else
-	{
-		// Actual surface
-		const TSharedPtr<const FVoxelRuntimeParameter_SculptStorage> RuntimeParameter = Query.GetInfo(EVoxelQueryInfo::Local).FindParameter<FVoxelRuntimeParameter_SculptStorage>();
-		if (!RuntimeParameter ||
-			!ensure(RuntimeParameter->Data))
+		if (QueriedDistances.Num() > 0)
 		{
-			// Don't raise error messages, too spammy
-			return {};
+			int32 QueryIndex = 0;
+			for (int32 Index = 0; Index < DensitiesPtr->Num(); Index++)
+			{
+				float& Density = (*DensitiesPtr)[Index];
+				if (Density != InvalidDensity)
+				{
+					continue;
+				}
+
+				if (!ensure(
+					QueriedDistances.IsConstant() ||
+					QueryIndex < QueriedDistances.Num()))
+				{
+					return {};
+				}
+
+				Density = QueriedDistances[QueryIndex++];
+			}
+			ensure(QueriedDistances.IsConstant() || QueryIndex == QueriedDistances.Num());
 		}
 
-		VOXEL_SCOPE_LOCK(RuntimeParameter->CriticalSection);
+		FVoxelFloatBufferStorage FinalDensities;
+		FinalDensities.Allocate(Positions.Num());
+		{
+			VOXEL_SCOPE_COUNTER_FORMAT("TrilinearInterpolation Num=%d", Positions.Num());
 
-		SurfaceToWorld = RuntimeParameter->SurfaceToWorldOverride.IsSet()
-			? RuntimeParameter->SurfaceToWorldOverride.GetValue()
-			: Query.GetLocalToWorld();
+			int32 DensityIndex = 0;
+			for (int32 Index = 0; Index < Positions.Num(); Index++)
+			{
+				const FVector3f Position = SurfaceToQuery.InverseTransformPosition(Positions[Index]);
+				if (!(*ShouldInterpolatePtr)[Index])
+				{
+					FinalDensities[Index] = (*DensitiesPtr)[DensityIndex];
+					DensityIndex++;
+					continue;
+				}
 
-		Data = RuntimeParameter->Data.ToSharedRef();
-		VoxelSize = RuntimeParameter->VoxelSize;
-		Compute = RuntimeParameter->Compute_RequiresLock;
-	}
+				const FVector3f Min = FVoxelUtilities::FloorToFloat(Position);
+				const FVector3f Alpha = Position - Min;
 
-	if (!Compute)
-	{
-		return {};
-	}
+				FinalDensities[Index] = FVoxelUtilities::TrilinearInterpolation(
+					(*DensitiesPtr)[DensityIndex + 0],
+					(*DensitiesPtr)[DensityIndex + 1],
+					(*DensitiesPtr)[DensityIndex + 2],
+					(*DensitiesPtr)[DensityIndex + 3],
+					(*DensitiesPtr)[DensityIndex + 4],
+					(*DensitiesPtr)[DensityIndex + 5],
+					(*DensitiesPtr)[DensityIndex + 6],
+					(*DensitiesPtr)[DensityIndex + 7],
+					Alpha.X,
+					Alpha.Y,
+					Alpha.Z);
 
-	const TValue<FVoxelSurface> Surface = (*Compute)(Query);
+				DensityIndex += 8;
+			}
+			ensure(DensityIndex == DensitiesPtr->Num());
+		}
 
-	return VOXEL_ON_COMPLETE(Surface, SurfaceToWorld, Data, VoxelSize)
-	{
-		const TSharedRef<FVoxelSculptSurface> Result = MakeVoxelShared<FVoxelSculptSurface>();
-		Result->Node = GetNodeRef();
-		Result->SourceSurface = Surface;
-		Result->SurfaceToWorld = SurfaceToWorld;
-		Result->Data = Data;
-		Result->VoxelSize = VoxelSize;
-		return Result;
+		return FVoxelFloatBuffer::Make(FinalDensities);
 	};
 }
-#endif

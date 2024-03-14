@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -71,5 +71,5 @@ private:
 	};
 
 	TSharedRef<FOctree> Octree = MakeVoxelShared<FOctree>();
-	TVoxelMap<FIntVector, TSharedPtr<FChunk>> Chunks;
+	TVoxelAddOnlyMap<FIntVector, TSharedPtr<FChunk>> Chunks;
 };

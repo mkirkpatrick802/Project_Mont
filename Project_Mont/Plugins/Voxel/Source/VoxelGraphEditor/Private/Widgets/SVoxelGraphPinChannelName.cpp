@@ -1,9 +1,8 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "SVoxelGraphPinChannelName.h"
+#include "VoxelChannel.h"
 #include "VoxelGraphVisuals.h"
-#include "Channel/VoxelChannelName.h"
-#include "Channel/VoxelChannelManager.h"
 #include "Widgets/SVoxelChannelEditor.h"
 
 void SVoxelGraphPinChannelName::Construct(const FArguments& InArgs, UEdGraphPin* InGraphPinObj)

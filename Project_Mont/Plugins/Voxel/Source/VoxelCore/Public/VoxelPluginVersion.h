@@ -1,4 +1,4 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -93,7 +93,7 @@ struct FVoxelPluginVersion
 			}
 		}
 
-#define CHECK(...) if (!ensureVoxelSlow(__VA_ARGS__)) { return false; }
+#define CHECK(...) if (!ensure(__VA_ARGS__)) { return false; }
 
 		if (Version.StartsWith("dev"))
 		{

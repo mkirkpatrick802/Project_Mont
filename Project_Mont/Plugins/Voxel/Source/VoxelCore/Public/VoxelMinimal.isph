@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -22,20 +22,8 @@
 #define UNROLL_N(N)
 #define IGNORE_PERF_WARNING
 
-#define coherent_if if
-
 int MakeRegister(int, ...);
 float MakeRegister(float, ...);
-
-template<int>
-struct floatv
-{
-	floatv() = default;
-	floatv(float);
-
-	float& operator[](int);
-	const float& operator[](int) const;
-};
 
 double operator ""d(long double);
 
@@ -57,11 +45,9 @@ struct float16
 
 float min(float, float);
 double min(double, double);
-uint8 min(uint8, uint8);
 int32 min(int32, int32);
 float max(float, float);
 float max(double, double);
-uint8 max(uint8, uint8);
 int32 max(int32, int32);
 float clamp(float value, float a, float b);
 double clamp(double value, double a, double b);
@@ -71,29 +57,13 @@ bool isnan(float16 v);
 bool isnan(float v);
 bool isnan(double v);
 
-int8 broadcast(int8 value, uniform int index);
-int16 broadcast(int16 value, uniform int index);
-int32 broadcast(int32 value, uniform int index);
-int64 broadcast(int64 value, uniform int index);
-float16 broadcast(float16 value, uniform int index);
-float broadcast(float value, uniform int index);
-double broadcast(double value, uniform int index);
-
-int8 rotate(int8 value, uniform int offset);
-int16 rotate(int16 value, uniform int offset);
-int32 rotate(int32 value, uniform int offset);
-int64 rotate(int64 value, uniform int offset);
-float16 rotate(float16 value, uniform int offset);
-float rotate(float value, uniform int offset);
-double rotate(double value, uniform int offset);
-
-int8 shift(int8 value, uniform int offset);
-int16 shift(int16 value, uniform int offset);
-int32 shift(int32 value, uniform int offset);
-int64 shift(int64 value, uniform int offset);
-float16 shift(float16 value, uniform int offset);
-float shift(float value, uniform int offset);
-double shift(double value, uniform int offset);
+int8 rotate(int8 value, int offset);
+int16 rotate(int16 value, int offset);
+int32 rotate(int32 value, int offset);
+int64 rotate(int64 value, int offset);
+float16 rotate(float16 value, int offset);
+float rotate(float value, int offset);
+double rotate(double value, int offset);
 
 int8 shuffle(int8 value, int permutation);
 int16 shuffle(int16 value, int permutation);
@@ -283,15 +253,11 @@ int32 programIndex;
 #define UNROLL_N(N) UNROLL N
 #define IGNORE_PERF_WARNING #pragma ignore warning(perf)
 
-#define coherent_if cif
-
 #if TARGET_WIDTH == 8
 #define MakeRegister(A, B, C, D, E, F, G, H) { A, B, C, D, E, F, G, H }
 #elif TARGET_WIDTH == 4
 #define MakeRegister(A, B, C, D) { A, B, C, D }
 #endif
-
-#define floatv float
 #endif
 
 #ifndef VOXEL_DEBUG
@@ -306,13 +272,8 @@ extern "C" void VoxelISPC_Assert(uniform int Line);
 extern "C" void VoxelISPC_UnsupportedTargetWidth(uniform int Width);
 
 #if VOXEL_DEBUG
-#define check(...) \
-	if (!(__VA_ARGS__)) \
-	{ \
-		VoxelISPC_Assert(__LINE__); \
-	}
-
-#define ensure(...) check(__VA_ARGS__)
+#define check(...) if (!(__VA_ARGS__)) { VoxelISPC_Assert(__LINE__); }
+#define ensure(...) if (!(__VA_ARGS__)) { VoxelISPC_Assert(__LINE__); }
 #define VOXEL_ASSUME(...) check(__VA_ARGS__)
 #else
 #define check(...)
@@ -327,17 +288,6 @@ extern "C" void VoxelISPC_UnsupportedTargetWidth(uniform int Width);
 #define SMALL_NUMBER 1.e-8f
 #define KINDA_SMALL_NUMBER 1.e-4f
 #define BIG_NUMBER 3.4e+38f
-
-#define PREPROCESSOR_JOIN_INNER(X, Y) X ## Y
-#define PREPROCESSOR_JOIN(X, Y) PREPROCESSOR_JOIN_INNER(X, Y)
-
-#if !INTELLISENSE_PARSER
-FORCEINLINE uniform float lerp(const uniform float A, const uniform float B, const uniform float Alpha)
-{
-	// Minimize float precision errors in case A or B is huge
-	return A * (1.f - Alpha) + B * Alpha;
-}
-#endif
 
 FORCEINLINE float lerp(const float A, const float B, const float Alpha)
 {
@@ -357,11 +307,6 @@ FORCEINLINE float fmod(const float x, const float y)
 FORCEINLINE bool IsFinite(const float A)
 {
 	return (intbits(A) & 0x7F800000U) != 0x7F800000U;
-}
-
-FORCEINLINE bool IsFinite(const double A)
-{
-	return ((intbits(A) >> 52) & 0x7FFU) != 0x7FFU;
 }
 
 FORCEINLINE float InvSqrt(const float X)
@@ -403,24 +348,15 @@ FORCEINLINE uint32 MurmurHash32(uint32 Hash)
 	return Hash;
 }
 
-FORCEINLINE uint32 MurmurHash32(const uint32 Value, const uint32 Seed)
+FORCEINLINE uint32 MurmurHash32(uint32 Value, uint32 Seed)
 {
 	uint32 H = 1831214719 * (1460481823 + Seed);
 	return MurmurHash32(H ^ Value);
 }
 
-FORCEINLINE bool IsPowerOfTwo(const uint32 Value)
+FORCEINLINE bool IsPowerOfTwo(uint32 Value)
 {
 	return (Value & (Value - 1)) == 0;
-}
-
-FORCEINLINE uniform int32 DivideCeil(const uniform int32 Dividend, const uniform int32 Divisor)
-{
-	return (Dividend > 0) ? 1 + (Dividend - 1) / Divisor : (Dividend / Divisor);
-}
-FORCEINLINE uniform int32 DivideFloor(const uniform int32 Dividend, const uniform int32 Divisor)
-{
-	return Dividend / Divisor;
 }
 
 #define MAX_uint8	0xff
@@ -433,8 +369,6 @@ FORCEINLINE uniform int32 DivideFloor(const uniform int32 Dividend, const unifor
 #define MAX_int64	0x7fffffffffffffff
 #define MIN_flt		1.175494351e-38F
 #define MAX_flt		3.402823466e+38F
-#define MIN_dbl		2.2250738585072014e-308
-#define MAX_dbl		1.7976931348623158e+308
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -570,17 +504,6 @@ FORCEINLINE double4 MakeDouble4(const double X, const double Y, const double Z, 
 	Result.w = W;
 	return Result;
 }
-
-#if !INTELLISENSE_PARSER
-FORCEINLINE uniform double3 MakeDouble3(const uniform double X, const uniform double Y, const uniform double Z)
-{
-	uniform double3 Result;
-	Result.x = X;
-	Result.y = Y;
-	Result.z = Z;
-	return Result;
-}
-#endif
 
 FORCEINLINE int2 MakeInt2(const int32 X, const int32 Y)
 {
@@ -780,13 +703,6 @@ FORCEINLINE float3 clamp(const float3 Value, const float3 A, const float3 B)
 		clamp(Value.x, A.x, B.x),
 		clamp(Value.y, A.y, B.y),
 		clamp(Value.z, A.z, B.z));
-}
-FORCEINLINE float3 clamp(const float3 Value, const float A, const float B)
-{
-	return MakeFloat3(
-		clamp(Value.x, A, B),
-		clamp(Value.y, A, B),
-		clamp(Value.z, A, B));
 }
 
 FORCEINLINE int2 clamp(const int2 Value, const int2 A, const int2 B)
@@ -991,61 +907,18 @@ FORCEINLINE float DistanceSquared(const float3 A, const float3 B)
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-struct double2x2
-{
-	double M[2][2];
-};
-
-FORCEINLINE double2 TransformPosition(const double2x2 Matrix, const double2 Position)
-{
-	return MakeDouble2(
-		Position.x * Matrix.M[0][0] + Position.y * Matrix.M[1][0],
-		Position.x * Matrix.M[0][1] + Position.y * Matrix.M[1][1]);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-struct FTransform2d
-{
-	double2x2 Matrix;
-	double2 Translation;
-};
-
-FORCEINLINE double2 TransformPosition(const FTransform2d Transform, const double2 Position)
-{
-	return TransformPosition(Transform.Matrix, Position) + Transform.Translation;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
 struct float4x4
 {
 	float M[16];
 };
 
-FORCEINLINE float3 TransformPosition(const float4x4 Matrix, const float3 Position)
+FORCEINLINE float3 MatrixTransformPosition(const float4x4 Matrix, const float3 Vector)
 {
 	return MakeFloat3(
-		Matrix.M[0] * Position.x + Matrix.M[4] * Position.y + Matrix.M[8] * Position.z + Matrix.M[12],
-		Matrix.M[1] * Position.x + Matrix.M[5] * Position.y + Matrix.M[9] * Position.z + Matrix.M[13],
-		Matrix.M[2] * Position.x + Matrix.M[6] * Position.y + Matrix.M[10] * Position.z + Matrix.M[14]);
+		Matrix.M[0] * Vector.x + Matrix.M[4] * Vector.y + Matrix.M[8] * Vector.z + Matrix.M[12],
+		Matrix.M[1] * Vector.x + Matrix.M[5] * Vector.y + Matrix.M[9] * Vector.z + Matrix.M[13],
+		Matrix.M[2] * Vector.x + Matrix.M[6] * Vector.y + Matrix.M[10] * Vector.z + Matrix.M[14]);
 }
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-struct FColor
-{
-	uint8 B;
-	uint8 G;
-	uint8 R;
-	uint8 A;
-};
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -1066,43 +939,18 @@ FORCEINLINE float SmoothHelper(float Value, float Smoothness)
 
 FORCEINLINE float SmoothMin(const float DistanceA, const float DistanceB, const float Smoothness)
 {
-	const float H = clamp(0.5f + 0.5f * SmoothHelper(DistanceB - DistanceA, Smoothness), 0.f, 1.f);
-	return lerp(DistanceB, DistanceA, H) - Smoothness * H * (1.f - H);
+	const float H = clamp(0.5f + 0.5f * SmoothHelper(DistanceB - DistanceA, Smoothness), 0.0f, 1.0f);
+	return lerp(DistanceB, DistanceA, H) - Smoothness * H * (1.0f - H);
 }
 FORCEINLINE float SmoothMax(const float DistanceA, const float DistanceB, const float Smoothness)
 {
 	return -SmoothMin(-DistanceA, -DistanceB, Smoothness);
 }
 
-#if !INTELLISENSE_PARSER
-FORCEINLINE uniform float SmoothHelper(uniform float Value, uniform float Smoothness)
-{
-#if PLATFORM_WINDOWS
-	// Works even when Smoothness == 0 on Windows
-	// Breaks on M1 macs
-	return Value / Smoothness;
-#else
-	return Smoothness == 0.f
-		? Value < 0.f ? -1.f : 1.f
-		: Value / Smoothness;
-#endif
-}
-
-FORCEINLINE uniform float SmoothMin(const uniform float DistanceA, const uniform float DistanceB, const uniform float Smoothness)
-{
-	const uniform float H = clamp(0.5f + 0.5f * SmoothHelper(DistanceB - DistanceA, Smoothness), 0.f, 1.f);
-	return lerp(DistanceB, DistanceA, H) - Smoothness * H * (1.f - H);
-}
-FORCEINLINE uniform float SmoothMax(const uniform float DistanceA, const uniform float DistanceB, const uniform float Smoothness)
-{
-	return -SmoothMin(-DistanceA, -DistanceB, Smoothness);
-}
-#endif
-
 FORCEINLINE float SafeSmoothMin(const float DistanceA, const float DistanceB, const float Smoothness)
 {
-	const float H = clamp(0.5f + 0.5f * SmoothHelper(DistanceB - DistanceA, Smoothness), 0.f, 1.f);
-	const float Result = lerp(DistanceB, DistanceA, H) - Smoothness * H * (1.f - H);
+	const float H = clamp(0.5f + 0.5f * SmoothHelper(DistanceB - DistanceA, Smoothness), 0.0f, 1.0f);
+	const float Result = lerp(DistanceB, DistanceA, H) - Smoothness * H * (1.0f - H);
 
 	return
 		H < KINDA_SMALL_NUMBER
@@ -1218,14 +1066,6 @@ FORCEINLINE float3 OctahedronToUnitVector(float2 Octahedron)
 FORCEINLINE float3 OctahedronToUnitVector(const FVoxelOctahedron Octahedron)
 {
 	return OctahedronToUnitVector(MakeFloat2(UINT8ToFloat(Octahedron.X), UINT8ToFloat(Octahedron.Y)));
-}
-
-FORCEINLINE FVoxelOctahedron MakeOctahedron(const float2 Octahedron)
-{
-	FVoxelOctahedron Result;
-	Result.X = FloatToUINT8(Octahedron.x);
-	Result.Y = FloatToUINT8(Octahedron.y);
-	return Result;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1389,14 +1229,6 @@ FORCEINLINE float3 RotateVector(const float3 Position, const float4 Rotation)
 
 	return Position + (Rotation.w * T) + cross(Q, T);
 }
-FORCEINLINE double3 RotateVector(const double3 Position, const double4 Rotation)
-{
-	// See FQuat::RotateVector
-	const double3 Q = MakeDouble3(Rotation.x, Rotation.y, Rotation.z);
-	const double3 T = 2.f * cross(Q, Position);
-
-	return Position + (Rotation.w * T) + cross(Q, T);
-}
 
 FORCEINLINE float3 UnrotateVector(const float3 Position, const float4 Rotation)
 {
@@ -1405,26 +1237,6 @@ FORCEINLINE float3 UnrotateVector(const float3 Position, const float4 Rotation)
 	const float3 T = 2.f * cross(Q, Position);
 
 	return Position + (Rotation.w * T) + cross(Q, T);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-FORCEINLINE float2 RotateVector2D(const float2 Position, const float2 Rotation)
-{
-	float2 Result;
-	Result.x = Position.x * Rotation.x - Position.y * Rotation.y;
-	Result.y = Position.x * Rotation.y + Position.y * Rotation.x;
-	return Result;
-}
-
-FORCEINLINE double2 RotateVector2D(const double2 Position, const double2 Rotation)
-{
-	double2 Result;
-	Result.x = Position.x * Rotation.x - Position.y * Rotation.y;
-	Result.y = Position.x * Rotation.y + Position.y * Rotation.x;
-	return Result;
 }
 
 ///////////////////////////////////////////////////////////////////////////////

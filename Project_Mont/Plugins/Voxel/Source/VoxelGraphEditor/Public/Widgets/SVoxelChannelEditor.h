@@ -1,9 +1,9 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelEditorMinimal.h"
-#include "Channel/VoxelChannelRegistry.h"
+#include "VoxelChannel.h"
 #include "SVoxelChannelEditor.generated.h"
 
 class SVoxelReadWriteFilePermissionsNotice;
@@ -45,7 +45,6 @@ public:
 
 		SLATE_ARGUMENT(float, MaxHeight)
 		SLATE_ARGUMENT(FName, SelectedChannel)
-		SLATE_ARGUMENT(FVoxelPinType, ChannelType)
 		SLATE_EVENT(FOnChannelSelected, OnChannelSelected)
 	};
 
@@ -77,7 +76,6 @@ private:
 	float MaxHeight = 0.f;
 	FName SelectedChannel;
 	FOnChannelSelected OnChannelSelectedDelegate;
-	FVoxelPinType ChannelType;
 
 	FText LookupString;
 
@@ -101,11 +99,10 @@ public:
 		SLATE_ARGUMENT(TSet<FName>, ChannelsList);
 		SLATE_ARGUMENT(FVoxelChannelEditorDefinition, ChannelToEdit)
 		SLATE_EVENT(SVoxelChannelEditor::FOnChannelSelected, OnChannelSelected)
-		SLATE_ARGUMENT(FVoxelPinType, ChannelType)
 	};
 
 	void Construct(const FArguments& InArgs);
-	static void EditChannel(const TSet<FName>& ChannelsList, const FVoxelChannelEditorDefinition& Channel, const SVoxelChannelEditor::FOnChannelSelected& Delegate, const FVoxelPinType& ChannelType);
+	static void EditChannel(const TSet<FName>& ChannelsList, const FVoxelChannelEditorDefinition& Channel, const SVoxelChannelEditor::FOnChannelSelected& Delegate);
 
 private:
 	FReply OnCreateEditChannelClicked();
@@ -116,12 +113,11 @@ private:
 
 	TSharedPtr<IStructureDetailsView> DetailsView;
 	TSharedPtr<TStructOnScope<FVoxelChannelEditorDefinition>> StructOnScope;
-	TSharedPtr<SVoxelReadWriteFilePermissionsNotice> SettingsCheckoutNotice;
+	TSharedPtr<SVoxelReadWriteFilePermissionsNotice> SettingsCheckoutNotice; 
 
 	TSet<FName> ChannelsList;
 	FVoxelChannelEditorDefinition ChannelToEdit;
 	SVoxelChannelEditor::FOnChannelSelected OnChannelSelected;
-	FVoxelPinType ChannelType;
 
 public:
 	bool bConfirm = false;

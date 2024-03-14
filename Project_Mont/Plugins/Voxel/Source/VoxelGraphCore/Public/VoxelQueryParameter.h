@@ -1,4 +1,4 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -25,7 +25,7 @@ public:
 	void Add(const TSharedRef<const FVoxelQueryParameter>& QueryParameter);
 	void Append(const FVoxelQueryParameters& Other);
 
-	template<typename T, typename = std::enable_if_t<TIsDerivedFrom<T, FVoxelQueryParameter>::Value>>
+	template<typename T, typename = typename TEnableIf<TIsDerivedFrom<T, FVoxelQueryParameter>::Value>::Type>
 	T& Add()
 	{
 		TSharedRef<T> QueryParameter = MakeVoxelShared<T>();
@@ -42,14 +42,14 @@ public:
 		}
 		return QueryParameter->Get();
 	}
-	template<typename T, typename = std::enable_if_t<TIsDerivedFrom<T, FVoxelQueryParameter>::Value>>
+	template<typename T, typename = typename TEnableIf<TIsDerivedFrom<T, FVoxelQueryParameter>::Value>::Type>
 	FORCEINLINE const T* Find() const
 	{
 		const FVoxelQueryParameter* QueryParameter = this->Find(StaticStructFast<T>());
 		checkVoxelSlow(!QueryParameter || QueryParameter->IsA<T>());
 		return static_cast<const T*>(QueryParameter);
 	}
-	template<typename T, typename = std::enable_if_t<TIsDerivedFrom<T, FVoxelQueryParameter>::Value>>
+	template<typename T, typename = typename TEnableIf<TIsDerivedFrom<T, FVoxelQueryParameter>::Value>::Type>
 	FORCEINLINE TSharedPtr<const T> FindShared() const
 	{
 		const T* QueryParameter	 = Find<T>();
@@ -95,4 +95,13 @@ struct VOXELGRAPHCORE_API FVoxelMinExactDistanceQueryParameter : public FVoxelQu
 	GENERATED_VOXEL_QUERY_PARAMETER_BODY()
 
 	float MinExactDistance = 0.f;
+};
+
+USTRUCT()
+struct VOXELGRAPHCORE_API FVoxelQueryChannelBoundsQueryParameter : public FVoxelQueryParameter
+{
+	GENERATED_BODY()
+	GENERATED_VOXEL_QUERY_PARAMETER_BODY()
+
+	FVoxelBox Bounds;
 };

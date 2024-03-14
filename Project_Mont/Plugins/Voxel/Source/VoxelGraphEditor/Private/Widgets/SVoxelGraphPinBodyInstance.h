@@ -1,10 +1,10 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelEditorMinimal.h"
 
-class SVoxelGraphPinBodyInstance : public SGraphPin
+class VOXELGRAPHEDITOR_API SVoxelGraphPinBodyInstance : public SGraphPin
 {
 public:
 	VOXEL_SLATE_ARGS()

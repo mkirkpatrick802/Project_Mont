@@ -1,4 +1,4 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -132,7 +132,7 @@ struct VOXELGRAPHCORE_API FVoxelTemplateNode_SetPointAttributeBase : public FVox
 	virtual FName GetAttributeName() const VOXEL_PURE_VIRTUAL({});
 };
 
-USTRUCT(Category = "Point", meta = (Abstract, PinTypeAliases = "/Script/VoxelGraphCore.VoxelPointSet"))
+USTRUCT(Category = "Point", meta = (Abstract))
 struct VOXELGRAPHCORE_API FVoxelTemplateNode_GetPointAttributeBase : public FVoxelTemplateNode
 {
 	GENERATED_BODY()
@@ -369,6 +369,52 @@ struct VOXELGRAPHCORE_API FVoxelTemplateNode_GetParentPointNormal : public FVoxe
 	virtual FName GetAttributeName() const override
 	{
 		return FVoxelPointAttributes::MakeParent(FVoxelPointAttributes::Normal);
+	}
+};
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+USTRUCT()
+struct VOXELGRAPHCORE_API FVoxelTemplateNode_SetActorClass : public FVoxelTemplateNode_SetPointAttributeBase
+{
+	GENERATED_BODY()
+	GENERATED_VOXEL_NODE_BODY()
+
+	VOXEL_INPUT_PIN(FVoxelClassBuffer, Class, nullptr, BaseClass<AActor>);
+
+	virtual FName GetAttributeName() const override
+	{
+		return FVoxelPointAttributes::ActorClass;
+	}
+};
+
+USTRUCT()
+struct VOXELGRAPHCORE_API FVoxelTemplateNode_GetActorClass : public FVoxelTemplateNode_GetPointAttributeBase
+{
+	GENERATED_BODY()
+	GENERATED_VOXEL_NODE_BODY()
+
+	VOXEL_OUTPUT_PIN(FVoxelClassBuffer, Class, BaseClass<AActor>);
+
+	virtual FName GetAttributeName() const override
+	{
+		return FVoxelPointAttributes::ActorClass;
+	}
+};
+
+USTRUCT()
+struct VOXELGRAPHCORE_API FVoxelTemplateNode_GetParentActorClass : public FVoxelTemplateNode_GetPointAttributeBase
+{
+	GENERATED_BODY()
+	GENERATED_VOXEL_NODE_BODY()
+
+	VOXEL_OUTPUT_PIN(FVoxelClassBuffer, Class, BaseClass<AActor>);
+
+	virtual FName GetAttributeName() const override
+	{
+		return FVoxelPointAttributes::MakeParent(FVoxelPointAttributes::ActorClass);
 	}
 };
 

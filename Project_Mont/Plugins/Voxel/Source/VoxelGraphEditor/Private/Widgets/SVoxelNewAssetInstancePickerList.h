@@ -1,17 +1,16 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelEditorMinimal.h"
-#include "SItemSelector.h"
+#include "Widgets/SItemSelector.h"
 #include "SVoxelNewAssetInstanceFilterBox.h"
 
 class SVoxelNewAssetInstancePickerList : public SCompoundWidget
 {
 public:
 	DECLARE_DELEGATE_OneParam(FOnTemplateAssetActivated, const FAssetData&);
-	DECLARE_DELEGATE_RetVal_OneParam(FString, FGetAssetText, const FAssetData&)
-	DECLARE_DELEGATE_RetVal_OneParam(bool, FShowAsset, const FAssetData&)
+	DECLARE_DELEGATE_RetVal_OneParam(FText, FGetAssetText, const FAssetData&)
 
 public:
 	VOXEL_SLATE_ARGS()
@@ -19,7 +18,6 @@ public:
 		SLATE_EVENT(FOnTemplateAssetActivated, OnTemplateAssetActivated);
 		SLATE_EVENT(FGetAssetText, OnGetAssetCategory)
 		SLATE_EVENT(FGetAssetText, OnGetAssetDescription)
-		SLATE_EVENT(FShowAsset, ShowAsset)
 	};
 
 	void Construct(const FArguments& InArgs, UClass* AssetClass);
@@ -34,7 +32,7 @@ private:
 	TSharedRef<SWidget> OnGenerateWidgetForItem(const FAssetData& Item);
 
 private:
-	TArray<FAssetData> GetAssetDataForSelector(const UClass* AssetClass) const;
+	static TArray<FAssetData> GetAssetDataForSelector(const UClass* AssetClass);
 	void TriggerRefresh(const TMap<EVoxelGraphScriptSource, bool>& SourceState) const;
 
 	static FString GetAssetName(const FAssetData& Item);
@@ -49,7 +47,6 @@ private:
 	FOnTemplateAssetActivated OnTemplateAssetActivatedDelegate;
 	FGetAssetText OnGetAssetCategoryDelegate;
 	FGetAssetText OnGetAssetDescriptionDelegate;
-	FShowAsset ShowAssetDelegate;
 
 	static FText ProjectCategory;
 	static FText VoxelExamplesCategory;

@@ -1,7 +1,7 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "K2Node_VoxelPointAttributes.h"
-#include "Point/VoxelPointBlueprintLibrary.h"
+#include "Point/VoxelPointFunctionLibrary.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 
 void UK2Node_VoxelPointAttributeBase::AllocateDefaultPins()
@@ -53,8 +53,8 @@ void UK2Node_VoxelPointAttributeBase::PostReconstructNode()
 
 	if (UEdGraphPin* TypePin = FindPin(STATIC_FNAME("Type")))
 	{
-		TypePin->DefaultValue = FVoxelUtilities::PropertyToText_Direct(
-			*FVoxelUtilities::MakeStructProperty(FVoxelPinType::StaticStruct()),
+		TypePin->DefaultValue = FVoxelObjectUtilities::PropertyToText_Direct(
+			*FVoxelObjectUtilities::MakeStructProperty(FVoxelPinType::StaticStruct()),
 			reinterpret_cast<void*>(&ValueType),
 			nullptr);
 	}
@@ -130,8 +130,8 @@ void UK2Node_VoxelPointAttributeBase::SetType(UEdGraphPin& Pin, const FVoxelPinT
 UK2Node_VoxelSetPointAttribute::UK2Node_VoxelSetPointAttribute()
 {
 	FunctionReference.SetExternalMember(
-		GET_FUNCTION_NAME_CHECKED(UVoxelPointBlueprintLibrary, K2_SetPointAttribute),
-		UVoxelPointBlueprintLibrary::StaticClass());
+		GET_FUNCTION_NAME_CHECKED(UVoxelPointFunctionLibrary, K2_SetPointAttribute),
+		UVoxelPointFunctionLibrary::StaticClass());
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -141,6 +141,6 @@ UK2Node_VoxelSetPointAttribute::UK2Node_VoxelSetPointAttribute()
 UK2Node_VoxelGetPointAttribute::UK2Node_VoxelGetPointAttribute()
 {
 	FunctionReference.SetExternalMember(
-		GET_FUNCTION_NAME_CHECKED(UVoxelPointBlueprintLibrary, K2_GetPointAttribute),
-		UVoxelPointBlueprintLibrary::StaticClass());
+		GET_FUNCTION_NAME_CHECKED(UVoxelPointFunctionLibrary, K2_GetPointAttribute),
+		UVoxelPointFunctionLibrary::StaticClass());
 }

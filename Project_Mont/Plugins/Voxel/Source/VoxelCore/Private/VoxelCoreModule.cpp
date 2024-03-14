@@ -1,12 +1,9 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelMinimal.h"
 #include "ShaderCore.h"
-#include "HttpModule.h"
-#include "HttpManager.h"
 #include "HAL/PlatformFileManager.h"
 #include "Interfaces/IPluginManager.h"
-#include "Runtime/Online/HTTP/Private/HttpThread.h"
 
 class FVoxelCoreModule : public IModuleInterface
 {
@@ -14,40 +11,7 @@ public:
 	virtual void StartupModule() override
 	{
 		LOG_VOXEL(Log, "VOXEL_DEBUG=%d", VOXEL_DEBUG);
-
-#if WITH_EDITOR
-		// Increase the HTTP tick rate
-		// Makes downloads much faster
-		{
-			LOG_VOXEL(Log, "Increasing HTTP Tick Rate");
-
-			FHttpManager& HttpManager = FHttpModule::Get().GetHttpManager();
-
-			struct FHttpThreadHack : UE_503_SWITCH(FHttpThread, FLegacyHttpThread)
-			{
-				void Fixup()
-				{
-					HttpThreadActiveFrameTimeInSeconds = 1 / 100000.f;
-				}
-			};
-
-			struct FHttpManagerHack : FHttpManager
-			{
-				void Fixup() const
-				{
-					if (!Thread)
-					{
-						return;
-					}
-
-					static_cast<FHttpThreadHack*>(Thread)->Fixup();
-				}
-			};
-
-			static_cast<FHttpManagerHack&>(HttpManager).Fixup();
-		}
-#endif
-
+		
 #if ENABLE_LOW_LEVEL_MEM_TRACKER
 		GVoxelLLMDisabled = !FLowLevelMemTracker::Get().IsTagSetActive(ELLMTagSet::None);
 #endif
@@ -55,7 +19,7 @@ public:
 		ensure(!GIsVoxelCoreModuleLoaded);
 		GIsVoxelCoreModuleLoaded = true;
 
-		const IPlugin& Plugin = FVoxelUtilities::GetPlugin();
+		const IPlugin& Plugin = FVoxelSystemUtilities::GetPlugin();
 		const FString Shaders = FPaths::ConvertRelativePathToFull(Plugin.GetBaseDir() / "Shaders");
 		AddShaderSourceDirectoryMapping(TEXT("/Plugin/Voxel"), Shaders);
 
@@ -86,7 +50,7 @@ private:
 	{
 		VOXEL_FUNCTION_COUNTER();
 
-		const FString Path = FPaths::ConvertRelativePathToFull(FVoxelUtilities::GetPlugin().GetBaseDir() / "Shaders") / "VoxelEngineVersion.ush";
+		const FString Path = FPaths::ConvertRelativePathToFull(FVoxelSystemUtilities::GetPlugin().GetBaseDir() / "Shaders") / "VoxelEngineVersion.ush";
 		const FString Text = "#define VOXEL_ENGINE_VERSION " + FString::FromInt(VOXEL_ENGINE_VERSION);
 
 		FString ExistingText;

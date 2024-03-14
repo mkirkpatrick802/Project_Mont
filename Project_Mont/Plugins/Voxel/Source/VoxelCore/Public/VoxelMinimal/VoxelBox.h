@@ -1,10 +1,10 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelCoreMinimal.h"
 #include "VoxelMinimal/Containers/VoxelArrayView.h"
-#include "VoxelMinimal/Utilities/VoxelHashUtilities.h"
+#include "VoxelMinimal/Utilities/VoxelBaseUtilities.h"
 #include "VoxelMinimal/Utilities/VoxelVectorUtilities.h"
 #include "VoxelBox.generated.h"
 
@@ -96,7 +96,6 @@ struct VOXELCORE_API FVoxelBox
 	static FVoxelBox FromPositions(TConstVoxelArrayView<FIntVector> Positions);
 	static FVoxelBox FromPositions(TConstVoxelArrayView<FVector3f> Positions);
 	static FVoxelBox FromPositions(TConstVoxelArrayView<FVector3d> Positions);
-	static FVoxelBox FromPositions(TConstVoxelArrayView<FVector4f> Positions);
 
 	static FVoxelBox FromPositions(
 		TConstVoxelArrayView<float> PositionX,
@@ -154,12 +153,6 @@ struct VOXELCORE_API FVoxelBox
 			Min.Y <= Max.Y &&
 			Min.Z <= Max.Z;
 	}
-	FORCEINLINE bool IsValidAndNotEmpty() const
-	{
-		return
-			IsValid() &&
-			*this != FVoxelBox();
-	}
 
 	FORCEINLINE bool Contains(const double X, const double Y, const double Z) const
 	{
@@ -168,16 +161,9 @@ struct VOXELCORE_API FVoxelBox
 			(Min.Y <= Y) && (Y < Max.Y) &&
 			(Min.Z <= Z) && (Z < Max.Z);
 	}
-	FORCEINLINE bool ContainsInclusive(const double X, const double Y, const double Z) const
-	{
-		return
-			(Min.X <= X) && (X <= Max.X) &&
-			(Min.Y <= Y) && (Y <= Max.Y) &&
-			(Min.Z <= Z) && (Z <= Max.Z);
-	}
 	FORCEINLINE bool IsInfinite() const
 	{
-		return Contains(FVoxelBox(FVector3d(-1e40), FVector3d(1e40)));
+		return Contains(Infinite.Extend(-1000));
 	}
 
 	FORCEINLINE bool Contains(const FIntVector& Vector) const
@@ -191,19 +177,6 @@ struct VOXELCORE_API FVoxelBox
 	FORCEINLINE bool Contains(const FVector3d& Vector) const
 	{
 		return Contains(Vector.X, Vector.Y, Vector.Z);
-	}
-
-	FORCEINLINE bool ContainsInclusive(const FIntVector& Vector) const
-	{
-		return ContainsInclusive(Vector.X, Vector.Y, Vector.Z);
-	}
-	FORCEINLINE bool ContainsInclusive(const FVector3f& Vector) const
-	{
-		return ContainsInclusive(Vector.X, Vector.Y, Vector.Z);
-	}
-	FORCEINLINE bool ContainsInclusive(const FVector3d& Vector) const
-	{
-		return ContainsInclusive(Vector.X, Vector.Y, Vector.Z);
 	}
 
 	FORCEINLINE bool Contains(const FVoxelBox& Other) const
@@ -387,17 +360,13 @@ struct VOXELCORE_API FVoxelBox
 		return Translate(Offset);
 	}
 
-	FVoxelBox TransformBy(const FMatrix& Transform) const;
-	FVoxelBox TransformBy(const FTransform& Transform) const;
-	FVoxelBox InverseTransformBy(const FTransform& Transform) const;
-
-	FORCEINLINE FVoxelBox& operator*=(const double Scale)
+	FORCEINLINE FVoxelBox& operator*=(double Scale)
 	{
 		Min *= Scale;
 		Max *= Scale;
 		return *this;
 	}
-	FORCEINLINE FVoxelBox& operator/=(const double Scale)
+	FORCEINLINE FVoxelBox& operator/=(double Scale)
 	{
 		Min /= Scale;
 		Max /= Scale;
@@ -411,6 +380,56 @@ struct VOXELCORE_API FVoxelBox
 	FORCEINLINE bool operator!=(const FVoxelBox& Other) const
 	{
 		return Min != Other.Min || Max != Other.Max;
+	}
+
+	template<typename MatrixType>
+	FVoxelBox TransformByImpl(const MatrixType& Transform) const
+	{
+		FVector3d Vertices[8] =
+		{
+			FVector3d(Min.X, Min.Y, Min.Z),
+			FVector3d(Max.X, Min.Y, Min.Z),
+			FVector3d(Min.X, Max.Y, Min.Z),
+			FVector3d(Max.X, Max.Y, Min.Z),
+			FVector3d(Min.X, Min.Y, Max.Z),
+			FVector3d(Max.X, Min.Y, Max.Z),
+			FVector3d(Min.X, Max.Y, Max.Z),
+			FVector3d(Max.X, Max.Y, Max.Z)
+		};
+
+		for (int32 Index = 0; Index < 8; Index++)
+		{
+			Vertices[Index] = FVector3d(Transform.TransformPosition(FVector(Vertices[Index])));
+		}
+
+		FVoxelBox NewBox;
+		NewBox.Min = Vertices[0];
+		NewBox.Max = Vertices[0];
+
+		for (int32 Index = 1; Index < 8; Index++)
+		{
+			NewBox.Min = FVoxelUtilities::ComponentMin(NewBox.Min, Vertices[Index]);
+			NewBox.Max = FVoxelUtilities::ComponentMax(NewBox.Max, Vertices[Index]);
+		}
+
+		return NewBox;
+	}
+
+	FVoxelBox TransformBy(const FMatrix44f& Transform) const
+	{
+		return TransformByImpl(FMatrix44d(Transform));
+	}
+	FVoxelBox TransformBy(const FTransform3f& Transform) const
+	{
+		return TransformByImpl(FTransform3d(Transform));
+	}
+	FVoxelBox TransformBy(const FMatrix44d& Transform) const
+	{
+		return TransformByImpl(Transform);
+	}
+	FVoxelBox TransformBy(const FTransform3d& Transform) const
+	{
+		return TransformByImpl(Transform);
 	}
 
 	FORCEINLINE FVoxelBox& operator+=(const FVoxelBox& Other)
@@ -436,16 +455,16 @@ FORCEINLINE uint32 GetTypeHash(const FVoxelBox& Box)
 	return FVoxelUtilities::MurmurHash(Box);
 }
 
-FORCEINLINE FVoxelBox operator*(const FVoxelBox& Box, const double Scale)
+FORCEINLINE FVoxelBox operator*(const FVoxelBox& Box, double Scale)
 {
 	return FVoxelBox(Box) *= Scale;
 }
-FORCEINLINE FVoxelBox operator*(const double Scale, const FVoxelBox& Box)
+FORCEINLINE FVoxelBox operator*(double Scale, const FVoxelBox& Box)
 {
 	return FVoxelBox(Box) *= Scale;
 }
 
-FORCEINLINE FVoxelBox operator/(const FVoxelBox& Box, const double Scale)
+FORCEINLINE FVoxelBox operator/(const FVoxelBox& Box, double Scale)
 {
 	return FVoxelBox(Box) /= Scale;
 }

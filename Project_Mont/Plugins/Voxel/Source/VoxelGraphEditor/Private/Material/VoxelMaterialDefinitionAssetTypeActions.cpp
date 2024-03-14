@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelEditorMinimal.h"
 #include "VoxelAssetTypeActions.h"
@@ -21,7 +21,7 @@ public:
 	}
 	virtual void SetParent(UObject* InstanceAsset, UObject* ParentAsset) const override
 	{
-		CastChecked<UVoxelMaterialDefinitionInstance>(InstanceAsset)->SetParent(CastChecked<UVoxelMaterialDefinitionInterface>(ParentAsset));
+		CastChecked<UVoxelMaterialDefinitionInstance>(InstanceAsset)->SetParentDefinition(CastChecked<UVoxelMaterialDefinitionInterface>(ParentAsset));
 	}
 	//~ End FVoxelInstanceAssetTypeActions Interface
 };

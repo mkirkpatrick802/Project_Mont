@@ -1,22 +1,22 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "VoxelMinimal.h"
 #include "VoxelNodeHelpers.h"
-#include "VoxelNodeInterface.h"
+#include "VoxelNodeMessages.h"
 #include "VoxelNodeDefinition.h"
-#include "Misc/Attribute.h"
 #include "VoxelNode.generated.h"
 
 class UVoxelGraph;
+class IVoxelSubsystem;
 class FVoxelNodeDefinition;
 
 enum class EVoxelPinFlags : uint32
 {
 	None         = 0,
 	TemplatePin  = 1 << 0,
-	VariadicPin  = 1 << 1,
+	ArrayPin     = 1 << 1,
 };
 ENUM_CLASS_FLAGS(EVoxelPinFlags);
 
@@ -29,7 +29,6 @@ struct FVoxelPinMetadataFlags
 	bool bDisplayLast = false;
 	bool bNoDefault = false;
 	bool bShowInDetail = false;
-	bool bHidePin = false;
 };
 
 struct FVoxelPinMetadata : FVoxelPinMetadataFlags
@@ -52,7 +51,7 @@ public:
 	const FName Name;
 	const bool bIsInput;
 	const float SortOrder;
-	const FName VariadicPinName;
+	const FName ArrayOwner;
 	const EVoxelPinFlags Flags;
 	const FVoxelPinType BaseType;
 	const FVoxelPinMetadata Metadata;
@@ -80,7 +79,7 @@ private:
 		const FName Name,
 		const bool bIsInput,
 		const float SortOrder,
-		const FName VariadicPinName,
+		const FName ArrayOwner,
 		const EVoxelPinFlags Flags,
 		const FVoxelPinType& BaseType,
 		const FVoxelPinType& ChildType,
@@ -88,7 +87,7 @@ private:
 		: Name(Name)
 		, bIsInput(bIsInput)
 		, SortOrder(SortOrder)
-		, VariadicPinName(VariadicPinName)
+		, ArrayOwner(ArrayOwner)
 		, Flags(Flags)
 		, BaseType(BaseType)
 		, Metadata(Metadata)
@@ -124,13 +123,13 @@ private:
 	FName Name;
 };
 
-struct FVoxelVariadicPinRef
+struct FVoxelPinArrayRef
 {
 public:
 	using Type = void;
 
-	FVoxelVariadicPinRef() = default;
-	explicit FVoxelVariadicPinRef(const FName Name)
+	FVoxelPinArrayRef() = default;
+	explicit FVoxelPinArrayRef(const FName Name)
 		: Name(Name)
 	{
 	}
@@ -180,37 +179,37 @@ struct TVoxelPinRef<FVoxelWildcardBuffer> : FVoxelPinRef
 };
 
 template<typename T>
-struct TVoxelVariadicPinRef : FVoxelVariadicPinRef
+struct TVoxelPinArrayRef : FVoxelPinArrayRef
 {
 	using Type = T;
 
-	TVoxelVariadicPinRef() = default;
-	explicit TVoxelVariadicPinRef(const FName Name)
-		: FVoxelVariadicPinRef(Name)
+	TVoxelPinArrayRef() = default;
+	explicit TVoxelPinArrayRef(const FName Name)
+		: FVoxelPinArrayRef(Name)
 	{
 	}
 };
 
 template<>
-struct TVoxelVariadicPinRef<FVoxelWildcard> : FVoxelVariadicPinRef
+struct TVoxelPinArrayRef<FVoxelWildcard> : FVoxelPinArrayRef
 {
 	using Type = void;
 
-	TVoxelVariadicPinRef() = default;
-	explicit TVoxelVariadicPinRef(const FName Name)
-		: FVoxelVariadicPinRef(Name)
+	TVoxelPinArrayRef() = default;
+	explicit TVoxelPinArrayRef(const FName Name)
+		: FVoxelPinArrayRef(Name)
 	{
 	}
 };
 
 template<>
-struct TVoxelVariadicPinRef<FVoxelWildcardBuffer> : FVoxelVariadicPinRef
+struct TVoxelPinArrayRef<FVoxelWildcardBuffer> : FVoxelPinArrayRef
 {
 	using Type = void;
 
-	TVoxelVariadicPinRef() = default;
-	explicit TVoxelVariadicPinRef(const FName Name)
-		: FVoxelVariadicPinRef(Name)
+	TVoxelPinArrayRef() = default;
+	explicit TVoxelPinArrayRef(const FName Name)
+		: FVoxelPinArrayRef(Name)
 	{
 	}
 };
@@ -220,10 +219,11 @@ struct TVoxelVariadicPinRef<FVoxelWildcardBuffer> : FVoxelVariadicPinRef
 ///////////////////////////////////////////////////////////////////////////////
 
 DECLARE_UNIQUE_VOXEL_ID(FVoxelPinRuntimeId);
+DECLARE_UNIQUE_VOXEL_ID(FVoxelGraphExecutorGlobalId);
 
-class VOXELGRAPHCORE_API FVoxelNodeRuntime final
+class VOXELGRAPHCORE_API FVoxelNodeRuntime
 	: public TSharedFromThis<FVoxelNodeRuntime>
-	, public IVoxelNodeInterface
+	, public FVoxelNodeAliases
 {
 public:
 	FVoxelNodeRuntime() = default;
@@ -235,37 +235,41 @@ public:
 		const FVoxelPinRef& Pin,
 		const FVoxelQuery& Query) const;
 
-	TVoxelArray<FVoxelFutureValue> Get(
-		const FVoxelVariadicPinRef& VariadicPin,
-		const FVoxelQuery& Query) const;
-
 public:
 	template<typename T>
 	TValue<T> Get(const FVoxelPinRef& Pin, const FVoxelQuery& Query) const
 	{
 		return TValue<T>(Get(Pin, Query));
 	}
-	template<typename T, typename = std::enable_if_t<!std::is_same_v<T, FVoxelWildcard> && !std::is_same_v<T, FVoxelWildcardBuffer>>>
+
+	template<typename T, typename = typename TEnableIf<!std::is_same_v<T, FVoxelWildcard> && !std::is_same_v<T, FVoxelWildcardBuffer>>::Type>
 	TValue<T> Get(const TVoxelPinRef<T>& Pin, const FVoxelQuery& Query) const
 	{
 		return this->Get<T>(static_cast<const FVoxelPinRef&>(Pin), Query);
 	}
 
 	template<typename T>
-	TVoxelArray<TValue<T>> Get(
-		const TVoxelVariadicPinRef<T>& VariadicPin,
-		const FVoxelQuery& Query) const
+	TVoxelArray<TValue<T>> Get(const FVoxelPinArrayRef& ArrayPin, const FVoxelQuery& Query) const
 	{
-		TVoxelArray<FVoxelFutureValue> Result = this->Get(FVoxelVariadicPinRef(VariadicPin), Query);
-		for (const FVoxelFutureValue& Value : Result)
+		const TVoxelArray<FName>& PinArray = PinArrays[ArrayPin];
+
+		TVoxelArray<TValue<T>> Array;
+		Array.Reserve(PinArray.Num());
+		for (const FName Pin : PinArray)
 		{
-			checkVoxelSlow(Value.GetParentType().CanBeCastedTo<T>());
+			Array.Add(Get<T>(FVoxelPinRef(Pin), Query));
 		}
-		return ReinterpretCastVoxelArray<TValue<T>>(MoveTemp(Result));
+		return Array;
+	}
+
+	template<typename T>
+	TVoxelArray<TValue<T>> Get(const TVoxelPinArrayRef<T>& ArrayPin, const FVoxelQuery& Query) const
+	{
+		return Get<T>(FVoxelPinArrayRef(ArrayPin), Query);
 	}
 
 public:
-	virtual const FVoxelGraphNodeRef& GetNodeRef() const override
+	const FVoxelGraphNodeRef& GetNodeRef() const
 	{
 		return NodeRef;
 	}
@@ -276,16 +280,16 @@ public:
 
 	TSharedRef<const FVoxelComputeValue> GetCompute(
 		const FVoxelPinRef& Pin,
-		const TSharedRef<FVoxelTerminalGraphInstance>& TerminalGraphInstance) const;
+		const TSharedRef<FVoxelQueryContext>& Context) const;
 
 	FVoxelDynamicValueFactory MakeDynamicValueFactory(const FVoxelPinRef& Pin) const;
 
-	template<typename T, typename = std::enable_if_t<!std::is_same_v<T, FVoxelWildcard> && !std::is_same_v<T, FVoxelWildcardBuffer>>>
+	template<typename T, typename = typename TEnableIf<!std::is_same_v<T, FVoxelWildcard> && !std::is_same_v<T, FVoxelWildcardBuffer>>::Type>
 	TSharedRef<const TVoxelComputeValue<T>> GetCompute(
 		const TVoxelPinRef<T>& Pin,
-		const TSharedRef<FVoxelTerminalGraphInstance>& TerminalGraphInstance) const
+		const TSharedRef<FVoxelQueryContext>& Context) const
 	{
-		return ReinterpretCastSharedRef<const TVoxelComputeValue<T>>(this->GetCompute(FVoxelPinRef(Pin), TerminalGraphInstance));
+		return ReinterpretCastSharedPtr<const TVoxelComputeValue<T>>(this->GetCompute(FVoxelPinRef(Pin), Context));
 	}
 	template<typename T>
 	TVoxelDynamicValueFactory<T> MakeDynamicValueFactory(const TVoxelPinRef<T>& Pin) const
@@ -306,22 +310,18 @@ public:
 
 		FPinData(
 			const FVoxelPinType& Type,
-			bool bIsInput,
-			FName StatName,
+			const bool bIsInput,
+			const FName StatName,
 			const FVoxelGraphPinRef& PinRef,
 			const FVoxelPinMetadataFlags& Metadata);
 	};
 	const FPinData& GetPinData(const FName PinName) const
 	{
-		return *NameToPinData[PinName];
+		return *PinDatas[PinName];
 	}
-	const TVoxelMap<FName, TSharedPtr<FPinData>>& GetNameToPinData() const
+	const TVoxelMap<FName, TSharedPtr<FPinData>>& GetPinDatas() const
 	{
-		return NameToPinData;
-	}
-	const TVoxelMap<FName, TVoxelArray<FName>>& GetVariadicPinNameToPinNames() const
-	{
-		return VariadicPinNameToPinNames;
+		return PinDatas;
 	}
 
 private:
@@ -331,11 +331,19 @@ private:
 
 	bool bIsCallNode = false;
 
-	TVoxelMap<FName, TVoxelArray<FName>> VariadicPinNameToPinNames;
-	TVoxelMap<FName, TSharedPtr<FPinData>> NameToPinData;
+	struct FErrorMessage
+	{
+		FVoxelMessageBuilderId FirstBuilderId;
+		FVoxelGraphExecutorGlobalId ExecutorGlobalId;
+	};
+	mutable TVoxelMap<FString, FErrorMessage> ErrorMessages;
+
+	TVoxelMap<FName, TVoxelArray<FName>> PinArrays;
+	TVoxelMap<FName, TSharedPtr<FPinData>> PinDatas;
 
 	friend FVoxelNode;
 	friend class FVoxelNodeCaller;
+	friend TVoxelMessageArgProcessor<FVoxelNodeRuntime>;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -350,34 +358,34 @@ struct TVoxelNodeRuntimeForward : public NodeType
 		return static_cast<const NodeType*>(this)->GetNodeRuntime();
 	}
 
-	template<typename T, typename = std::enable_if_t<TIsDerivedFrom<T, FVoxelPinRef>::Value>>
+	template<typename T, typename = typename TEnableIf<TIsDerivedFrom<T, FVoxelPinRef>::Value>::Type>
 	FORCEINLINE auto Get(const T& Pin, const FVoxelQuery& Query) const -> decltype(auto)
 	{
 		return GetNodeRuntime().Get(Pin, Query);
 	}
-	template<typename T, typename = std::enable_if_t<!TIsDerivedFrom<T, FVoxelPinRef>::Value>>
+	template<typename T, typename = typename TEnableIf<!TIsDerivedFrom<T, FVoxelPinRef>::Value>::Type>
 	FORCEINLINE auto Get(const FVoxelPinRef& Pin, const FVoxelQuery& Query) const -> decltype(auto)
 	{
 		return GetNodeRuntime().template Get<T>(Pin, Query);
 	}
 
-	template<typename T, typename = std::enable_if_t<TIsDerivedFrom<T, FVoxelVariadicPinRef>::Value>, typename = void>
+	template<typename T, typename = typename TEnableIf<TIsDerivedFrom<T, FVoxelPinArrayRef>::Value>::Type, typename = void>
 	FORCEINLINE auto Get(const T& Pin, const FVoxelQuery& Query) const -> decltype(auto)
 	{
 		return GetNodeRuntime().Get(Pin, Query);
 	}
-	template<typename T, typename = std::enable_if_t<!TIsDerivedFrom<T, FVoxelVariadicPinRef>::Value>>
-	FORCEINLINE auto Get(const FVoxelVariadicPinRef& Pin, const FVoxelQuery& Query) const -> decltype(auto)
+	template<typename T, typename = typename TEnableIf<!TIsDerivedFrom<T, FVoxelPinArrayRef>::Value>::Type>
+	FORCEINLINE auto Get(const FVoxelPinArrayRef& Pin, const FVoxelQuery& Query) const -> decltype(auto)
 	{
 		return GetNodeRuntime().template Get<T>(Pin, Query);
 	}
 
-	template<typename T, typename = std::enable_if_t<TIsDerivedFrom<T, FVoxelPinRef>::Value>>
-	FORCEINLINE auto GetCompute(const T& Pin, const TSharedRef<FVoxelTerminalGraphInstance>& TerminalGraphInstance) const -> decltype(auto)
+	template<typename T, typename = typename TEnableIf<TIsDerivedFrom<T, FVoxelPinRef>::Value>::Type>
+	FORCEINLINE auto GetCompute(const T& Pin, const TSharedRef<FVoxelQueryContext>& Context) const -> decltype(auto)
 	{
-		return GetNodeRuntime().GetCompute(Pin, TerminalGraphInstance);
+		return GetNodeRuntime().GetCompute(Pin, Context);
 	}
-	template<typename T, typename = std::enable_if_t<TIsDerivedFrom<T, FVoxelPinRef>::Value>>
+	template<typename T, typename = typename TEnableIf<TIsDerivedFrom<T, FVoxelPinRef>::Value>::Type>
 	FORCEINLINE auto MakeDynamicValueFactory(const T& Pin) const -> decltype(auto)
 	{
 		return GetNodeRuntime().MakeDynamicValueFactory(Pin);
@@ -416,7 +424,7 @@ struct VOXELGRAPHCORE_API FVoxelNodeExposedPinValue
 ///////////////////////////////////////////////////////////////////////////////
 
 USTRUCT()
-struct FVoxelNodeVariadicPinSerializedData
+struct FVoxelNodeSerializedArrayData
 {
 	GENERATED_BODY()
 
@@ -433,10 +441,10 @@ struct FVoxelNodeSerializedData
 	bool bIsValid = false;
 
 	UPROPERTY()
-	TMap<FName, FVoxelPinType> NameToPinType;
+	TMap<FName, FVoxelPinType> PinTypes;
 
 	UPROPERTY()
-	TMap<FName, FVoxelNodeVariadicPinSerializedData> VariadicPinNameToSerializedData;
+	TMap<FName, FVoxelNodeSerializedArrayData> ArrayDatas;
 
 #if WITH_EDITORONLY_DATA
 	UPROPERTY()
@@ -450,8 +458,8 @@ struct FVoxelNodeSerializedData
 	friend uint32 GetTypeHash(const FVoxelNodeSerializedData& Data)
 	{
 		return FVoxelUtilities::MurmurHashMulti(
-			Data.NameToPinType.Num(),
-			Data.VariadicPinNameToSerializedData.Num()
+			Data.PinTypes.Num(),
+			Data.ArrayDatas.Num()
 #if WITH_EDITOR
 			, Data.ExposedPins.Num()
 			, Data.ExposedPinsValues.Num()
@@ -469,14 +477,7 @@ using FVoxelNodeComputePtr = FVoxelFutureValue (*) (const FVoxelNode& Node, cons
 VOXELGRAPHCORE_API void RegisterVoxelNodeComputePtr(
 	const UScriptStruct* Node,
 	FName PinName,
-	FVoxelNodeComputePtr Ptr,
-	int32 Line);
-
-#if WITH_EDITOR
-VOXELGRAPHCORE_API bool FindVoxelNodeComputeLine(
-	const UScriptStruct* Node,
-	int32& OutLine);
-#endif
+	FVoxelNodeComputePtr Ptr);
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -487,6 +488,8 @@ DECLARE_VOXEL_MEMORY_STAT(VOXELGRAPHCORE_API, STAT_VoxelNodes, "Nodes");
 USTRUCT(meta = (Abstract))
 struct VOXELGRAPHCORE_API FVoxelNode
 	: public FVoxelVirtualStruct
+	, public FVoxelNodeAliases
+	, public FVoxelNodeHelpers
 	, public IVoxelNodeInterface
 {
 	GENERATED_BODY()
@@ -588,9 +591,9 @@ public:
 	template<typename T>
 	struct TPinIterator
 	{
-		TVoxelMap<FName, TSharedPtr<FVoxelPin>>::FConstIterator Iterator;
+		TVoxelMap<FName, TSharedPtr<FVoxelPin>>::TRangedForConstIterator Iterator;
 
-		TPinIterator(TVoxelMap<FName, TSharedPtr<FVoxelPin>>::FConstIterator&& Iterator)
+		TPinIterator(TVoxelMap<FName, TSharedPtr<FVoxelPin>>::TRangedForConstIterator&& Iterator)
 			: Iterator(Iterator)
 		{
 		}
@@ -632,41 +635,41 @@ public:
 	TPinView<FVoxelPin> GetPins()
 	{
 		FlushDeferredPins();
-		return TPinView<FVoxelPin>(PrivateNameToPin);
+		return TPinView<FVoxelPin>(InternalPins);
 	}
 	TPinView<const FVoxelPin> GetPins() const
 	{
 		FlushDeferredPins();
-		return TPinView<const FVoxelPin>(PrivateNameToPin);
+		return TPinView<const FVoxelPin>(InternalPins);
 	}
 
-	const TVoxelMap<FName, TSharedPtr<FVoxelPin>>& GetNameToPin()
+	const TVoxelMap<FName, TSharedPtr<FVoxelPin>>& GetPinsMap()
 	{
 		FlushDeferredPins();
-		return PrivateNameToPin;
+		return InternalPins;
 	}
-	const TVoxelMap<FName, TSharedPtr<const FVoxelPin>>& GetNameToPin() const
+	const TVoxelMap<FName, TSharedPtr<const FVoxelPin>>& GetPinsMap() const
 	{
 		FlushDeferredPins();
-		return ReinterpretCastRef<TVoxelMap<FName, TSharedPtr<const FVoxelPin>>>(PrivateNameToPin);
+		return ReinterpretCastRef<TVoxelMap<FName, TSharedPtr<const FVoxelPin>>>(InternalPins);
 	}
 
 	TSharedPtr<FVoxelPin> FindPin(const FName Name)
 	{
-		return GetNameToPin().FindRef(Name);
+		return GetPinsMap().FindRef(Name);
 	}
 	TSharedPtr<const FVoxelPin> FindPin(const FName Name) const
 	{
-		return GetNameToPin().FindRef(Name);
+		return GetPinsMap().FindRef(Name);
 	}
 
 	FVoxelPin& GetPin(const FVoxelPinRef& Pin)
 	{
-		return *GetNameToPin().FindChecked(Pin);
+		return *GetPinsMap().FindChecked(Pin);
 	}
 	const FVoxelPin& GetPin(const FVoxelPinRef& Pin) const
 	{
-		return *GetNameToPin().FindChecked(Pin);
+		return *GetPinsMap().FindChecked(Pin);
 	}
 
 	FVoxelPin& GetUniqueInputPin();
@@ -682,23 +685,23 @@ public:
 	}
 
 public:
-	FName Variadic_AddPin(FName VariadicPinName, FName PinName = {});
-	FName Variadic_InsertPin(FName VariadicPinName, int32 Position);
-	FName Variadic_AddPin(FVoxelPinRef, FName = {}) = delete;
+	FName AddPinToArray(FName ArrayName, FName PinName = {});
+	FName InsertPinToArrayPosition(FName ArrayName, int32 Position);
+	FName AddPinToArray(FVoxelPinRef ArrayName, FName PinName = {}) = delete;
 
-	const TVoxelArray<FVoxelPinRef>& GetVariadicPinPinNames(const FVoxelVariadicPinRef& VariadicPin) const
+	const TVoxelArray<FVoxelPinRef>& GetArrayPins(const FVoxelPinArrayRef& ArrayRef) const
 	{
 		FlushDeferredPins();
-		return ReinterpretCastVoxelArray<FVoxelPinRef>(PrivateNameToVariadicPin[VariadicPin]->Pins);
+		return ReinterpretCastVoxelArray<FVoxelPinRef>(InternalPinArrays[ArrayRef]->Pins);
 	}
 	template<typename T>
-	const TArray<TVoxelPinRef<T>>& GetVariadicPinPinNames(const TVoxelVariadicPinRef<T>& VariadicPin) const
+	const TArray<TVoxelPinRef<T>>& GetArrayPins(const TVoxelPinArrayRef<T>& ArrayRef) const
 	{
-		return ReinterpretCastArray<TVoxelPinRef<T>>(GetVariadicPinPinNames(static_cast<const FVoxelVariadicPinRef&>(VariadicPin)));
+		return ReinterpretCastArray<TVoxelPinRef<T>>(GetArrayPins(static_cast<const FVoxelPinArrayRef&>(ArrayRef)));
 	}
 
 private:
-	void FixupVariadicPinNames(FName VariadicPinName);
+	void FixupArrayNames(FName ArrayName);
 
 protected:
 	FName CreatePin(
@@ -707,7 +710,7 @@ protected:
 		FName Name,
 		const FVoxelPinMetadata& Metadata = {},
 		EVoxelPinFlags Flags = EVoxelPinFlags::None,
-		int32 MinVariadicNum = 0);
+		int32 MinArrayNum = 0);
 
 	void RemovePin(FName Name);
 
@@ -766,36 +769,36 @@ protected:
 	}
 
 protected:
-	FVoxelVariadicPinRef CreateVariadicInputPin(
+	FVoxelPinArrayRef CreateInputPinArray(
 		const FVoxelPinType& Type,
 		const FName Name,
 		const FVoxelPinMetadata& Metadata,
 		const int32 MinNum,
 		const EVoxelPinFlags Flags = EVoxelPinFlags::None)
 	{
-		return FVoxelVariadicPinRef(CreatePin(
+		return FVoxelPinArrayRef(CreatePin(
 			Type,
 			true,
 			Name,
 			Metadata,
-			Flags | EVoxelPinFlags::VariadicPin,
+			Flags | EVoxelPinFlags::ArrayPin,
 			MinNum));
 	}
 	template<typename Type>
-	TVoxelVariadicPinRef<Type> CreateVariadicInputPin(
+	TVoxelPinArrayRef<Type> CreateInputPinArray(
 		const FName Name,
 		const FVoxelPinMetadata& Metadata,
 		const int32 MinNum,
 		const EVoxelPinFlags Flags = EVoxelPinFlags::None)
 	{
-		return TVoxelVariadicPinRef<Type>(this->CreateVariadicInputPin(FVoxelPinType::Make<Type>(), Name, Metadata, MinNum, Flags));
+		return TVoxelPinArrayRef<Type>(this->CreateInputPinArray(FVoxelPinType::Make<Type>(), Name, Metadata, MinNum, Flags));
 	}
 
 protected:
 	struct FDeferredPin
 	{
-		FName VariadicPinName;
-		int32 MinVariadicNum = 0;
+		FName ArrayOwner;
+		int32 MinArrayNum = 0;
 
 		FName Name;
 		bool bIsInput = false;
@@ -805,21 +808,22 @@ protected:
 		FVoxelPinType ChildType;
 		FVoxelPinMetadata Metadata;
 
-		bool IsVariadicRoot() const
+		bool IsArrayElement() const
 		{
-			return EnumHasAllFlags(Flags, EVoxelPinFlags::VariadicPin);
+			return !ArrayOwner.IsNone();
 		}
-		bool IsVariadicChild() const
+
+		bool IsArrayDeclaration() const
 		{
-			return !VariadicPinName.IsNone();
+			return EnumHasAllFlags(Flags, EVoxelPinFlags::ArrayPin);
 		}
 	};
-	struct FVariadicPin
+	struct FPinArray
 	{
 		const FDeferredPin PinTemplate;
 		TVoxelArray<FName> Pins;
 
-		explicit FVariadicPin(const FDeferredPin& PinTemplate)
+		explicit FPinArray(const FDeferredPin& PinTemplate)
 			: PinTemplate(PinTemplate)
 		{
 		}
@@ -833,17 +837,17 @@ private:
 	bool bIsDeferringPins = true;
 	TVoxelArray<FDeferredPin> DeferredPins;
 
-	TVoxelMap<FName, FDeferredPin> PrivateNameToPinBackup;
-	TVoxelArray<FName> PrivatePinsOrder;
+	TVoxelMap<FName, FDeferredPin> InternalPinBackups;
+	TVoxelArray<FName> InternalPinsOrder;
 	int32 DisplayLastPins = 0;
-	TVoxelMap<FName, TSharedPtr<FVoxelPin>> PrivateNameToPin;
-	TVoxelMap<FName, TSharedPtr<FVariadicPin>> PrivateNameToVariadicPin;
+	TVoxelMap<FName, TSharedPtr<FVoxelPin>> InternalPins;
+	TVoxelMap<FName, TSharedPtr<FPinArray>> InternalPinArrays;
 
 #if WITH_EDITORONLY_DATA
 	UPROPERTY(EditAnywhere, Category = "Voxel", Transient)
 	TArray<FVoxelNodeExposedPinValue> ExposedPinValues;
 
-	TSet<FName> ExposedPins;
+	TVoxelSet<FName> ExposedPins;
 	FSimpleMulticastDelegate OnExposedPinsUpdated;
 #endif
 
@@ -859,7 +863,7 @@ private:
 	void FlushDeferredPinsImpl();
 	void RegisterPin(FDeferredPin Pin, bool bApplyMinNum = true);
 	void SortPins();
-	void SortVariadicPinNames(FName VariadicPinName);
+	void SortArrayPins(FName PinArrayName);
 
 private:
 	UPROPERTY()
@@ -896,7 +900,7 @@ private:
 protected:
 	using FReturnToPoolFunc = void (FVoxelNode::*)();
 
-	void AddReturnToPoolFunc(const FReturnToPoolFunc ReturnToPool)
+	void AddReturnToPoolFunc(FReturnToPoolFunc ReturnToPool)
 	{
 		ReturnToPoolFuncs.Add(ReturnToPool);
 	}
@@ -904,10 +908,10 @@ protected:
 private:
 	TArray<FReturnToPoolFunc> ReturnToPoolFuncs;
 
-	friend class SVoxelGraphNode;
+	friend struct TVoxelMessageArgProcessor<FVoxelNode>;
 	friend class FVoxelNodeDefinition;
-	friend class FVoxelGraphNode_Struct_Customization;
-	friend class FVoxelGraphNodeVariadicPinCustomization;
+	friend class FVoxelGraphNodeCustomization;
+	friend class FVoxelGraphNodePinArrayCustomization;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -936,25 +940,23 @@ public:
 
 	virtual TSharedPtr<const FNode> GetInputs() const override;
 	virtual TSharedPtr<const FNode> GetOutputs() const override;
-	TSharedPtr<const FNode> GetPins(bool bIsInput) const;
+	TSharedPtr<const FNode> GetPins(const bool bInput) const;
 
 	virtual FString GetAddPinLabel() const override;
 	virtual FString GetAddPinTooltip() const override;
 	virtual FString GetRemovePinTooltip() const override;
 
-	virtual bool Variadic_CanAddPinTo(FName VariadicPinName) const override;
-	virtual FName Variadic_AddPinTo(FName VariadicPinName) override;
+	virtual bool CanAddToCategory(FName Category) const override;
+	virtual void AddToCategory(FName Category) override;
 
-	virtual bool Variadic_CanRemovePinFrom(FName VariadicPinName) const override;
-	virtual void Variadic_RemovePinFrom(FName VariadicPinName) override;
+	virtual bool CanRemoveFromCategory(FName Category) const override;
+	virtual void RemoveFromCategory(FName Category) override;
 
 	virtual bool CanRemoveSelectedPin(FName PinName) const override;
 	virtual void RemoveSelectedPin(FName PinName) override;
 
 	virtual void InsertPinBefore(FName PinName) override;
 	virtual void DuplicatePin(FName PinName) override;
-
-	virtual void ExposePin(FName PinName) override;
 };
 #endif
 
@@ -1106,7 +1108,7 @@ namespace FVoxelPinMetadataBuilder
 		template<typename T>
 		static constexpr bool IsValid = std::is_same_v<decltype(TBuilder::MakeImpl(DeclVal<FVoxelPinMetadata&>(), DeclVal<T>())), void>;
 
-		template<typename T, typename... ArgTypes, typename = std::enable_if_t<(... && IsValid<ArgTypes>)>>
+		template<typename T, typename... ArgTypes, typename = typename TEnableIf<(... && IsValid<ArgTypes>)>::Type>
 		static FVoxelPinMetadata Make(
 			const int32 Line,
 			UScriptStruct* Struct,
@@ -1137,38 +1139,38 @@ namespace FVoxelPinMetadataBuilder
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-#define INTERNAL_DECLARE_VOXEL_PIN(Type, Name) INTELLISENSE_ONLY(void VOXEL_APPEND_LINE(__DummyFunction)(FVoxelPinRef Name) { struct FVoxelWildcard {}; struct FVoxelWildcardBuffer {}; sizeof(Type); (void)Name; })
+#define INTERNAL_DECLARE_VOXEL_PIN(Name) INTELLISENSE_ONLY(void VOXEL_APPEND_LINE(__DummyFunction)(FVoxelPinRef Name);)
 
 #define VOXEL_INPUT_PIN(InType, Name, Default, ...) \
-	INTERNAL_DECLARE_VOXEL_PIN(InType, Name); \
+	INTERNAL_DECLARE_VOXEL_PIN(Name); \
 	TVoxelPinRef<InType> Name ## Pin = CreateInputPin<InType>(STATIC_FNAME(#Name), VOXEL_PIN_METADATA_IMPL(InType, __LINE__, StaticStruct(), Default, Internal::None, ##__VA_ARGS__));
 
-#define VOXEL_VARIADIC_INPUT_PIN(InType, Name, Default, MinNum, ...) \
-	INTERNAL_DECLARE_VOXEL_PIN(InType, Name); \
-	TVoxelVariadicPinRef<InType> Name ## Pins = CreateVariadicInputPin<InType>(STATIC_FNAME(#Name), VOXEL_PIN_METADATA_IMPL(InType, __LINE__, StaticStruct(), Default, Internal::None, ##__VA_ARGS__), MinNum);
+#define VOXEL_INPUT_PIN_ARRAY(InType, Name, Default, MinNum, ...) \
+	INTERNAL_DECLARE_VOXEL_PIN(Name); \
+	TVoxelPinArrayRef<InType> Name ## Pins = CreateInputPinArray<InType>(STATIC_FNAME(#Name), VOXEL_PIN_METADATA_IMPL(InType, __LINE__, StaticStruct(), Default, Internal::None, ##__VA_ARGS__), MinNum);
 
 #define VOXEL_OUTPUT_PIN(InType, Name, ...) \
-	INTERNAL_DECLARE_VOXEL_PIN(InType, Name); \
+	INTERNAL_DECLARE_VOXEL_PIN(Name); \
 	TVoxelPinRef<InType> Name ## Pin = CreateOutputPin<InType>(STATIC_FNAME(#Name), VOXEL_PIN_METADATA_IMPL(InType, __LINE__, StaticStruct(), nullptr, Internal::None, ##__VA_ARGS__));
 
 ///////////////////////////////////////////////////////////////////////////////
-/////////////////// Template pins can be scalar or buffer /////////////////////
+/////////////////// Template pins can be scalar or array //////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
 #define VOXEL_TEMPLATE_INPUT_PIN(InType, Name, Default, ...) \
-	INTERNAL_DECLARE_VOXEL_PIN(InType, Name); \
+	INTERNAL_DECLARE_VOXEL_PIN(Name); \
 	FVoxelPinRef Name ## Pin = ( \
 		[] { checkStatic(!TIsVoxelBuffer<InType>::Value); }, \
 		CreateInputPin(FVoxelPinType::Make<InType>().GetBufferType(), STATIC_FNAME(#Name), VOXEL_PIN_METADATA_IMPL(InType, __LINE__, StaticStruct(), Default, Internal::None, ##__VA_ARGS__), EVoxelPinFlags::TemplatePin));
 
-#define VOXEL_TEMPLATE_VARIADIC_INPUT_PIN(InType, Name, Default, MinNum, ...) \
-	INTERNAL_DECLARE_VOXEL_PIN(InType, Name); \
-	FVoxelVariadicPinRef Name ## Pins = ( \
+#define VOXEL_TEMPLATE_INPUT_PIN_ARRAY(InType, Name, Default, MinNum, ...) \
+	INTERNAL_DECLARE_VOXEL_PIN(Name); \
+	FVoxelPinArrayRef Name ## Pins = ( \
 		[] { checkStatic(!TIsVoxelBuffer<InType>::Value); }, \
-		CreateVariadicInputPin(FVoxelPinType::Make<InType>().GetBufferType(), STATIC_FNAME(#Name), VOXEL_PIN_METADATA_IMPL(InType, __LINE__, StaticStruct(), Default, Internal::None, ##__VA_ARGS__), MinNum, EVoxelPinFlags::TemplatePin));
+		CreateInputPinArray(FVoxelPinType::Make<InType>().GetBufferType(), STATIC_FNAME(#Name), VOXEL_PIN_METADATA_IMPL(InType, __LINE__, StaticStruct(), Default, Internal::None, ##__VA_ARGS__), MinNum, EVoxelPinFlags::TemplatePin));
 
 #define VOXEL_TEMPLATE_OUTPUT_PIN(InType, Name, ...) \
-	INTERNAL_DECLARE_VOXEL_PIN(InType, Name); \
+	INTERNAL_DECLARE_VOXEL_PIN(Name); \
 	FVoxelPinRef Name ## Pin = ( \
 		[] { checkStatic(!TIsVoxelBuffer<InType>::Value); }, \
 		CreateOutputPin(FVoxelPinType::Make<InType>().GetBufferType(), STATIC_FNAME(#Name), VOXEL_PIN_METADATA_IMPL(InType, __LINE__, StaticStruct(), nullptr, Internal::None, ##__VA_ARGS__), EVoxelPinFlags::TemplatePin));
@@ -1227,7 +1229,7 @@ public:
 
 	struct VOXELGRAPHCORE_API FNodePool
 	{
-		FVoxelCriticalSection CriticalSection;
+		FVoxelFastCriticalSection CriticalSection;
 		TVoxelArray<TSharedRef<FVoxelNode>> Nodes;
 
 		FNodePool();
@@ -1243,7 +1245,7 @@ public:
 		TVoxelFutureValue<OutputType> operator+(LambdaType Lambda)
 		{
 			static FNodePool Pool;
-			static const FName StatName = TEXTVIEW("Call ") + NodeType::StaticStruct()->GetFName();
+			static const FName StatName = FVoxelUtilities::AppendName(TEXT("Call "), NodeType::StaticStruct()->GetFName());
 
 			return TVoxelFutureValue<OutputType>(FVoxelNodeCaller::CallNode(
 				Pool,
@@ -1264,28 +1266,19 @@ private:
 		const UScriptStruct* Struct,
 		FName StatName,
 		const FVoxelQuery& Query,
-		FVoxelPinRef OutputPin,
-		TFunctionRef<void(FBindings&, FVoxelNode& Node)> Bind);
-};
-
-template<typename Type>
-struct TVoxelCallNodeBindHelper
-{
-    constexpr Type operator()() const
-	{
-        return {};
-    }
+		const FVoxelPinRef OutputPin,
+		const TFunctionRef<void(FBindings&, FVoxelNode& Node)> Bind);
 };
 
 #define VOXEL_CALL_NODE(NodeType, OutputPin, Query) \
-	FVoxelNodeCaller::TLambdaCaller<INTELLISENSE_SWITCH(void, NodeType), VOXEL_GET_TYPE(NodeType().OutputPin)::Type>{ Query, VOXEL_PIN_NAME(NodeType, OutputPin) } + \
+	FVoxelNodeCaller::TLambdaCaller<NodeType, VOXEL_GET_TYPE(NodeType().OutputPin)::Type>{ Query, VOXEL_PIN_NAME(NodeType, OutputPin) } + \
 		[&](FVoxelNodeCaller::FBindings& Bindings, NodeType& CalleeNode)
 
 #define VOXEL_CALL_NODE_BIND(Name, ...) \
 	Bindings.Bind(CalleeNode.Name) = [this, \
 		ReturnPinType = CalleeNode.GetNodeRuntime().GetPinData(CalleeNode.Name).Type, \
 		ReturnPinStatName = CalleeNode.GetNodeRuntime().GetPinData(CalleeNode.Name).StatName, \
-		ReturnInnerType = TVoxelCallNodeBindHelper<VOXEL_GET_TYPE(CalleeNode.Name)::Type>(), \
+		ReturnInnerType = TVoxelTypeInstance<VOXEL_GET_TYPE(CalleeNode.Name)::Type>(), \
 		##__VA_ARGS__](const FVoxelQuery& Query) \
 	-> \
 	TChooseClass< \

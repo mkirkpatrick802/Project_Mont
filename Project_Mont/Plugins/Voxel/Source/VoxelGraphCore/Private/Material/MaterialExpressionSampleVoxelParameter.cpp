@@ -1,4 +1,4 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "Material/MaterialExpressionSampleVoxelParameter.h"
 #include "MaterialCompiler.h"
@@ -53,7 +53,7 @@ void UMaterialExpressionVoxelParameter::GetCaption(TArray<FString>& OutCaptions)
 		return;
 	}
 
-	const FVoxelMaterialDefinitionParameter* Parameter = MaterialDefinition->GuidToMaterialParameter.Find(ParameterGuid);
+	const FVoxelParameter* Parameter = MaterialDefinition->Parameters.FindByKey(ParameterGuid);
 	if (!Parameter)
 	{
 		OutCaptions.Add("Voxel Parameter");
@@ -253,9 +253,7 @@ int32 UMaterialExpressionSampleVoxelParameter::Compile(FMaterialCompiler* Compil
 		return Compiler->Error(TEXT("Invalid Parameter"));
 	}
 
-	MaterialDefinition->ConditionalPostLoad();
-
-	const FVoxelMaterialDefinitionParameter* Parameter = MaterialDefinition->GuidToMaterialParameter.Find(ParameterGuid);
+	const FVoxelParameter* Parameter = MaterialDefinition->Parameters.FindByKey(ParameterGuid);
 	if (!Parameter)
 	{
 		Compiler->AppendExpressionError(

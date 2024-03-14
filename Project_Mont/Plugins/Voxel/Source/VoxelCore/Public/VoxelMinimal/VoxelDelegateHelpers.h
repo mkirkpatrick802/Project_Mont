@@ -1,11 +1,11 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
-#include "VoxelCoreMinimal.h"
+#include "CoreMinimal.h"
+#include "VoxelSharedPtr.h"
+#include "VoxelEngineVersionHelpers.h"
 #include "Delegates/IDelegateInstance.h"
-#include "VoxelMinimal/VoxelSharedPtr.h"
-#include "VoxelMinimal/Utilities/VoxelTypeUtilities.h"
 
 template<typename...>
 struct TVoxelTypes;
@@ -42,7 +42,7 @@ struct TVoxelLambdaInfo : TVoxelFunctionInfo<void()>
 };
 
 template<typename LambdaType>
-struct TVoxelLambdaInfo<LambdaType, std::enable_if_t<sizeof(decltype(&LambdaType::operator())) != 0>> : TVoxelFunctionInfo<decltype(&LambdaType::operator())>
+struct TVoxelLambdaInfo<LambdaType, typename TEnableIf<sizeof(decltype(&LambdaType::operator())) != 0>::Type> : TVoxelFunctionInfo<decltype(&LambdaType::operator())>
 {
 };
 
@@ -249,120 +249,16 @@ struct TMakeWeakPtrLambdaHelper<TVoxelTypes<ArgTypes...>>
 	}
 };
 
-template<
-	typename T,
-	typename LambdaType,
-	typename Info = TVoxelLambdaInfo<LambdaType>,
-	typename = std::enable_if_t<std::is_same_v<typename Info::ReturnType, void>>>
+template<typename T, typename LambdaType, typename Info = TVoxelLambdaInfo<LambdaType>, typename = typename TEnableIf<std::is_same_v<typename Info::ReturnType, void>>::Type>
 FORCEINLINE auto MakeWeakPtrLambda(const T& Ptr, LambdaType Lambda)
 {
 	return TMakeWeakPtrLambdaHelper<typename Info::ArgTypes>::Make(Ptr, MoveTemp(Lambda));
 }
 
-template<
-	typename T,
-	typename LambdaType,
-	typename Info = TVoxelLambdaInfo<LambdaType>,
-	typename = std::enable_if_t<!std::is_same_v<typename Info::ReturnType, void>>,
-	typename = std::enable_if_t<FVoxelUtilities::CanMakeSafe<typename Info::ReturnType>>>
-FORCEINLINE auto MakeWeakPtrLambda(const T& Ptr, LambdaType Lambda)
-{
-	return TMakeWeakPtrLambdaHelper<typename Info::ArgTypes>::Make(Ptr, MoveTemp(Lambda), FVoxelUtilities::MakeSafe<typename Info::ReturnType>());
-}
-
-template<
-	typename T,
-	typename LambdaType,
-	typename Info = TVoxelLambdaInfo<LambdaType>,
-	typename = std::enable_if_t<!std::is_same_v<typename Info::ReturnType, void>>>
-FORCEINLINE auto MakeWeakPtrLambda(const T& Ptr, LambdaType Lambda, typename Info::ReturnType&& Default)
+template<typename T, typename LambdaType, typename Info = TVoxelLambdaInfo<LambdaType>, typename = typename TEnableIf<!std::is_same_v<typename Info::ReturnType, void>>::Type>
+FORCEINLINE auto MakeWeakPtrLambda(const T& Ptr, LambdaType Lambda, typename Info::ReturnType&& Default = {})
 {
 	return TMakeWeakPtrLambdaHelper<typename Info::ArgTypes>::Make(Ptr, MoveTemp(Lambda), MoveTemp(Default));
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-template<typename>
-struct TMakeWeakObjectPtrLambdaHelper;
-
-template<typename... ArgTypes>
-struct TMakeWeakObjectPtrLambdaHelper<TVoxelTypes<ArgTypes...>>
-{
-	template<typename T, typename LambdaType>
-	FORCEINLINE static auto Make(const T& Ptr, LambdaType&& Lambda)
-	{
-		return [WeakPtr = MakeWeakObjectPtr(Cast<UObject>(Ptr)), Lambda = MoveTemp(Lambda)](ArgTypes... Args)
-		{
-			checkVoxelSlow(IsInGameThread());
-
-			if (WeakPtr.IsValid())
-			{
-				Lambda(Forward<ArgTypes>(Args)...);
-			}
-		};
-	}
-	template<typename T, typename LambdaType, typename ReturnType>
-	FORCEINLINE static auto Make(const T& Ptr, LambdaType&& Lambda, ReturnType&& Default)
-	{
-		return [WeakPtr = MakeWeakObjectPtr(Cast<UObject>(Ptr)), Lambda = MoveTemp(Lambda), Default = MoveTemp(Default)](ArgTypes... Args) -> ReturnType
-		{
-			checkVoxelSlow(IsInGameThread());
-
-			if (WeakPtr.IsValid())
-			{
-				return Lambda(Forward<ArgTypes>(Args)...);
-			}
-			else
-			{
-				return Default;
-			}
-		};
-	}
-};
-
-template<typename T, typename LambdaType, typename Info = TVoxelLambdaInfo<LambdaType>, typename = std::enable_if_t<
-	(TIsDerivedFrom<T, UObject>::Value || TIsDerivedFrom<T, IInterface>::Value) &&
-	std::is_same_v<typename Info::ReturnType, void>>>
-FORCEINLINE auto MakeWeakObjectPtrLambda(T* Ptr, LambdaType Lambda)
-{
-	return TMakeWeakObjectPtrLambdaHelper<typename Info::ArgTypes>::Make(Ptr, MoveTemp(Lambda));
-}
-
-template<typename T, typename LambdaType, typename Info = TVoxelLambdaInfo<LambdaType>, typename = std::enable_if_t<
-	(TIsDerivedFrom<T, UObject>::Value || TIsDerivedFrom<T, IInterface>::Value) &&
-	!std::is_same_v<typename Info::ReturnType, void>>>
-FORCEINLINE auto MakeWeakObjectPtrLambda(T* Ptr, LambdaType Lambda, typename Info::ReturnType&& Default = {})
-{
-	return TMakeWeakObjectPtrLambdaHelper<typename Info::ArgTypes>::Make(Ptr, MoveTemp(Lambda), MoveTemp(Default));
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-template<typename, typename>
-struct TMakeStrongPtrLambdaHelper;
-
-template<typename... ArgTypes, typename ReturnType>
-struct TMakeStrongPtrLambdaHelper<TVoxelTypes<ArgTypes...>, ReturnType>
-{
-	template<typename T, typename LambdaType>
-	FORCEINLINE static auto Make(const T& Ptr, LambdaType&& Lambda)
-	{
-		return [StrongPtr = MakeSharedRef(Ptr), Lambda = MoveTemp(Lambda)](ArgTypes... Args) -> ReturnType
-		{
-			(void)StrongPtr;
-			return Lambda(Forward<ArgTypes>(Args)...);
-		};
-	}
-};
-
-template<typename T, typename LambdaType, typename Info = TVoxelLambdaInfo<LambdaType>>
-FORCEINLINE auto MakeStrongPtrLambda(const T& Ptr, LambdaType Lambda)
-{
-	return TMakeStrongPtrLambdaHelper<typename Info::ArgTypes, typename Info::ReturnType>::Make(Ptr, MoveTemp(Lambda));
 }
 
 ///////////////////////////////////////////////////////////////////////////////

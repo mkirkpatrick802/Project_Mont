@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 using System;
 using System.IO;
@@ -87,9 +87,9 @@ public class ModuleRules_Voxel : ModuleRules
 		{
 			PublicDependencyModuleNames.Add("VoxelCore");
 
-			if (GetType().Name != "VoxelCoreAssets")
+			if (GetType().Name != "VoxelGraphCore")
 			{
-				PublicDependencyModuleNames.Add("VoxelCoreAssets");
+				PublicDependencyModuleNames.Add("VoxelGraphCore");
 			}
 		}
 
@@ -102,7 +102,9 @@ public class ModuleRules_Voxel : ModuleRules
 					"SlateCore",
 					"EditorStyle",
 					"PropertyEditor",
+#if UE_5_0_OR_LATER
                     "EditorFramework",
+#endif
                 }
 			);
 
@@ -141,7 +143,9 @@ public class ModuleRules_Voxel : ModuleRules
 				"Intermediate",
 				"Build",
 				Target.Platform.ToString(),
+#if UE_5_2_OR_LATER
 				"x64",
+#endif
 				Target.bBuildEditor ? "UnrealEditor" : "UnrealGame",
 				Target.Configuration.ToString(),
 				GetType().Name));
@@ -153,7 +157,11 @@ public class VoxelCore : ModuleRules_Voxel
 {
 	public VoxelCore(ReadOnlyTargetRules Target) : base(Target)
 	{
+#if UE_5_2_OR_LATER
 		IWYUSupport = IWYUSupport.None;
+#else
+		bEnforceIWYU = false;
+#endif
 
 		if (!bUseUnity &&
 		    !bStrictIncludes)
@@ -189,6 +197,7 @@ public class VoxelCore : ModuleRules_Voxel
 				"TraceLog",
 				"Renderer",
 				"Projects",
+				"PhysicsCore",
 				"ApplicationCore",
 			}
 		);
@@ -198,13 +207,9 @@ public class VoxelCore : ModuleRules_Voxel
 			{
 				"zlib",
 				"UElibPNG",
-				"HTTP",
 				"Slate",
 				"SlateCore",
 				"Landscape",
-#if UE_5_4_OR_LATER
-				"EventLoop",
-#endif
 			}
 		);
 
@@ -218,6 +223,13 @@ public class VoxelCore : ModuleRules_Voxel
 				}
 			);
 		}
+
+		if (Target.bWithLiveCoding)
+		{
+			PrivateIncludePathModuleNames.Add("LiveCoding");
+		}
+
+		SetupModulePhysicsSupport(Target);
 
 		PrivateIncludePaths.AddRange(
 			new string[] {

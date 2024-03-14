@@ -1,9 +1,9 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelEditorMinimal.h"
 #include "VoxelActor.h"
 #include "SculptVolume/VoxelSculptEdMode.h"
-#include "VoxelParameterOverridesDetails.h"
+#include "Customizations/VoxelParameterContainerDetails.h"
 
 VOXEL_CUSTOMIZE_CLASS(AVoxelPreviewActor)(IDetailLayoutBuilder& DetailLayout)
 {
@@ -16,20 +16,34 @@ VOXEL_CUSTOMIZE_CLASS(AVoxelPreviewActor)(IDetailLayoutBuilder& DetailLayout)
 	DetailLayout.HideCategory(STATIC_FNAME("WorldPartition"));
 	DetailLayout.HideCategory(STATIC_FNAME("LevelInstance"));
 
-	const TSharedRef<IPropertyHandle> GraphHandle = DetailLayout.GetProperty(GET_MEMBER_NAME_STATIC(AVoxelPreviewActor, Graph_NewProperty));
-	GraphHandle->MarkHiddenByCustomization();
+	TArray<TWeakObjectPtr<UObject>> WeakObjects;
+	DetailLayout.GetObjectsBeingCustomized(WeakObjects);
 
-	KeepAlive(FVoxelParameterOverridesDetails::Create(
-		DetailLayout,
-		GetObjectsBeingCustomized(DetailLayout),
-		FVoxelEditorUtilities::MakeRefreshDelegate(this, DetailLayout)));
-
-	// Hide component properties
-	for (const FProperty& Property : GetClassProperties<UActorComponent>())
+	TArray<UObject*> Objects;
+	for (const TWeakObjectPtr<UObject>& WeakObject : WeakObjects)
 	{
-		if (const TSharedPtr<IPropertyHandle> PropertyHandle = DetailLayout.GetProperty(Property.GetFName(), UActorComponent::StaticClass()))
-		{
-			PropertyHandle->MarkHiddenByCustomization();
-		}
+		Objects.Add(WeakObject.Get());
 	}
+
+	IDetailPropertyRow* Row = DetailLayout.EditCategory("").AddExternalObjectProperty(
+		Objects,
+		GET_MEMBER_NAME_STATIC(AVoxelActor, ParameterContainer),
+		EPropertyLocation::Default,
+		FAddPropertyParams().ForceShowProperty());
+
+	if (!ensure(Row))
+	{
+		return;
+	}
+
+	Row->Visibility(EVisibility::Collapsed);
+
+	const TSharedPtr<IPropertyHandle> PropertyHandle = Row->GetPropertyHandle();
+	if (!ensure(PropertyHandle))
+	{
+		return;
+	}
+
+	PropertyHandle->SetInstanceMetaData("HideProvider", "");
+	KeepAlive(FVoxelParameterContainerDetails::Create(DetailLayout, PropertyHandle.ToSharedRef()));
 }

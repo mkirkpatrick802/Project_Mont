@@ -1,40 +1,27 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelDetailTexture.h"
 #include "VoxelQuery.h"
-#include "VoxelDependencyTracker.h"
-#include "Material/VoxelMaterialBlending.h"
-
+#include "VoxelDependency.h"
 #include "TextureResource.h"
 #include "Engine/Texture2D.h"
 #include "Materials/MaterialInstanceDynamic.h"
 
 DEFINE_VOXEL_FACTORY(UVoxelFloatDetailTexture);
 DEFINE_VOXEL_FACTORY(UVoxelColorDetailTexture);
-DEFINE_VOXEL_FACTORY(UVoxelMaterialDetailTexture);
+DEFINE_VOXEL_FACTORY(UVoxelMaterialIdDetailTexture);
 DEFINE_VOXEL_FACTORY(UVoxelNormalDetailTexture);
 
 DEFINE_VOXEL_MEMORY_STAT(STAT_VoxelDetailTextureMemory);
 
-FVoxelDetailTextureManager* GVoxelDetailTextureManager = new FVoxelDetailTextureManager();
-
-VOXEL_CONSOLE_VARIABLE(
-	VOXELGRAPHCORE_API, int32, GVoxelDetailTexturesFiltering, 0,
-	"voxel.detailtextures.filtering",
-	"0: Bilinear\n"
-	"1: Nearest");
-
-VOXEL_CONSOLE_SINK(ApplyDetailTexturesFiltering)
-{
-	GVoxelDetailTextureManager->UpdateAllocators_GameThread();
-}
+FVoxelDetailTextureManager* GVoxelDetailTextureManager = MakeVoxelSingleton(FVoxelDetailTextureManager);
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
 #if WITH_EDITOR
-void UVoxelDetailTextureBase::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+void UVoxelDetailTexture::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 
@@ -53,99 +40,13 @@ void UVoxelDetailTextureBase::PostEditChangeProperty(FPropertyChangedEvent& Prop
 		return;
 	}
 
-	GVoxelDetailTextureManager->Update_GameThread(*this);
+	GVoxelDetailTextureManager->UpdatePool_GameThread(*this);
 }
 #endif
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
-
-FVoxelPinType UVoxelFloatDetailTexture::GetInnerType() const
-{
-	return FVoxelPinType::Make<float>();
-}
-
-EPixelFormat UVoxelFloatDetailTexture::GetPixelFormat() const
-{
-	switch (Type)
-	{
-	default: ensure(false);
-	case EVoxelFloatDetailTextureType::Float32: return PF_R32_FLOAT;
-	case EVoxelFloatDetailTextureType::Float16: return PF_G16;
-	case EVoxelFloatDetailTextureType::Float8: return PF_G8;
-	}
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-FVoxelPinType UVoxelColorDetailTexture::GetInnerType() const
-{
-	return FVoxelPinType::Make<FLinearColor>();
-}
-
-EPixelFormat UVoxelColorDetailTexture::GetPixelFormat() const
-{
-	return PF_R8G8B8A8;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-FVoxelPinType UVoxelMaterialDetailTexture::GetInnerType() const
-{
-	return FVoxelPinType::Make<FVoxelMaterialBlending>();
-}
-
-EPixelFormat UVoxelMaterialDetailTexture::GetPixelFormat() const
-{
-	return PF_R32_UINT;
-}
-
-int32 UVoxelMaterialDetailTexture::GetNumTextures() const
-{
-	return 2;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-FVoxelPinType UVoxelNormalDetailTexture::GetInnerType() const
-{
-	return FVoxelPinType::Make<FVector>();
-}
-
-EPixelFormat UVoxelNormalDetailTexture::GetPixelFormat() const
-{
-	// R16 so we can use GatherRed
-	return PF_R16_UINT;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-void FVoxelDetailTextureRefPinType::Convert(
-	const bool bSetObject,
-	TWeakObjectPtr<UVoxelDetailTextureBase>& Object,
-	FVoxelDetailTextureRef& Struct) const
-{
-	if (bSetObject)
-	{
-		if (const TSharedPtr<FVoxelDetailTexture> DetailTexture = Struct.WeakDetailTexture.Pin())
-		{
-			Object = DetailTexture->WeakDetailTexture;
-		}
-	}
-	else
-	{
-		Struct.WeakDetailTexture = GVoxelDetailTextureManager->FindOrAdd_GameThread(*Object);
-	}
-}
 
 void FVoxelFloatDetailTextureRefPinType::Convert(
 	const bool bSetObject,
@@ -154,14 +55,14 @@ void FVoxelFloatDetailTextureRefPinType::Convert(
 {
 	if (bSetObject)
 	{
-		if (const TSharedPtr<FVoxelDetailTexture> DetailTexture = Struct.WeakDetailTexture.Pin())
+		if (const TSharedPtr<FVoxelDetailTexturePool> Pool = Struct.WeakPool.Pin())
 		{
-			Object = ReinterpretCastRef<TWeakObjectPtr<UVoxelFloatDetailTexture>>(DetailTexture->WeakDetailTexture);
+			Object = ReinterpretCastRef<TWeakObjectPtr<UVoxelFloatDetailTexture>>(Pool->WeakDetailTexture);
 		}
 	}
 	else
 	{
-		Struct.WeakDetailTexture = GVoxelDetailTextureManager->FindOrAdd_GameThread(*Object);
+		Struct.WeakPool = GVoxelDetailTextureManager->FindOrAddPool_GameThread(*Object);
 	}
 }
 
@@ -172,32 +73,32 @@ void FVoxelColorDetailTextureRefPinType::Convert(
 {
 	if (bSetObject)
 	{
-		if (const TSharedPtr<FVoxelDetailTexture> DetailTexture = Struct.WeakDetailTexture.Pin())
+		if (const TSharedPtr<FVoxelDetailTexturePool> Pool = Struct.WeakPool.Pin())
 		{
-			Object = ReinterpretCastRef<TWeakObjectPtr<UVoxelColorDetailTexture>>(DetailTexture->WeakDetailTexture);
+			Object = ReinterpretCastRef<TWeakObjectPtr<UVoxelColorDetailTexture>>(Pool->WeakDetailTexture);
 		}
 	}
 	else
 	{
-		Struct.WeakDetailTexture = GVoxelDetailTextureManager->FindOrAdd_GameThread(*Object);
+		Struct.WeakPool = GVoxelDetailTextureManager->FindOrAddPool_GameThread(*Object);
 	}
 }
 
-void FVoxelMaterialDetailTextureRefPinType::Convert(
+void FVoxelMaterialIdDetailTextureRefPinType::Convert(
 	const bool bSetObject,
-	TWeakObjectPtr<UVoxelMaterialDetailTexture>& Object,
-	FVoxelMaterialDetailTextureRef& Struct) const
+	TWeakObjectPtr<UVoxelMaterialIdDetailTexture>& Object,
+	FVoxelMaterialIdDetailTextureRef& Struct) const
 {
 	if (bSetObject)
 	{
-		if (const TSharedPtr<FVoxelDetailTexture> DetailTexture = Struct.WeakDetailTexture.Pin())
+		if (const TSharedPtr<FVoxelDetailTexturePool> Pool = Struct.WeakPool.Pin())
 		{
-			Object = ReinterpretCastRef<TWeakObjectPtr<UVoxelMaterialDetailTexture>>(DetailTexture->WeakDetailTexture);
+			Object = ReinterpretCastRef<TWeakObjectPtr<UVoxelMaterialIdDetailTexture>>(Pool->WeakDetailTexture);
 		}
 	}
 	else
 	{
-		Struct.WeakDetailTexture = GVoxelDetailTextureManager->FindOrAdd_GameThread(*Object);
+		Struct.WeakPool = GVoxelDetailTextureManager->FindOrAddPool_GameThread(*Object);
 	}
 }
 
@@ -208,14 +109,14 @@ void FVoxelNormalDetailTextureRefPinType::Convert(
 {
 	if (bSetObject)
 	{
-		if (const TSharedPtr<FVoxelDetailTexture> DetailTexture = Struct.WeakDetailTexture.Pin())
+		if (const TSharedPtr<FVoxelDetailTexturePool> Pool = Struct.WeakPool.Pin())
 		{
-			Object = Cast<UVoxelNormalDetailTexture>(DetailTexture->WeakDetailTexture);
+			Object = Cast<UVoxelNormalDetailTexture>(Pool->WeakDetailTexture);
 		}
 	}
 	else
 	{
-		Struct.WeakDetailTexture = GVoxelDetailTextureManager->FindOrAdd_GameThread(*Object);
+		Struct.WeakPool = GVoxelDetailTextureManager->FindOrAddPool_GameThread(*Object);
 	}
 }
 
@@ -227,11 +128,11 @@ FVoxelDetailTextureAllocator::FVoxelDetailTextureAllocator(
 	const int32 TextureSize,
 	const EPixelFormat PixelFormat,
 	const int32 NumTextures,
-	const FVoxelDetailTexture& DetailTexture)
+	const FVoxelDetailTexturePool& Pool)
 	: TextureSize(TextureSize)
 	, PixelFormat(PixelFormat)
 	, NumTextures(NumTextures)
-	, Name(DetailTexture.Name)
+	, Name(Pool.Name)
 {
 	Textures_GameThread.SetNumZeroed(NumTextures);
 }
@@ -315,7 +216,7 @@ TSharedRef<FVoxelDetailTextureAllocation> FVoxelDetailTextureAllocator::Allocate
 			GVoxelDetailTextureManager->AllocatorsToUpdate.Enqueue(AsWeak());
 		}
 
-		const FVoxelDetailTextureAllocationRange Range = FreeRanges_RequiresLock.Pop();
+		const FVoxelDetailTextureAllocationRange Range = FreeRanges_RequiresLock.Pop(false);
 		CheckRange(Range);
 
 		const int32 NumInRange = FMath::Min(NumLeft, Range.Num);
@@ -346,18 +247,12 @@ void FVoxelDetailTextureAllocator::Update_GameThread()
 	check(IsInGameThread());
 	VOXEL_SCOPE_LOCK(CriticalSection);
 
-	const TextureFilter Filter =
-		GVoxelDetailTexturesFiltering == 0
-		? TF_Bilinear
-		: TF_Nearest;
-
 	const int32 Size = SizeInBlocks_RequiresLock * TextureSize;
 	{
 		bool bNeedUpdate = false;
 		for (const UTexture2D* Texture : Textures_GameThread)
 		{
 			if (!Texture ||
-				Texture->Filter != Filter ||
 				Texture->GetSizeX() != Size ||
 				Texture->GetSizeY() != Size)
 			{
@@ -372,17 +267,17 @@ void FVoxelDetailTextureAllocator::Update_GameThread()
 
 	const TArray<UTexture2D*> OldTextures = Textures_GameThread;
 
-	const FString DebugName = "VoxelDetailTexture_" + Name.ToString() + "_TextureSize_" + FString::FromInt(TextureSize);
-	LOG_VOXEL(Log, "Reallocating detail texture %s to %dx%d", *DebugName, Size, Size);
+	const FName DebugName = "VoxelDetailTexture_" + Name + "_TextureSize_" + FString::FromInt(TextureSize);
+	LOG_VOXEL(Log, "Reallocating detail texture %s to %dx%d", *DebugName.ToString(), Size, Size);
 
 	for (int32 Index = 0; Index < NumTextures; Index++)
 	{
 		UTexture2D* Texture = FVoxelTextureUtilities::CreateTexture2D(
-			FName(DebugName + FString::Printf(TEXT("_TextureIndex_%d_"), Index)),
+			DebugName + FString::Printf(TEXT("_TextureIndex_%d_"), Index),
 			Size,
 			Size,
 			false,
-			Filter,
+			TF_Bilinear,
 			PixelFormat);
 
 		FVoxelTextureUtilities::RemoveBulkData(Texture);
@@ -432,9 +327,9 @@ void FVoxelDetailTextureDynamicMaterialParameter::Apply(const FName Name, UMater
 	{
 		UTexture2D* Texture = Textures[0].Get();
 
-		Instance.SetTextureParameterValue(Name + TEXTVIEW("_Texture"), Texture);
-		Instance.SetScalarParameterValue(Name + TEXTVIEW("_Texture_Size"), Texture ? Texture->GetSizeX() : 1);
-		Instance.SetScalarParameterValue(Name + TEXTVIEW("_Texture_InvSize"), Texture ? 1. / double(Texture->GetSizeX()) : 1);
+		Instance.SetTextureParameterValue(Name + "_Texture", Texture);
+		Instance.SetScalarParameterValue(Name + "_Texture_Size", Texture ? Texture->GetSizeX() : 1);
+		Instance.SetScalarParameterValue(Name + "_Texture_InvSize", Texture ? 1. / double(Texture->GetSizeX()) : 1);
 	}
 	else if (Textures.Num() == 2)
 	{
@@ -448,11 +343,11 @@ void FVoxelDetailTextureDynamicMaterialParameter::Apply(const FName Name, UMater
 			ensure(Texture0->GetSizeX() == Texture1->GetSizeX());
 		}
 
-		Instance.SetTextureParameterValue(Name + TEXTVIEW("_TextureA"), Texture0);
-		Instance.SetTextureParameterValue(Name + TEXTVIEW("_TextureB"), Texture1);
+		Instance.SetTextureParameterValue(Name + "_TextureA", Texture0);
+		Instance.SetTextureParameterValue(Name + "_TextureB", Texture1);
 
-		Instance.SetScalarParameterValue(Name + TEXTVIEW("_Texture_Size"), Texture0 ? Texture0->GetSizeX() : 1);
-		Instance.SetScalarParameterValue(Name + TEXTVIEW("_Texture_InvSize"), Texture0 ? 1. / double(Texture0->GetSizeX()) : 1);
+		Instance.SetScalarParameterValue(Name + "_Texture_Size", Texture0 ? Texture0->GetSizeX() : 1);
+		Instance.SetScalarParameterValue(Name + "_Texture_InvSize", Texture0 ? 1. / double(Texture0->GetSizeX()) : 1);
 	}
 	else
 	{
@@ -563,7 +458,7 @@ bool FVoxelDetailTextureUpload::GetUploadInfo(
 
 	{
 		const int32 Index = UploadIndex * TextureSize * BytesPerPixel;
-		OutData = MakeVoxelArrayView(UploadData).RightOf(Index);
+		OutData = MakeVoxelArrayView(UploadData).RightChop(Index);
 	}
 
 	OutPitch = Allocation->Num * TextureSize * BytesPerPixel;
@@ -591,7 +486,7 @@ void FVoxelDetailTextureUpload::Upload(TFunction<void()> OnComplete)
 
 FVoxelDummyFutureValue FVoxelDetailTextureUpload::Upload()
 {
-	const FVoxelDummyFutureValue Dummy = FVoxelFutureValue::MakeDummy(STATIC_FNAME("FVoxelDetailTextureUpload"));
+	const FVoxelDummyFutureValue Dummy = FVoxelFutureValue::MakeDummy();
 	Upload([=]
 	{
 		Dummy.MarkDummyAsCompleted();
@@ -653,7 +548,7 @@ void FVoxelDetailTextureUpload::Upload_RenderThread(const FTextureResource& Reso
 			0,
 			UpdateRegion,
 			Allocation->Num * TextureSize * BytesPerPixel,
-			MakeVoxelArrayView(UploadData).RightOf(TextureSize * Index * BytesPerPixel));
+			MakeVoxelArrayView(UploadData).RightChop(TextureSize * Index * BytesPerPixel));
 
 		Index += Range.Num;
 	}
@@ -666,7 +561,7 @@ void FVoxelDetailTextureUpload::Upload_RenderThread(const FTextureResource& Reso
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-FVoxelDetailTexture::FVoxelDetailTexture(UVoxelDetailTextureBase& DetailTexture)
+FVoxelDetailTexturePool::FVoxelDetailTexturePool(UVoxelDetailTexture& DetailTexture)
 	: WeakDetailTexture(&DetailTexture)
 	, Class(DetailTexture.GetClass())
 	, Name(DetailTexture.GetFName())
@@ -677,7 +572,7 @@ FVoxelDetailTexture::FVoxelDetailTexture(UVoxelDetailTextureBase& DetailTexture)
 {
 }
 
-void FVoxelDetailTexture::AddReferencedObjects(FReferenceCollector& Collector)
+void FVoxelDetailTexturePool::AddReferencedObjects(FReferenceCollector& Collector)
 {
 	VOXEL_FUNCTION_COUNTER();
 	VOXEL_SCOPE_LOCK(CriticalSection);
@@ -688,7 +583,7 @@ void FVoxelDetailTexture::AddReferencedObjects(FReferenceCollector& Collector)
 	}
 }
 
-TSharedRef<FVoxelDetailTextureAllocation> FVoxelDetailTexture::Allocate_AnyThread(
+TSharedRef<FVoxelDetailTextureAllocation> FVoxelDetailTexturePool::Allocate_AnyThread(
 	const int32 TextureSize,
 	const int32 Num,
 	const FVoxelQuery& Query)
@@ -718,18 +613,7 @@ TSharedRef<FVoxelDetailTextureAllocation> FVoxelDetailTexture::Allocate_AnyThrea
 	return TextureAllocator->Allocate_AnyThread(Num);
 }
 
-void FVoxelDetailTexture::UpdateAllocators_GameThread()
-{
-	VOXEL_FUNCTION_COUNTER();
-	VOXEL_SCOPE_LOCK(CriticalSection);
-
-	for (const auto& It : TextureSizeToTextureAllocator_RequiresLock)
-	{
-		It.Value->Update_GameThread();
-	}
-}
-
-void FVoxelDetailTexture::UpdateTextureSize_GameThread()
+void FVoxelDetailTexturePool::UpdateTextureSize_GameThread()
 {
 	VOXEL_FUNCTION_COUNTER();
 
@@ -737,7 +621,7 @@ void FVoxelDetailTexture::UpdateTextureSize_GameThread()
 
 	VOXEL_SCOPE_LOCK(CriticalSection);
 
-	const UVoxelDetailTextureBase* DetailTexture = WeakDetailTexture.Get();
+	const UVoxelDetailTexture* DetailTexture = WeakDetailTexture.Get();
 	if (!ensure(DetailTexture))
 	{
 		return;
@@ -784,7 +668,7 @@ void FVoxelDetailTexture::UpdateTextureSize_GameThread()
 	}
 }
 
-void FVoxelDetailTexture::UpdatePixelFormat_GameThread()
+void FVoxelDetailTexturePool::UpdatePixelFormat_GameThread()
 {
 	VOXEL_FUNCTION_COUNTER();
 
@@ -792,7 +676,7 @@ void FVoxelDetailTexture::UpdatePixelFormat_GameThread()
 
 	VOXEL_SCOPE_LOCK(CriticalSection);
 
-	const UVoxelDetailTextureBase* DetailTexture = WeakDetailTexture.Get();
+	const UVoxelDetailTexture* DetailTexture = WeakDetailTexture.Get();
 	if (!ensure(DetailTexture))
 	{
 		return;
@@ -809,7 +693,7 @@ void FVoxelDetailTexture::UpdatePixelFormat_GameThread()
 	PixelFormatDependency->Invalidate();
 }
 
-int32 FVoxelDetailTexture::GetTextureSize_AnyThread(const int32 LOD, const FVoxelQuery& Query)
+int32 FVoxelDetailTexturePool::GetTextureSize_AnyThread(const int32 LOD, const FVoxelQuery& Query)
 {
 	TSharedPtr<FVoxelDependency> Dependency;
 	const int32 TextureSize = INLINE_LAMBDA
@@ -845,46 +729,36 @@ int32 FVoxelDetailTexture::GetTextureSize_AnyThread(const int32 LOD, const FVoxe
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-TSharedRef<FVoxelDetailTexture> FVoxelDetailTextureManager::FindOrAdd_GameThread(UVoxelDetailTextureBase& Texture)
+TSharedRef<FVoxelDetailTexturePool> FVoxelDetailTextureManager::FindOrAddPool_GameThread(UVoxelDetailTexture& Texture)
 {
 	VOXEL_FUNCTION_COUNTER();
 	check(IsInGameThread());
 
-	TSharedPtr<FVoxelDetailTexture>& DetailTexture = ObjectToDetailTexture.FindOrAdd(&Texture);
-	if (DetailTexture)
+	TSharedPtr<FVoxelDetailTexturePool>& Pool = TextureToPool.FindOrAdd(&Texture);
+	if (Pool)
 	{
-		return DetailTexture.ToSharedRef();
+		return Pool.ToSharedRef();
 	}
 
-	DetailTexture = MakeVoxelShared<FVoxelDetailTexture>(Texture);
-	DetailTexture->UpdatePixelFormat_GameThread();
-	DetailTexture->UpdateTextureSize_GameThread();
-	return DetailTexture.ToSharedRef();
+	Pool = MakeVoxelShared<FVoxelDetailTexturePool>(Texture);
+	Pool->UpdatePixelFormat_GameThread();
+	Pool->UpdateTextureSize_GameThread();
+	return Pool.ToSharedRef();
 }
 
-void FVoxelDetailTextureManager::UpdateAllocators_GameThread()
-{
-	VOXEL_FUNCTION_COUNTER();
-
-	for (const auto& It : ObjectToDetailTexture)
-	{
-		It.Value->UpdateAllocators_GameThread();
-	}
-}
-
-void FVoxelDetailTextureManager::Update_GameThread(const UVoxelDetailTextureBase& Texture) const
+void FVoxelDetailTextureManager::UpdatePool_GameThread(const UVoxelDetailTexture& Texture) const
 {
 	VOXEL_FUNCTION_COUNTER();
 	check(IsInGameThread());
 
-	const TSharedPtr<FVoxelDetailTexture> DetailTexture = ObjectToDetailTexture.FindRef(&Texture);
-	if (!DetailTexture)
+	const TSharedPtr<FVoxelDetailTexturePool> Pool = TextureToPool.FindRef(&Texture);
+	if (!Pool)
 	{
 		return;
 	}
 
-	DetailTexture->UpdatePixelFormat_GameThread();
-	DetailTexture->UpdateTextureSize_GameThread();
+	Pool->UpdatePixelFormat_GameThread();
+	Pool->UpdateTextureSize_GameThread();
 }
 
 void FVoxelDetailTextureManager::Tick()
@@ -914,7 +788,7 @@ void FVoxelDetailTextureManager::AddReferencedObjects(FReferenceCollector& Colle
 {
 	VOXEL_FUNCTION_COUNTER();
 
-	for (auto It = ObjectToDetailTexture.CreateIterator(); It; ++It)
+	for (auto It = TextureToPool.CreateIterator(); It; ++It)
 	{
 		Collector.AddReferencedObject(It.Key());
 

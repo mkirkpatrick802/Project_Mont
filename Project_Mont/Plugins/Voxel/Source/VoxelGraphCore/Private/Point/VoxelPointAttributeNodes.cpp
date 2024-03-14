@@ -1,9 +1,8 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "Point/VoxelPointAttributeNodes.h"
-#include "VoxelCompilationGraph.h"
-#include "Utilities/VoxelBufferMathUtilities.h"
-#include "Utilities/VoxelBufferConversionUtilities.h"
+#include "VoxelBufferUtilities.h"
+#include "VoxelCompiledGraph.h"
 
 DEFINE_VOXEL_NODE_COMPUTE(FVoxelNode_SetPointAttribute, Out)
 {
@@ -226,7 +225,7 @@ DEFINE_VOXEL_NODE_COMPUTE(FVoxelNode_GetPointSeed, Value)
 
 	FindVoxelPointSetAttribute(*PointSetQueryParameter->PointSet, FVoxelPointAttributes::Id, FVoxelPointIdBuffer, Buffer);
 
-	return FVoxelBufferConversionUtilities::PointIdToSeed(Buffer);
+	return FVoxelBufferUtilities::PointIdToSeed(Buffer);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -252,7 +251,7 @@ DEFINE_VOXEL_NODE_COMPUTE(FVoxelNode_ApplyTranslation, Out)
 			FindVoxelPointSetAttribute(*Points, FVoxelPointAttributes::Position, FVoxelVectorBuffer, PositionBuffer);
 
 			const TSharedRef<FVoxelPointSet> NewPoints = Points->MakeSharedCopy();
-			NewPoints->Add(FVoxelPointAttributes::Position, FVoxelBufferMathUtilities::Add(PositionBuffer, Translation));
+			NewPoints->Add(FVoxelPointAttributes::Position, FVoxelBufferUtilities::Add(PositionBuffer, Translation));
 			return NewPoints;
 		};
 	};
@@ -277,7 +276,7 @@ DEFINE_VOXEL_NODE_COMPUTE(FVoxelNode_ApplyRotation, Out)
 			FindVoxelPointSetAttribute(*Points, FVoxelPointAttributes::Rotation, FVoxelQuaternionBuffer, RotationBuffer);
 
 			const TSharedRef<FVoxelPointSet> NewPoints = Points->MakeSharedCopy();
-			NewPoints->Add(FVoxelPointAttributes::Rotation, FVoxelBufferMathUtilities::Combine(RotationBuffer, Rotation));
+			NewPoints->Add(FVoxelPointAttributes::Rotation, FVoxelBufferUtilities::Combine(RotationBuffer, Rotation));
 			return NewPoints;
 		};
 	};
@@ -302,7 +301,7 @@ DEFINE_VOXEL_NODE_COMPUTE(FVoxelNode_ApplyScale, Out)
 			FindVoxelPointSetAttribute(*Points, FVoxelPointAttributes::Position, FVoxelVectorBuffer, PositionBuffer);
 
 			const TSharedRef<FVoxelPointSet> NewPoints = Points->MakeSharedCopy();
-			NewPoints->Add(FVoxelPointAttributes::Position, FVoxelBufferMathUtilities::Multiply(PositionBuffer, Scale));
+			NewPoints->Add(FVoxelPointAttributes::Position, FVoxelBufferUtilities::Multiply(PositionBuffer, Scale));
 			return NewPoints;
 		};
 	};

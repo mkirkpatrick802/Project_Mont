@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelAssetTypeActions.h"
 #include "ContentBrowserModule.h"
@@ -15,13 +15,13 @@ VOXEL_RUN_ON_STARTUP(RegisterVoxelAssetTypes, Editor, 999)
 	GVoxelAssetCategory = AssetTools.RegisterAdvancedAssetCategory("Voxel", INVTEXT("Voxel"));
 
 	// Make a copy as RegisterAssetTypeActions creates UObjects
-	TVoxelArray<UClass*> Classes;
-	ForEachObjectOfClass<UClass>([&](UClass& Class)
+	TArray<UClass*> Classes;
+	ForEachObjectOfClass<UClass>([&](UClass* Class)
 	{
-		if (!Class.HasAnyClassFlags(CLASS_Abstract) &&
-			Class.HasMetaDataHierarchical(STATIC_FNAME("VoxelAssetType")))
+		if (!Class->HasAnyClassFlags(CLASS_Abstract) &&
+			Class->HasMetaDataHierarchical(STATIC_FNAME("VoxelAssetType")))
 		{
-			Classes.Add(&Class);
+			Classes.Add(Class);
 		}
 	});
 
@@ -91,13 +91,13 @@ void FVoxelAssetTypeActionsBase::GetActions(const TArray<UObject*>& InObjects, F
 			{
 				for (UObject* Object : InObjects)
 				{
-					FVoxelUtilities::InvokeFunctionWithNoParameters(Object, Function);
+					FVoxelObjectUtilities::InvokeFunctionWithNoParameters(Object, Function);
 				}
 			})));
 	}
 }
 
-void FVoxelAssetTypeActionsBase::OpenAssetEditor(const TArray<UObject*>& InObjects, const TSharedPtr<IToolkitHost> EditWithinLevelEditor)
+void FVoxelAssetTypeActionsBase::OpenAssetEditor(const TArray<UObject*>& InObjects, TSharedPtr<IToolkitHost> EditWithinLevelEditor)
 {
 	for (UObject* Object : InObjects)
 	{
@@ -227,7 +227,7 @@ void FVoxelInstanceAssetTypeActions::CreateNewInstances(const TArray<UObject*>& 
 
 		FString NewAssetName;
 		FString PackageName;
-		CreateUniqueAssetName(ParentAsset->GetPackage()->GetName(), "_Inst", PackageName, NewAssetName);
+		CreateUniqueAssetName(ParentAsset->GetOutermost()->GetName(), "_Inst", PackageName, NewAssetName);
 
 		UObject* InstanceAsset = AssetToolsModule.CreateAsset(NewAssetName, FPackageName::GetLongPackagePath(PackageName), GetInstanceClass(), nullptr);
 		if (!ensure(InstanceAsset))

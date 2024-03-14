@@ -1,7 +1,7 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "Toolkits/SVoxelSimpleAssetEditorViewport.h"
-#include "VoxelSimpleAssetToolkit.h"
+#include "Toolkits/VoxelSimpleAssetToolkit.h"
 #include "PreviewProfileController.h"
 #include "SEditorViewportToolBarMenu.h"
 
@@ -13,7 +13,7 @@ FVoxelSimpleAssetEditorViewportClient::FVoxelSimpleAssetEditorViewportClient(
 {
 }
 
-void FVoxelSimpleAssetEditorViewportClient::Tick(const float DeltaSeconds)
+void FVoxelSimpleAssetEditorViewportClient::Tick(float DeltaSeconds)
 {
 	FEditorViewportClient::Tick(DeltaSeconds);
 
@@ -57,7 +57,7 @@ bool FVoxelSimpleAssetEditorViewportClient::InputKey(const FInputKeyEventArgs& E
 	return bHandled;
 }
 
-bool FVoxelSimpleAssetEditorViewportClient::InputAxis(FViewport* InViewport, const FInputDeviceId DeviceID, const FKey Key, const float Delta, const float DeltaTime, const int32 NumSamples, const bool bGamepad)
+bool FVoxelSimpleAssetEditorViewportClient::InputAxis(FViewport* InViewport, FInputDeviceId DeviceID, FKey Key, float Delta, float DeltaTime, int32 NumSamples, bool bGamepad)
 {
 	bool bResult = true;
 
@@ -102,7 +102,7 @@ void SVoxelSimpleAssetEditorViewportToolbar::Construct(const FArguments& InArgs,
 	SCommonEditorViewportToolbarBase::Construct(SCommonEditorViewportToolbarBase::FArguments().PreviewProfileController(MakeVoxelShared<FPreviewProfileController>()), InInfoProvider);
 }
 
-void SVoxelSimpleAssetEditorViewportToolbar::ExtendLeftAlignedToolbarSlots(const TSharedPtr<SHorizontalBox> MainBoxPtr, const TSharedPtr<SViewportToolBar> ParentToolBarPtr) const
+void SVoxelSimpleAssetEditorViewportToolbar::ExtendLeftAlignedToolbarSlots(TSharedPtr<SHorizontalBox> MainBoxPtr, TSharedPtr<SViewportToolBar> ParentToolBarPtr) const
 {
 	if (!MainBoxPtr)
 	{
@@ -218,7 +218,7 @@ TSharedRef<SWidget> SVoxelSimpleAssetEditorViewportToolbar::FillCameraSpeedMenu(
 
 					return (Viewport->GetViewportClient()->GetCameraSpeedSetting() - 1.f) / (float(FEditorViewportClient::MaxCameraSpeeds) - 1.f);
 				})
-				.OnValueChanged_Lambda([this](const float NewValue)
+				.OnValueChanged_Lambda([this](float NewValue)
 				{
 					const TSharedRef<SEditorViewport> Viewport = GetInfoProvider().GetViewportWidget();
 					if (!Viewport->GetViewportClient().IsValid())
@@ -286,7 +286,7 @@ TSharedRef<SWidget> SVoxelSimpleAssetEditorViewportToolbar::FillCameraSpeedMenu(
 
 					return Viewport->GetViewportClient()->GetCameraSpeedScalar();
 				})
-				.OnValueChanged_Lambda([this](const float NewValue)
+				.OnValueChanged_Lambda([this](float NewValue)
 				{
 					const TSharedRef<SEditorViewport> Viewport = GetInfoProvider().GetViewportWidget();
 					if (!Viewport->GetViewportClient().IsValid())
@@ -335,12 +335,6 @@ void SVoxelSimpleAssetEditorViewport::OnFocusViewportToSelection()
 
 TSharedRef<FEditorViewportClient> SVoxelSimpleAssetEditorViewport::MakeEditorViewportClient()
 {
-	if (InitialViewDistance.IsSet() &&
-		!ensure(FMath::IsFinite(InitialViewDistance.GetValue())))
-	{
-		InitialViewDistance = {};
-	}
-
 	const FBox Bounds = GetComponentBounds();
 
 	const TSharedRef<FVoxelSimpleAssetEditorViewportClient> ViewportClient = MakeVoxelShared<FVoxelSimpleAssetEditorViewportClient>(PreviewScene.Get(), SharedThis(this));
@@ -359,7 +353,7 @@ TSharedPtr<SWidget> SVoxelSimpleAssetEditorViewport::MakeViewportToolbar()
 		.Toolkit(WeakToolkit);
 }
 
-void SVoxelSimpleAssetEditorViewport::PopulateViewportOverlays(const TSharedRef<SOverlay> Overlay)
+void SVoxelSimpleAssetEditorViewport::PopulateViewportOverlays(TSharedRef<SOverlay> Overlay)
 {
 	SEditorViewport::PopulateViewportOverlays(Overlay);
 
@@ -429,17 +423,17 @@ FBox SVoxelSimpleAssetEditorViewport::GetComponentBounds() const
 	}
 
 	FBox Bounds(ForceInit);
-	ForEachObjectOfClass<USceneComponent>([&](const USceneComponent& Component)
+	ForEachObjectOfClass<USceneComponent>([&](const USceneComponent* Component)
 	{
-		if (Component.HasAnyFlags(RF_ArchetypeObject | RF_ClassDefaultObject) ||
-			Component.GetWorld() != World ||
-			!Component.GetOwner())
+		if (Component->HasAnyFlags(RF_ArchetypeObject | RF_ClassDefaultObject) ||
+			Component->GetWorld() != World ||
+			!Component->GetOwner())
 		{
 			return;
 		}
 
 		// Force a CalcBounds for ISMs when there hasn't been any tick yet
-		Bounds += Component.CalcBounds(Component.GetComponentToWorld()).GetBox();
+		Bounds += Component->CalcBounds(Component->GetComponentToWorld()).GetBox();
 	});
 	return Bounds;
 }

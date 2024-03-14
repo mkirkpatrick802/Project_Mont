@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelEditorMinimal.h"
 #include "VoxelSettings.h"
@@ -6,7 +6,7 @@
 class FVoxelChannelExposedDefinitionCustomization : public IPropertyTypeCustomization
 {
 public:
-	virtual void CustomizeHeader(const TSharedRef<IPropertyHandle> PropertyHandle, FDetailWidgetRow& HeaderRow, IPropertyTypeCustomizationUtils& CustomizationUtils) override
+	virtual void CustomizeHeader(TSharedRef<IPropertyHandle> PropertyHandle, FDetailWidgetRow& HeaderRow, IPropertyTypeCustomizationUtils& CustomizationUtils) override
 	{
 		HeaderRow
 		.NameContent()
@@ -31,7 +31,7 @@ public:
 		];
 	}
 
-	virtual void CustomizeChildren(const TSharedRef<IPropertyHandle> PropertyHandle, IDetailChildrenBuilder& ChildBuilder, IPropertyTypeCustomizationUtils& CustomizationUtils) override
+	virtual void CustomizeChildren(TSharedRef<IPropertyHandle> PropertyHandle, IDetailChildrenBuilder& ChildBuilder, IPropertyTypeCustomizationUtils& CustomizationUtils) override
 	{
 		const TSharedRef<IPropertyHandle> NameHandle = PropertyHandle->GetChildHandleStatic(FVoxelChannelExposedDefinition, Name);
 		const TSharedRef<IPropertyHandle> TypeHandle = PropertyHandle->GetChildHandleStatic(FVoxelChannelExposedDefinition, Type);
@@ -41,7 +41,7 @@ public:
 		ChildBuilder.AddProperty(TypeHandle);
 		ChildBuilder.AddProperty(DefaultValueHandle);
 
-		TypeHandle->SetOnPropertyValueChanged(FVoxelEditorUtilities::MakeRefreshDelegate(this, CustomizationUtils));
+		TypeHandle->SetOnPropertyValueChanged(FVoxelEditorUtilities::MakeRefreshDelegate(TypeHandle, CustomizationUtils));
 	}
 };
 

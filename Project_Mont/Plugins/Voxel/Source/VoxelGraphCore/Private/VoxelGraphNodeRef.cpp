@@ -1,61 +1,32 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelGraphNodeRef.h"
 #include "VoxelGraph.h"
-#include "VoxelGraphTracker.h"
-#include "VoxelTerminalGraph.h"
-#include "VoxelGraphMessageTokens.h"
-#include "VoxelTerminalGraphRuntime.h"
+#include "VoxelRuntimeGraph.h"
 #if WITH_EDITOR
 #include "EdGraph/EdGraph.h"
 #endif
 
-const FName FVoxelGraphConstants::NodeId_Preview = "PreviewNode";
-const FName FVoxelGraphConstants::PinName_EnableNode = "EnableNode";
-const FName FVoxelGraphConstants::PinName_GraphParameter = "GraphParameter";
+const FName FVoxelNodeNames::Builtin = "Builtin";
+const FName FVoxelNodeNames::ExecuteNodeId = "ExecuteNode";
+const FName FVoxelNodeNames::MergeNodeId = "MergeNode";
+const FName FVoxelNodeNames::PreviewNodeId = "PreviewNode";
+const FName FVoxelNodeNames::GetPreviousOutputNodeId = "GetPreviousOutputNode";
+const FName FVoxelNodeNames::MacroTemplateInput = "Template_Graph";
+const FName FVoxelNodeNames::MacroRecursiveTemplateInput = "RecursiveTemplate_Graphs";
 
-FName FVoxelGraphConstants::GetOutputNodeId(const FGuid& Guid)
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+UVoxelGraph* FVoxelGraphNodeRef::GetGraph() const
 {
-	return FName("Output." + Guid.ToString());
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-FVoxelTerminalGraphRef::FVoxelTerminalGraphRef(const UVoxelTerminalGraph* TerminalGraph)
-{
-	if (!TerminalGraph)
+	const UVoxelGraphInterface* GraphInterface = Graph.Get();
+	if (!GraphInterface)
 	{
-		return;
-	}
-
-	Graph = &TerminalGraph->GetGraph();
-	TerminalGraphGuid = TerminalGraph->GetGuid();
-}
-
-FVoxelTerminalGraphRef::FVoxelTerminalGraphRef(const UVoxelTerminalGraph& TerminalGraph)
-	: FVoxelTerminalGraphRef(&TerminalGraph)
-{
-}
-
-const UVoxelTerminalGraph* FVoxelTerminalGraphRef::GetTerminalGraph(const FOnVoxelGraphChanged& OnChanged) const
-{
-	ensure(IsInGameThread());
-
-	if (!Graph.IsValid())
-	{
-		ensureVoxelSlow(IsExplicitlyNull());
 		return nullptr;
 	}
-
-#if WITH_EDITOR
-	GVoxelGraphTracker->OnTerminalGraphChanged(*Graph).Add(OnChanged);
-#endif
-
-	const UVoxelTerminalGraph* TerminalGraph = Graph->FindTerminalGraph(TerminalGraphGuid);
-	ensure(TerminalGraph);
-	return TerminalGraph;
+	return GraphInterface->GetGraph();
 }
 
 #if WITH_EDITOR
@@ -64,18 +35,25 @@ UEdGraphNode* FVoxelGraphNodeRef::GetGraphNode_EditorOnly() const
 	VOXEL_FUNCTION_COUNTER();
 	ensure(IsInGameThread());
 
-	if (EdGraphNodeName.IsNone())
+	if (EdGraphNodeName == FVoxelNodeNames::Builtin)
 	{
 		return nullptr;
 	}
 
-	const UVoxelTerminalGraph* TerminalGraph = GetNodeTerminalGraph(FOnVoxelGraphChanged::Null());
-	if (!TerminalGraph)
+	const UVoxelGraph* GraphObject = GetGraph();
+	if (!GraphObject)
 	{
 		return nullptr;
 	}
 
-	for (UEdGraphNode* Node : TerminalGraph->GetEdGraph().Nodes)
+	const UEdGraph* EdGraph = GraphObject->MainEdGraph;
+	if (!EdGraph)
+	{
+		// New graph
+		return nullptr;
+	}
+
+	for (UEdGraphNode* Node : EdGraph->Nodes)
 	{
 		if (ensure(Node) &&
 			Node->GetFName() == EdGraphNodeName)
@@ -91,64 +69,107 @@ UEdGraphNode* FVoxelGraphNodeRef::GetGraphNode_EditorOnly() const
 
 bool FVoxelGraphNodeRef::IsDeleted() const
 {
-	if (EdGraphNodeName.IsNone())
+	ensure(!EdGraphNodeName.IsNone());
+
+	if (EdGraphNodeName == FVoxelNodeNames::Builtin)
 	{
 		return false;
 	}
 
-	const UVoxelTerminalGraph* TerminalGraph = GetNodeTerminalGraph(FOnVoxelGraphChanged::Null());
-	if (!ensure(TerminalGraph))
+	const UVoxelGraph* ResolvedGraph = GetGraph();
+	if (!ensure(ResolvedGraph))
 	{
 		return false;
 	}
 
-	return !TerminalGraph->GetRuntime().GetSerializedGraph().NodeNameToNode.Contains(EdGraphNodeName);
+	return !ResolvedGraph->GetRuntimeGraph().GetData().GetNodeNameToNode().Contains(EdGraphNodeName);
 }
 
-void FVoxelGraphNodeRef::AppendString(FWideStringBuilderBase& Out) const
+FVoxelGraphNodeRef FVoxelGraphNodeRef::WithSuffix(const FString& Suffix) const
 {
-	if (!EdGraphNodeTitle.IsNone())
-	{
-		EdGraphNodeTitle.AppendString(Out);
-	}
-	else
-	{
-		NodeId.AppendString(Out);
-	}
+	FVoxelGraphNodeRef Result;
+	Result.Graph = Graph;
+	Result.NodeId = NodeId + "_" + Suffix;
+	Result.TemplateInstance = TemplateInstance;
+	Result.EdGraphNodeTitle = EdGraphNodeTitle + " (" + Suffix + ")";
+	Result.EdGraphNodeName = EdGraphNodeName;
+	return Result;
 }
 
-bool FVoxelGraphNodeRef::NetSerialize(FArchive& Ar, UPackageMap& Map)
+FString FVoxelGraphPinRef::ToString() const
+{
+	const UVoxelGraphInterface* Graph = Node.Graph.Get();
+	return FString::Printf(TEXT("%s.%s.%s"),
+		Graph ? *Graph->GetPathName() : TEXT("<null>"),
+		*Node.EdGraphNodeTitle.ToString(),
+		*PinName.ToString());
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+FString FVoxelNodePath::ToDebugString() const
+{
+	TStringBuilderWithBuffer<TCHAR, NAME_SIZE> Result;
+	for (const FVoxelGraphNodeRef& NodeRef : NodeRefs)
+	{
+		Result += TEXT("/");
+
+		if (NodeRef.EdGraphNodeTitle.IsNone())
+		{
+			NodeRef.NodeId.AppendString(Result);
+		}
+		else
+		{
+			NodeRef.EdGraphNodeTitle.AppendString(Result);
+		}
+	}
+	return FString(Result.ToView());
+}
+
+bool FVoxelNodePath::NetSerialize(FArchive& Ar, UPackageMap& Map)
 {
 	if (Ar.IsSaving())
 	{
-		UObject* Object = ConstCast(TerminalGraphRef.Graph.Get());
-		ensure(Object);
+		int32 Num = NodeRefs.Num();
+		Ar << Num;
 
-		if (!ensure(Map.SerializeObject(Ar, UVoxelGraph::StaticClass(), Object)))
+		for (FVoxelGraphNodeRef& NodeRef : NodeRefs)
 		{
-			return false;
-		}
+			UObject* Object = ConstCast(NodeRef.Graph.Get());
+			ensure(Object);
 
-		Ar << TerminalGraphRef.TerminalGraphGuid;
-		Ar << NodeId;
-		ensure(TemplateInstance == 0);
+			if (!ensure(Map.SerializeObject(Ar, UVoxelGraphInterface::StaticClass(), Object)))
+			{
+				return false;
+			}
+
+			Ar << NodeRef.NodeId;
+			ensure(NodeRef.TemplateInstance == 0);
+		}
 
 		return true;
 	}
 	else if (Ar.IsLoading())
 	{
-		UObject* Object = nullptr;
-		if (!ensure(Map.SerializeObject(Ar, UVoxelGraph::StaticClass(), Object)) ||
-			!ensure(Object) ||
-			!ensure(Object->IsA<UVoxelGraph>()))
-		{
-			return false;
-		}
+		int32 Num = NodeRefs.Num();
+		Ar << Num;
 
-		TerminalGraphRef.Graph = CastChecked<UVoxelGraph>(Object);
-		Ar << TerminalGraphRef.TerminalGraphGuid;
-		Ar << NodeId;
-		ensure(TemplateInstance == 0);
+		NodeRefs.SetNum(Num);
+
+		for (FVoxelGraphNodeRef& NodeRef : NodeRefs)
+		{
+			UObject* Object = nullptr;
+			if (!ensure(Map.SerializeObject(Ar, UVoxelGraphInterface::StaticClass(), Object)) ||
+				!ensure(Object))
+			{
+				return false;
+			}
+
+			NodeRef.Graph = CastChecked<UVoxelGraphInterface>(Object);
+			Ar << NodeRef.NodeId;
+		}
 
 		return true;
 	}
@@ -159,92 +180,23 @@ bool FVoxelGraphNodeRef::NetSerialize(FArchive& Ar, UPackageMap& Map)
 	}
 }
 
-FVoxelGraphNodeRef FVoxelGraphNodeRef::WithSuffix(const FString& Suffix) const
+FArchive& operator<<(FArchive& Ar, FVoxelNodePath& Path)
 {
-	FVoxelGraphNodeRef Result = *this;
-	Result.NodeId += "_" + Suffix;
-	Result.EdGraphNodeTitle += " (" + Suffix + ")";
-	return Result;
+	Ar << Path.NodeRefs;
+	return Ar;
 }
 
-TSharedRef<FVoxelMessageToken> FVoxelGraphNodeRef::CreateMessageToken() const
+uint32 GetTypeHash(const FVoxelNodePath& Path)
 {
-	const TSharedRef<FVoxelMessageToken_NodeRef> Result = MakeVoxelShared<FVoxelMessageToken_NodeRef>();
-	Result->NodeRef = *this;
-	return Result;
-}
+	checkStatic(sizeof(FMinimalName) == sizeof(uint64));
 
-const UVoxelTerminalGraph* FVoxelGraphNodeRef::GetNodeTerminalGraph(const FOnVoxelGraphChanged& OnChanged) const
-{
-	ensure(IsInGameThread());
-
-	const UVoxelTerminalGraph* TerminalGraph = TerminalGraphRef.GetTerminalGraph(OnChanged);
-	if (!TerminalGraph)
+	TVoxelArray<FMinimalName, TVoxelInlineAllocator<16>> Names;
+	for (const FVoxelGraphNodeRef& NodeRef : Path.NodeRefs)
 	{
-		return nullptr;
+		Names.Add(FMinimalName(NodeRef.NodeId));
 	}
 
-	if (!TerminalGraph->IsMainTerminalGraph())
-	{
-		// Function overrides never implicitly use their parent outputs
-		return TerminalGraph;
-	}
-
-	FString OutputGuidString = NodeId.ToString();
-	if (!OutputGuidString.RemoveFromStart("Output."))
-	{
-		return TerminalGraph;
-	}
-
-	FGuid OutputGuid;
-	if (!ensure(FGuid::ParseExact(OutputGuidString, EGuidFormats::Digits, OutputGuid)))
-	{
-		return nullptr;
-	}
-
-#if WITH_EDITOR
-	GVoxelGraphTracker->OnBaseTerminalGraphsChanged(*TerminalGraph).Add(OnChanged);
-#endif
-
-	for (const UVoxelTerminalGraph* BaseTerminalGraph : TerminalGraph->GetBaseTerminalGraphs())
-	{
-#if WITH_EDITOR
-		GVoxelGraphTracker->OnTerminalGraphTranslated(*TerminalGraph).Add(OnChanged);
-#endif
-
-		if (BaseTerminalGraph->GetRuntime().GetSerializedGraph().OutputGuids.Contains(OutputGuid))
-		{
-			return BaseTerminalGraph;
-		}
-	}
-
-	// Returning default value is fine VOXEL_MESSAGE(Error, "Missing output {0} on {1}", OutputName, TerminalGraph);
-	return nullptr;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-FString FVoxelGraphPinRef::ToString() const
-{
-	ensure(IsInGameThread());
-
-	const UVoxelTerminalGraph* TerminalGraph = NodeRef.GetNodeTerminalGraph(FOnVoxelGraphChanged::Null());
-	return FString::Printf(TEXT("%s.%s.%s"),
-		TerminalGraph ? *TerminalGraph->GetPathName() : TEXT("<null>"),
-		*NodeRef.EdGraphNodeTitle.ToString(),
-		*PinName.ToString());
-}
-
-const UVoxelTerminalGraph* FVoxelGraphPinRef::GetNodeTerminalGraph(const FOnVoxelGraphChanged& OnChanged) const
-{
-	return NodeRef.GetNodeTerminalGraph(OnChanged);
-}
-
-TSharedRef<FVoxelMessageToken> FVoxelGraphPinRef::CreateMessageToken() const
-{
-	const TSharedRef<FVoxelMessageToken_PinRef> Result = MakeVoxelShared<FVoxelMessageToken_PinRef>();
-	Result->PinRef = *this;
-	return Result;
+	return FVoxelUtilities::MurmurHashBytes(
+		MakeByteVoxelArrayView(Names),
+		Names.Num());
 }

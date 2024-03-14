@@ -1,4 +1,4 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelPinValueBase.h"
 #include "VoxelPinValueInterface.h"
@@ -137,8 +137,8 @@ FString FVoxelPinValueBase::ExportToString() const
 		}
 		else
 		{
-			return FVoxelUtilities::PropertyToText_Direct(
-				*FVoxelUtilities::MakeStructProperty(Type.GetStruct()),
+			return FVoxelObjectUtilities::PropertyToText_Direct(
+				*FVoxelObjectUtilities::MakeStructProperty(Type.GetStruct()),
 				Struct.GetStructMemory(),
 				nullptr);
 		}
@@ -487,7 +487,7 @@ bool FVoxelPinValueBase::ImportFromString(const FString& Value)
 					return false;
 				}
 
-				Get<FVector>() = FVector(FVoxelUtilities::StringToFloat(Inner));
+				Get<FVector>() = FVector(FVoxelUtilities::Atof(Inner));
 				return true;
 			}
 
@@ -539,8 +539,8 @@ bool FVoxelPinValueBase::ImportFromString(const FString& Value)
 			CHECK(FVector4, FVector4::Zero());
 			CHECK(FVector4, FVector4::One());
 
-			return FVoxelUtilities::PropertyFromText_Direct(
-				*FVoxelUtilities::MakeStructProperty(Struct.GetScriptStruct()),
+			return FVoxelObjectUtilities::PropertyFromText_Direct(
+				*FVoxelObjectUtilities::MakeStructProperty(Struct.GetScriptStruct()),
 				Value,
 				Struct.GetStructMemory(),
 				nullptr);
@@ -618,7 +618,7 @@ uint32 FVoxelPinValueBase::GetHash() const
 	}
 }
 
-void FVoxelPinValueBase::Fixup()
+void FVoxelPinValueBase::Fixup(UObject* Outer)
 {
 	if (Is<FBodyInstance>())
 	{
@@ -627,7 +627,7 @@ void FVoxelPinValueBase::Fixup()
 
 	if (CanBeCastedTo<FVoxelPinValueInterface>())
 	{
-		Get<FVoxelPinValueInterface>().Fixup();
+		Get<FVoxelPinValueInterface>().Fixup(Outer);
 	}
 
 	if (Is<uint8>())
@@ -649,7 +649,7 @@ void FVoxelPinValueBase::Fixup()
 
 	if (Type.IsBuffer())
 	{
-		Fixup_Array();
+		Fixup_Array(Outer);
 	}
 }
 

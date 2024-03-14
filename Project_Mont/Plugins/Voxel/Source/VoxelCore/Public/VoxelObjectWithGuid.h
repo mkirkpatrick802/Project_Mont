@@ -1,4 +1,4 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -11,16 +11,18 @@ class VOXELCORE_API UVoxelObjectWithGuid : public UObject
 	GENERATED_BODY()
 
 public:
-	FGuid GetGuid() const;
+	FORCEINLINE FGuid GetGuid() const
+	{
+		return Guid;
+	}
 
 	//~ Begin UObject Interface
 	virtual void PostLoad() override;
+	virtual void PostInitProperties() override;
 	virtual void PostDuplicate(EDuplicateMode::Type DuplicateMode) override;
 	//~ End UObject Interface
 
 private:
 	UPROPERTY()
-	FGuid PrivateGuid;
-
-	void UpdateGuid();
+	FGuid Guid;
 };

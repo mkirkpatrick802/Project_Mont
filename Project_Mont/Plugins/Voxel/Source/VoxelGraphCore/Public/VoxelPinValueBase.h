@@ -1,4 +1,4 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -50,7 +50,7 @@ protected:
 	virtual void ExportToProperty_Array(const FProperty& Property, void* Memory) const VOXEL_PURE_VIRTUAL();
 	virtual bool ImportFromString_Array(const FString& Value) VOXEL_PURE_VIRTUAL({});
 	virtual uint32 GetHash_Array() const VOXEL_PURE_VIRTUAL({});
-	virtual void Fixup_Array() VOXEL_PURE_VIRTUAL();
+	virtual void Fixup_Array(UObject* Outer) VOXEL_PURE_VIRTUAL();
 	virtual bool Equal_Array(const FVoxelPinValueBase& Other) const VOXEL_PURE_VIRTUAL({});
 
 	static FVoxelPinValueBase MakeStruct(FConstVoxelStructView Struct);
@@ -68,7 +68,7 @@ public:
 	bool ImportFromString(const FString& Value);
 
 	uint32 GetHash() const;
-	void Fixup();
+	void Fixup(UObject* Outer);
 	bool IsValid() const;
 
 public:

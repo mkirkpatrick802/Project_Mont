@@ -1,4 +1,4 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "Material/MaterialExpressionSampleVoxelTextureParameter.h"
 #include "TextureResource.h"
@@ -15,8 +15,8 @@ void FVoxelMaterialParameterData_TextureArray::CacheParameters(
 	const FName Name,
 	FCachedParameters& InOutParameters) const
 {
-	InOutParameters.TextureParameters.Add_EnsureNew(Name + TEXTVIEW("_IndirectionTexture"), IndirectionTexture);
-	InOutParameters.TextureParameters.Add_EnsureNew(Name + TEXTVIEW("_TextureArray"), TextureArray);
+	InOutParameters.TextureParameters.Add(Name + "_IndirectionTexture", IndirectionTexture);
+	InOutParameters.TextureParameters.Add(Name + "_TextureArray", TextureArray);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -26,11 +26,6 @@ void FVoxelMaterialParameterData_TextureArray::CacheParameters(
 UMaterialExpressionSampleVoxelTextureParameter::UMaterialExpressionSampleVoxelTextureParameter()
 {
 	// Mitigate crash in UTexture::PostLoad
-	// See FVoxelTextureUtilities::GetDefaultTexture2D
-	static ConstructorHelpers::FObjectFinder<UTexture2D> DefaultTexture(
-		TEXT("/Engine/EngineResources/DefaultTexture"));
-	ensure(DefaultTexture.Object);
-
 	static ConstructorHelpers::FObjectFinder<UTexture2DArray> DefaultTextureArray(
 		TEXT("/Voxel/Default/DefaultTextureArray.DefaultTextureArray"));
 	ensure(DefaultTextureArray.Object);
@@ -74,7 +69,7 @@ void UMaterialExpressionSampleVoxelTextureParameter::UpdateVoxelParameterData(
 		FVoxelUtilities::SetNumFast(IndirectionData, Num);
 		FVoxelUtilities::SetAll(IndirectionData, -1);
 
-		TVoxelMap<UTexture2D*, int32> TextureToIndex;
+		TVoxelAddOnlyMap<UTexture2D*, int32> TextureToIndex;
 		TVoxelArray<int32> FreeTextureIndices;
 		{
 			TSet<UTexture2D*> UsedTextures;
@@ -120,7 +115,7 @@ void UMaterialExpressionSampleVoxelTextureParameter::UpdateVoxelParameterData(
 				{
 					return;
 				}
-				const int32 Index = FreeTextureIndices.Pop();
+				const int32 Index = FreeTextureIndices.Pop(false);
 				ParameterData.TextureArrayValues[Index] = Texture;
 				TextureToIndex.Add_CheckNew(Texture, Index);
 			}
@@ -140,7 +135,7 @@ void UMaterialExpressionSampleVoxelTextureParameter::UpdateVoxelParameterData(
 		const FName TextureName = MakeUniqueObjectName(
 			GetTransientPackage(),
 			UTexture2D::StaticClass(),
-			FName("VoxelMaterialTexture_" + DebugName.ToString() + "_Indirection"));
+			"VoxelMaterialTexture_" + DebugName + "_Indirection");
 
 		ParameterData.IndirectionTexture = NewObject<UTexture2D>(GetTransientPackage(), TextureName, RF_Transient);
 
@@ -379,7 +374,7 @@ void UMaterialExpressionSampleVoxelTextureParameter::UpdateVoxelParameterData(
 		const FName TextureName = MakeUniqueObjectName(
 			GetTransientPackage(),
 			UTexture2DArray::StaticClass(),
-			FName("VoxelMaterialTexture_" + DebugName.ToString() + "_TextureArray"));
+			"VoxelMaterialTexture_" + DebugName + "_TextureArray");
 
 		ParameterData.TextureArray = NewObject<UTexture2DArray>(GetTransientPackage(), TextureName, RF_Transient);
 
@@ -577,10 +572,10 @@ void UMaterialExpressionSampleVoxelTextureParameter::CompileVoxel(
 	Inputs.Add(PreviewMaterialId);
 	Custom.Inputs.Add({ "PreviewMaterialId" });
 
-	Inputs.Add(Compiler.TextureParameter(Name + TEXTVIEW("_IndirectionTexture"), FVoxelTextureUtilities::GetDefaultTexture2D(), SAMPLERTYPE_Color, SSM_Wrap_WorldGroupSettings));
+	Inputs.Add(Compiler.TextureParameter(Name + "_IndirectionTexture", FVoxelTextureUtilities::GetDefaultTexture2D(), SAMPLERTYPE_Color, SSM_Wrap_WorldGroupSettings));
 	Custom.Inputs.Add({ "IndirectionTexture" });
 
-	Inputs.Add(Compiler.TextureParameter(Name + TEXTVIEW("_TextureArray"), FVoxelTextureUtilities::GetDefaultTexture2DArray(), SAMPLERTYPE_Color, SSM_Wrap_WorldGroupSettings));
+	Inputs.Add(Compiler.TextureParameter(Name + "_TextureArray", FVoxelTextureUtilities::GetDefaultTexture2DArray(), SAMPLERTYPE_Color, SSM_Wrap_WorldGroupSettings));
 	Custom.Inputs.Add({ "TextureArray" });
 
 	int32 UVs = UVsInput.Compile(&Compiler);

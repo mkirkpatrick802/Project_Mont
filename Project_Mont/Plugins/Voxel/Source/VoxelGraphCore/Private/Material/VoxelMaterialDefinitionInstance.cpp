@@ -1,64 +1,30 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "Material/VoxelMaterialDefinitionInstance.h"
 #include "Material/VoxelMaterialDefinition.h"
-#include "VoxelParameterContainer_DEPRECATED.h"
+#include "VoxelParameterContainer.h"
 
 DEFINE_VOXEL_FACTORY(UVoxelMaterialDefinitionInstance);
 
-void UVoxelMaterialDefinitionInstance::SetParent(UVoxelMaterialDefinitionInterface* NewParent)
+UVoxelMaterialDefinitionInstance::UVoxelMaterialDefinitionInstance()
 {
-	if (Parent == NewParent)
+	ParameterContainer = CreateDefaultSubobject<UVoxelParameterContainer>("ParameterContainer");
+	ParameterContainer->OnChanged.AddWeakLambda(this, [this]
 	{
-		return;
-	}
-	Parent = NewParent;
-
-	if (UVoxelMaterialDefinition* Definition = GetDefinition())
-	{
-		Definition->QueueRebuildTextures();
-	}
+		if (UVoxelMaterialDefinition* Definition = GetDefinition())
+		{
+			Definition->QueueRebuildTextures();
+		}
+	});
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-void UVoxelMaterialDefinitionInstance::Fixup()
+void UVoxelMaterialDefinitionInstance::SetParentDefinition(UVoxelMaterialDefinitionInterface* NewParentDefinition)
 {
-	VOXEL_FUNCTION_COUNTER();
-
-	UVoxelMaterialDefinition* Definition = GetDefinition();
-	if (!Definition)
-	{
-		return;
-	}
-
-	for (auto It = GuidToValueOverride.CreateIterator(); It; ++It)
-	{
-		FVoxelMaterialDefinitionParameter* Parameter = Definition->GuidToMaterialParameter.Find(It.Key());
-		if (!Parameter)
-		{
-			// Orphan
-			continue;
-		}
-
-		if (!It.Value().bEnable)
-		{
-			const FVoxelPinValue Value = GetParameterValue(It.Key());
-			if (Value == It.Value().Value)
-			{
-				// Disabled & same value as parent = remove
-				It.RemoveCurrent();
-				continue;
-			}
-		}
-
-#if WITH_EDITOR
-		It.Value().CachedName = Parameter->Name;
-		It.Value().CachedCategory = Parameter->Category;
-#endif
-	}
+	ParameterContainer->SetProvider(NewParentDefinition);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -67,38 +33,15 @@ void UVoxelMaterialDefinitionInstance::Fixup()
 
 UVoxelMaterialDefinition* UVoxelMaterialDefinitionInstance::GetDefinition() const
 {
-	TVoxelInlineSet<const UVoxelMaterialDefinitionInstance*, 8> Visited;
-	for (const UVoxelMaterialDefinitionInstance* It = this; It; It = CastEnsured<UVoxelMaterialDefinitionInstance>(It->Parent))
+	ParameterContainer->FixupProvider();
+
+	const UVoxelMaterialDefinitionInterface* Interface = Cast<UVoxelMaterialDefinitionInterface>(ParameterContainer->Provider);
+	if (!Interface)
 	{
-		if (Visited.Contains(It))
-		{
-			VOXEL_MESSAGE(Error, "Hierarchy loop detected: {0}", Visited.Array());
-			return nullptr;
-		}
-		Visited.Add_CheckNew(It);
-
-		if (UVoxelMaterialDefinition* Definition = Cast<UVoxelMaterialDefinition>(It->Parent))
-		{
-			return Definition;
-		}
+		ensure(!ParameterContainer->Provider);
+		return nullptr;
 	}
-	return nullptr;
-}
-
-FVoxelPinValue UVoxelMaterialDefinitionInstance::GetParameterValue(const FGuid& Guid) const
-{
-	if (const FVoxelMaterialParameterValueOverride* ValueOverride = GuidToValueOverride.Find(Guid))
-	{
-		return ValueOverride->Value;
-	}
-
-	if (!GetDefinition())
-	{
-		// No parent or loop
-		return {};
-	}
-
-	return Parent->GetParameterValue(Guid);
+	return Interface->GetDefinition();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -109,82 +52,21 @@ void UVoxelMaterialDefinitionInstance::PostLoad()
 {
 	Super::PostLoad();
 
-	for (const FVoxelParameterOverride_DEPRECATED& Parameter : ParameterCollection_DEPRECATED.Parameters)
+	if (Parent_DEPRECATED)
 	{
-		FVoxelParameterPath Path;
-		Path.Guids.Add(Parameter.Parameter.DeprecatedGuid);
+		ensure(!ParameterContainer->Provider);
+		ParameterContainer->Provider = Parent_DEPRECATED.Get();
+		Parent_DEPRECATED = {};
 
-		FVoxelParameterValueOverride ValueOverride;
-		ValueOverride.bEnable = Parameter.bEnable;
-		ValueOverride.Value = Parameter.ValueOverride;
-#if WITH_EDITOR
-		ValueOverride.CachedName = Parameter.Parameter.Name;
-		ValueOverride.CachedCategory = Parameter.Parameter.Category;
-#endif
-
-		ensure(!ParameterOverrides_DEPRECATED.PathToValueOverride.Contains(Path));
-		ParameterOverrides_DEPRECATED.PathToValueOverride.Add(Path, ValueOverride);
+		ParameterCollection_DEPRECATED.MigrateTo(*ParameterContainer);
 	}
-	ParameterCollection_DEPRECATED.Parameters.Empty();
-
-	if (ParameterContainer_DEPRECATED)
-	{
-		ensure(!Parent);
-		Parent = CastEnsured<UVoxelMaterialDefinitionInterface>(ParameterContainer_DEPRECATED->Provider);
-
-		ParameterOverrides_DEPRECATED.PathToValueOverride.Append(ParameterContainer_DEPRECATED->ValueOverrides);
-		ParameterContainer_DEPRECATED->ValueOverrides.Empty();
-	}
-
-	for (const auto& It : ParameterOverrides_DEPRECATED.PathToValueOverride)
-	{
-		const FVoxelParameterPath Path = It.Key;
-		if (!ensure(Path.Num() == 1))
-		{
-			continue;
-		}
-
-		FVoxelMaterialParameterValueOverride ValueOverride;
-		ValueOverride.bEnable = It.Value.bEnable;
-		ValueOverride.Value = It.Value.Value;
-#if WITH_EDITORONLY_DATA
-		ValueOverride.CachedName = It.Value.CachedName;
-		ValueOverride.CachedCategory = It.Value.CachedCategory;
-#endif
-
-		ensure(!GuidToValueOverride.Contains(Path.Leaf()));
-		GuidToValueOverride.Add(Path.Leaf(), ValueOverride);
-	}
-	ParameterOverrides_DEPRECATED.PathToValueOverride.Empty();
-
-	Fixup();
 }
 
-void UVoxelMaterialDefinitionInstance::PostCDOContruct()
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+IVoxelParameterProvider* UVoxelMaterialDefinitionInstance::GetSourceProvider()
 {
-	Super::PostCDOContruct();
-
-	FVoxelUtilities::ForceLoadDeprecatedSubobject<UVoxelParameterContainer_DEPRECATED>(this, "ParameterContainer");
+	return ParameterContainer;
 }
-
-#if WITH_EDITOR
-void UVoxelMaterialDefinitionInstance::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
-{
-	Super::PostEditChangeProperty(PropertyChangedEvent);
-
-	if (PropertyChangedEvent.GetMemberPropertyName() == GET_OWN_MEMBER_NAME(Parent))
-	{
-		// Force refresh
-		UVoxelMaterialDefinitionInterface* NewParent = Parent;
-		Parent = nullptr;
-		SetParent(NewParent);
-	}
-
-	Fixup();
-
-	if (UVoxelMaterialDefinition* Definition = GetDefinition())
-	{
-		Definition->QueueRebuildTextures();
-	}
-}
-#endif

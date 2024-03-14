@@ -1,11 +1,11 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "Point/VoxelPointStorageNode.h"
 #include "Point/VoxelPointStorage.h"
 #include "Point/VoxelPointStorageData.h"
 #include "Point/VoxelChunkedPointSet.h"
+#include "VoxelDependency.h"
 #include "VoxelBufferBuilder.h"
-#include "VoxelDependencyTracker.h"
 
 DEFINE_VOXEL_NODE_COMPUTE(FVoxelNode_ApplyPointStorage, Out)
 {

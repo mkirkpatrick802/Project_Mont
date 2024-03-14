@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -9,7 +9,7 @@ struct FVoxelNode;
 class FVoxelTaskStat;
 class FVoxelTaskGroup;
 class FVoxelTransformRef;
-class FVoxelGraphEvaluator;
+class FVoxelGraphExecutor;
 
 extern VOXELGRAPHCORE_API bool GVoxelBypassTaskQueue;
 
@@ -70,7 +70,7 @@ private:
 	}
 
 	static TSharedRef<const FVector> GetPosition(
-		FObjectKey World,
+		const FObjectKey World,
 		const FVoxelTransformRef& LocalToWorld);
 };
 
@@ -87,38 +87,43 @@ public:
 
 	VOXEL_COUNT_INSTANCES();
 
-	void AddRef(const TSharedRef<const FVoxelVirtualStruct>& Object);
-	void AddEvaluator(const TSharedRef<const FVoxelGraphEvaluator>& GraphEvaluator);
-	bool IsReferenced(const FVoxelVirtualStruct* Object) const;
+	void AddRef(const TSharedRef<const FVirtualDestructor>& Object);
+	void AddExecutor(const TSharedRef<const FVoxelGraphExecutor>& GraphExecutor);
+	bool IsReferenced(const FVirtualDestructor* Object) const;
+	bool IsReferenced(const FVoxelNode* Node) const;
 
 	static FVoxelTaskReferencer& Get();
 
 private:
-	mutable FVoxelCriticalSection CriticalSection;
-	TVoxelSet<TSharedPtr<const FVoxelVirtualStruct>> Objects_RequiresLock;
-	TVoxelSet<TSharedPtr<const FVoxelGraphEvaluator>> GraphEvaluators_RequiresLock;
+	mutable FVoxelFastCriticalSection CriticalSection;
+	TVoxelAddOnlySet<TSharedPtr<const FVirtualDestructor>> Objects;
+	TVoxelAddOnlySet<TSharedPtr<const FVoxelGraphExecutor>> GraphExecutors;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
+DECLARE_VOXEL_SPARSE_INDEX(FVoxelPendingTaskId);
+
 struct VOXELGRAPHCORE_API FVoxelTask
 {
-public:
 	FVoxelTaskGroup& Group;
 	const FName Name;
+	const EVoxelTaskThread Thread;
 	const TVoxelUniqueFunction<void()> Lambda;
 
-	FVoxelCounter32 NumDependencies;
-	int32 PendingTaskIndex = -1;
+	FThreadSafeCounter NumDependencies;
+	FVoxelPendingTaskId PendingTaskId;
 
 	FVoxelTask(
 		FVoxelTaskGroup& Group,
 		const FName Name,
-		TVoxelUniqueFunction<void()> Lambda)
+		const EVoxelTaskThread Thread,
+		TVoxelUniqueFunction<void()>&& Lambda)
 		: Group(Group)
 		, Name(Name)
+		, Thread(Thread)
 		, Lambda(MoveTemp(Lambda))
 	{
 	}
@@ -126,18 +131,7 @@ public:
 
 	VOXEL_COUNT_INSTANCES();
 
-	FORCEINLINE void Execute() const
-	{
-#if VOXEL_DEBUG
-		CheckIsSafeToExecute();
-#endif
-		Lambda();
-	}
-
-private:
-#if VOXEL_DEBUG
-	void CheckIsSafeToExecute() const;
-#endif
+	void Execute() const;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -149,10 +143,14 @@ class VOXELGRAPHCORE_API FVoxelTaskFactory
 public:
 	FVoxelTaskFactory() = default;
 
-	FORCEINLINE FVoxelTaskFactory& RunOnGameThread()
+	FORCEINLINE FVoxelTaskFactory& NeverBypassQueue()
 	{
-		ensureVoxelSlow(!bPrivateRunOnGameThread);
-		bPrivateRunOnGameThread = true;
+		bPrivateNeverBypassQueue = true;
+		return *this;
+	}
+	FORCEINLINE FVoxelTaskFactory& Thread(const EVoxelTaskThread NewThread)
+	{
+		PrivateThread = NewThread;
 		return *this;
 	}
 	FORCEINLINE FVoxelTaskFactory& Dependency(const FVoxelFutureValue& Dependency)
@@ -167,14 +165,14 @@ public:
 		DependenciesView = Dependencies;
 		return *this;
 	}
-	template<typename T, typename = std::enable_if_t<TIsDerivedFrom<T, FVoxelFutureValue>::Value>>
+	template<typename T, typename = typename TEnableIf<TIsDerivedFrom<T, FVoxelFutureValue>::Value>::Type>
 	FORCEINLINE FVoxelTaskFactory& Dependencies(const TVoxelArray<T>& Dependencies)
 	{
 		ensureVoxelSlow(DependenciesView.Num() == 0);
 		DependenciesView = ReinterpretCastVoxelArrayView<FVoxelFutureValue>(MakeVoxelArrayView(Dependencies));
 		return *this;
 	}
-	template<typename... ArgTypes, typename = std::enable_if_t<TAnd<TIsDerivedFrom<ArgTypes, FVoxelFutureValue>...>::Value>>
+	template<typename... ArgTypes, typename = typename TEnableIf<TAnd<TIsDerivedFrom<ArgTypes, FVoxelFutureValue>...>::Value>::Type>
 	FORCEINLINE FVoxelTaskFactory& Dependencies(const ArgTypes&... Args)
 	{
 		ensureVoxelSlow(InlineDependencies.Num() == 0);
@@ -182,7 +180,7 @@ public:
 		return Dependencies(InlineDependencies);
 	}
 
-	void Execute(TVoxelUniqueFunction<void()> Lambda);
+	void Execute(TVoxelUniqueFunction<void()>&& Lambda);
 	FVoxelFutureValue Execute(const FVoxelPinType& Type, TVoxelUniqueFunction<FVoxelFutureValue()>&& Lambda);
 
 	template<typename T>
@@ -199,73 +197,17 @@ public:
 
 private:
 	FName PrivateName;
-	bool bPrivateRunOnGameThread = false;
+	bool bPrivateNeverBypassQueue = false;
+	EVoxelTaskThread PrivateThread = EVoxelTaskThread::AsyncThread;
 	TConstVoxelArrayView<FVoxelFutureValue> DependenciesView;
-	TVoxelInlineArray<FVoxelFutureValue, 8> InlineDependencies;
+	TVoxelArray<FVoxelFutureValue, TVoxelInlineAllocator<8>> InlineDependencies;
 
-	TVoxelUniqueFunction<void()> MakeStatsLambda(TVoxelUniqueFunction<void()> Lambda) const;
-	static TVoxelUniqueFunction<void()> MakeGameThreadLambda(TVoxelUniqueFunction<void()> Lambda);
-
-	friend FVoxelTaskFactory MakeVoxelTaskImpl(FName);
+	friend FVoxelTaskFactory MakeVoxelTask(FName);
 };
 
-FORCEINLINE FVoxelTaskFactory MakeVoxelTaskImpl(const FName Name)
+FORCEINLINE FVoxelTaskFactory MakeVoxelTask(const FName Name = {})
 {
 	FVoxelTaskFactory Factory;
 	Factory.PrivateName = Name;
 	return Factory;
 }
-
-VOXELGRAPHCORE_API FString GetVoxelTaskName(
-	const FString& FunctionName,
-	int32 Line,
-	const FString& Context);
-
-#define MakeVoxelTask(...) MakeVoxelTaskImpl(STATIC_FNAME(GetVoxelTaskName(__FUNCTION__, __LINE__, FString(__VA_ARGS__))))
-
-#if INTELLISENSE_PARSER
-#undef MakeVoxelTask
-FVoxelTaskFactory MakeVoxelTask(const char* Name = {});
-#endif
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-extern VOXELGRAPHCORE_API const uint32 GVoxelTaskTagTLS;
-
-struct VOXELGRAPHCORE_API FVoxelTaskTagScope
-{
-public:
-	FORCEINLINE static TVoxelUniquePtr<FVoxelTaskTagScope> Create(const FName TagName)
-	{
-		if (!AreVoxelStatsEnabled())
-		{
-			return nullptr;
-		}
-		return CreateImpl(TagName);
-	}
-	~FVoxelTaskTagScope();
-	UE_NONCOPYABLE(FVoxelTaskTagScope);
-
-	TVoxelArray<FName> GetTagNames() const;
-
-public:
-	FORCEINLINE static FVoxelTaskTagScope* Get()
-	{
-		return static_cast<FVoxelTaskTagScope*>(FPlatformTLS::GetTlsValue(GVoxelTaskTagTLS));
-	}
-
-private:
-	FName TagName;
-	TOptional<TVoxelArray<FName>> TagNameOverrides;
-	FVoxelTaskTagScope* ParentScope = nullptr;
-
-	static TVoxelUniquePtr<FVoxelTaskTagScope> CreateImpl(FName TagName);
-	FVoxelTaskTagScope();
-
-	friend FVoxelTaskFactory;
-};
-
-#define VOXEL_TASK_TAG_SCOPE(Name) \
-	const TVoxelUniquePtr<FVoxelTaskTagScope> VOXEL_APPEND_LINE(Scope) = FVoxelTaskTagScope::Create(STATIC_FNAME(Name));

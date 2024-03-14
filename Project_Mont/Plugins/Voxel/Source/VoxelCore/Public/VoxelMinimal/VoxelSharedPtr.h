@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -27,11 +27,6 @@ FORCEINLINE TSharedRef<T> MakeSharedRef(T& Ptr)
 {
 	return StaticCastSharedRef<T>(Ptr.AsShared());
 }
-template<typename T>
-FORCEINLINE TSharedRef<T> MakeSharedRef(const TSharedRef<T>& Ref)
-{
-	return Ref;
-}
 
 template<typename T>
 FORCEINLINE TWeakPtr<T> MakeWeakPtr(const TSharedPtr<T>& Ptr)
@@ -49,7 +44,7 @@ FORCEINLINE TWeakPtr<T> MakeWeakPtr(const TSharedRef<T>& Ptr)
 ///////////////////////////////////////////////////////////////////////////////
 
 template<typename T>
-FORCEINLINE std::enable_if_t<!TIsReferenceType<T>::Value, T> MakeCopy(T&& Data)
+FORCEINLINE typename TEnableIf<!TIsReferenceType<T>::Value, T>::Type MakeCopy(T&& Data)
 {
 	return MoveTemp(Data);
 }
@@ -86,19 +81,6 @@ FORCEINLINE TSharedRef<T> MakeNullSharedRef()
 	return ReinterpretCastRef<TSharedRef<T>>(TSharedPtr<T>());
 }
 
-template<typename T>
-FORCEINLINE TSharedRef<T> ToSharedRefFast(TSharedPtr<T>&& SharedPtr)
-{
-	checkVoxelSlow(SharedPtr.IsValid());
-	return ReinterpretCastRef<TSharedRef<T>>(SharedPtr);
-}
-template<typename T>
-FORCEINLINE const TSharedRef<T>& ToSharedRefFast(const TSharedPtr<T>& SharedPtr)
-{
-	checkVoxelSlow(SharedPtr.IsValid());
-	return ReinterpretCastRef<TSharedRef<T>>(SharedPtr);
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -113,44 +95,34 @@ FORCEINLINE T* GetWeakPtrObject_Unsafe(const TWeakPtr<T>& WeakPtr)
 	};
 	return ReinterpretCastRef<FWeakPtr>(WeakPtr).Object;
 }
-
 template<typename T>
-FORCEINLINE const SharedPointerInternals::FWeakReferencer<ESPMode::ThreadSafe>& GetWeakPtrWeakReferencer(const TWeakPtr<T>& WeakPtr)
+FORCEINLINE SharedPointerInternals::TReferenceControllerBase<ESPMode::ThreadSafe>* GetWeakPtrReferenceController(const TWeakPtr<T>& WeakPtr)
 {
 	struct FWeakPtr
 	{
 		T* Object;
-		SharedPointerInternals::FWeakReferencer<ESPMode::ThreadSafe> WeakReferencer;
+		SharedPointerInternals::TReferenceControllerBase<ESPMode::ThreadSafe>* ReferenceController;
 	};
-	return ReinterpretCastRef<FWeakPtr>(WeakPtr).WeakReferencer;
-}
-FORCEINLINE SharedPointerInternals::TReferenceControllerBase<ESPMode::ThreadSafe>* GetWeakReferencerReferenceController(const SharedPointerInternals::FWeakReferencer<ESPMode::ThreadSafe>& WeakReferencer)
-{
-	return ReinterpretCastRef<SharedPointerInternals::TReferenceControllerBase<ESPMode::ThreadSafe>*>(WeakReferencer);
+	return ReinterpretCastRef<FWeakPtr>(WeakPtr).ReferenceController;
 }
 
 template<typename T>
-FORCEINLINE const TWeakPtr<T>& GetSharedFromThisWeakPtr(const TSharedFromThis<T>& SharedFromThis)
+FORCEINLINE const TWeakPtr<T>& GetSharedFromThisWeakPtr(const TSharedFromThis<T>* SharedFromThis)
 {
+	checkVoxelSlow(SharedFromThis);
+
 	struct FSharedFromThis
 	{
 		TWeakPtr<T> WeakPtr;
 	};
-	return ReinterpretCastRef<FSharedFromThis>(SharedFromThis).WeakPtr;
+	return ReinterpretCastRef<FSharedFromThis>(*SharedFromThis).WeakPtr;
 }
 
 template<typename T>
-FORCEINLINE bool IsExplicitlyNull(const TWeakPtr<T>& WeakPtr)
-{
-	return GetWeakPtrObject_Unsafe(WeakPtr) == nullptr;
-}
-
-template<typename T>
-FORCEINLINE bool IsSharedFromThisUnique(const TSharedFromThis<T>& SharedFromThis)
+FORCEINLINE bool IsSharedFromThisUnique(const TSharedFromThis<T>* SharedFromThis)
 {
 	const TWeakPtr<T>& WeakPtr = GetSharedFromThisWeakPtr(SharedFromThis);
-	const SharedPointerInternals::FWeakReferencer<ESPMode::ThreadSafe>& WeakReferencer = GetWeakPtrWeakReferencer(WeakPtr);
-	const SharedPointerInternals::TReferenceControllerBase<ESPMode::ThreadSafe>* ReferenceController = GetWeakReferencerReferenceController(WeakReferencer);
+	const SharedPointerInternals::TReferenceControllerBase<ESPMode::ThreadSafe>* ReferenceController = GetWeakPtrReferenceController(WeakPtr);
 	checkVoxelSlow(ReferenceController);
 
 	const int32 ReferenceCount = ReferenceController->GetSharedReferenceCount();
@@ -175,18 +147,6 @@ FORCEINLINE void ClearSharedRefReferencer(TSharedRef<T>& Ptr)
 	ClearSharedPtrReferencer(ReinterpretCastRef<TSharedPtr<T>>(Ptr));
 }
 
-template<typename T, typename LambdaType, typename... ArgTypes, typename = std::enable_if_t<std::is_constructible_v<T, ArgTypes...>>>
-FORCEINLINE TSharedRef<T> MakeShared_OnDestroy(LambdaType&& OnDestroy, ArgTypes&&... Args)
-{
-	return ReinterpretCastRef<TSharedRef<T>>(TSharedPtr<T>(
-		new (GVoxelMemory) T(Forward<ArgTypes>(Args)...),
-		[OnDestroy = MoveTemp(OnDestroy)](T* Object)
-		{
-			OnDestroy();
-			FVoxelMemory::Delete(Object);
-		}));
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -197,25 +157,24 @@ namespace Voxel::Internal
 }
 
 using FSharedVoidPtr = TSharedPtr<Voxel::Internal::FVoidPtr>;
-using FSharedVoidRef = TSharedRef<Voxel::Internal::FVoidPtr>;
 using FWeakVoidPtr = TWeakPtr<Voxel::Internal::FVoidPtr>;
 
 template<typename T>
-FORCEINLINE const FWeakVoidPtr& MakeWeakVoidPtr(const TWeakPtr<T>& Ptr)
+FORCEINLINE FWeakVoidPtr MakeWeakVoidPtr(const TWeakPtr<T>& Ptr)
 {
 	return ReinterpretCastRef<FWeakVoidPtr>(Ptr);
 }
 template<typename T>
-FORCEINLINE const FSharedVoidPtr& MakeSharedVoidPtr(const TSharedPtr<T>& Ptr)
+FORCEINLINE FSharedVoidPtr MakeSharedVoidPtr(const TSharedPtr<T>& Ptr)
 {
 	return ReinterpretCastRef<FSharedVoidPtr>(Ptr);
 }
 template<typename T>
-FORCEINLINE const FSharedVoidRef& MakeSharedVoidRef(const TSharedRef<T>& Ptr)
+FORCEINLINE FSharedVoidPtr MakeSharedVoidPtr(const TSharedRef<T>& Ptr)
 {
-	return ReinterpretCastRef<FSharedVoidRef>(Ptr);
+	return ReinterpretCastRef<FSharedVoidPtr>(Ptr);
 }
-FORCEINLINE FSharedVoidRef MakeSharedVoid()
+FORCEINLINE FSharedVoidPtr MakeSharedVoid()
 {
-	return MakeSharedVoidRef(MakeVoxelShared<int32>());
+	return MakeSharedVoidPtr(MakeVoxelShared<int32>());
 }

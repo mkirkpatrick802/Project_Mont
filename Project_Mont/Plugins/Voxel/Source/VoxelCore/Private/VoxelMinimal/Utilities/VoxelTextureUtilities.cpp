@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #include "VoxelMinimal.h"
 #include "IImageWrapper.h"
@@ -14,16 +14,14 @@ THIRD_PARTY_INCLUDES_END
 
 UTexture2D* FVoxelTextureUtilities::GetDefaultTexture2D()
 {
-	// Loaded by UMaterialExpressionSampleVoxelTextureParameter
-	UTexture2D* Texture = FindObject<UTexture2D>(nullptr, TEXT("/Engine/EngineResources/DefaultTexture.DefaultTexture"));
+	UTexture2D* Texture = LoadObject<UTexture2D>(nullptr, TEXT("/Engine/EngineResources/DefaultTexture"));
 	ensure(Texture);
 	return Texture;
 }
 
 UTexture2DArray* FVoxelTextureUtilities::GetDefaultTexture2DArray()
 {
-	// Loaded by UMaterialExpressionSampleVoxelTextureParameter
-	UTexture2DArray* Texture = FindObject<UTexture2DArray>(nullptr, TEXT("/Voxel/Default/DefaultTextureArray.DefaultTextureArray"));
+	UTexture2DArray* Texture = LoadObject<UTexture2DArray>(nullptr, TEXT("/Voxel/Default/DefaultTextureArray.DefaultTextureArray"));
 	ensure(Texture);
 	return Texture;
 }
@@ -131,7 +129,7 @@ void FVoxelTextureUtilities::RemoveBulkData(UTexture2D* Texture)
 	// Make sure texture is streamed in before clearing bulk data
 	VOXEL_ENQUEUE_RENDER_COMMAND(RemoveBulkData)([WeakTexture = MakeWeakObjectPtr(Texture)](FRHICommandListImmediate& RHICmdList)
 	{
-		RunOnGameThread([=]
+		FVoxelUtilities::RunOnGameThread([=]
 		{
 			UTexture2D* LocalTexture = WeakTexture.Get();
 			if (!ensure(LocalTexture))
@@ -153,14 +151,14 @@ void FVoxelTextureUtilities::RemoveBulkData(UTexture2D* Texture)
 }
 
 UTexture2DArray* FVoxelTextureUtilities::CreateTextureArray(
-	const FName DebugName,
-	const int32 SizeX,
-	const int32 SizeY,
-	const int32 SizeZ,
-	const bool bSRGB,
-	const TextureFilter Filter,
-	const EPixelFormat PixelFormat,
-	const int32 NumMips,
+	FName DebugName,
+	int32 SizeX,
+	int32 SizeY,
+	int32 SizeZ,
+	bool bSRGB,
+	TextureFilter Filter,
+	EPixelFormat PixelFormat,
+	int32 NumMips,
 	TFunction<void(TVoxelArrayView<uint8> Data, int32 MipIndex)> InitializeMip,
 	UTexture2DArray* ExistingTexture)
 {
@@ -254,16 +252,16 @@ UTexture2DArray* FVoxelTextureUtilities::CreateTextureArray(
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-TVoxelArray64<uint8> FVoxelTextureUtilities::CompressPng_RGB(
-	const TConstVoxelArrayView64<FVoxelColor3> ColorData,
-	const int32 Width,
-	const int32 Height)
+TArray64<uint8> FVoxelTextureUtilities::CompressPng_RGB(
+	const TConstArrayView64<FVoxelColor3>& ColorData,
+	int32 Width,
+	int32 Height)
 {
 	VOXEL_FUNCTION_COUNTER();
 
 	check(ColorData.Num() == int64(Width) * int64(Height));
 
-	TVoxelArray64<uint8> CompressedData;
+	TArray64<uint8> CompressedData;
 
 	png_structp PngStruct = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
 	check(PngStruct);
@@ -283,9 +281,9 @@ TVoxelArray64<uint8> FVoxelTextureUtilities::CompressPng_RGB(
 	png_set_write_fn(
 		PngStruct,
 		&CompressedData,
-		[](const png_structp PngStruct, const png_bytep Data, const png_size_t Length)
+		[](png_structp PngStruct, png_bytep Data, png_size_t Length)
 		{
-			TVoxelArray64<uint8>* CompressedDataPtr = static_cast<TVoxelArray64<uint8>*>(png_get_io_ptr(PngStruct));
+			TArray64<uint8>* CompressedDataPtr = static_cast<TArray64<uint8>*>(png_get_io_ptr(PngStruct));
 			CompressedDataPtr->Append(Data, Length);
 		},
 		nullptr);
@@ -300,10 +298,10 @@ TVoxelArray64<uint8> FVoxelTextureUtilities::CompressPng_RGB(
 	return CompressedData;
 }
 
-TVoxelArray64<uint8> FVoxelTextureUtilities::CompressPng_Grayscale(
-	const TConstVoxelArrayView64<uint16> GrayscaleData,
-	const int32 Width,
-	const int32 Height)
+TArray64<uint8> FVoxelTextureUtilities::CompressPng_Grayscale(
+	const TConstArrayView64<uint16>& GrayscaleData,
+	int32 Width,
+	int32 Height)
 {
 	VOXEL_FUNCTION_COUNTER();
 
@@ -328,7 +326,7 @@ TVoxelArray64<uint8> FVoxelTextureUtilities::CompressPng_Grayscale(
 		return {};
 	}
 
-	return TVoxelArray64<uint8>(ImageWrapper->GetCompressed());
+	return ImageWrapper->GetCompressed();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -336,20 +334,7 @@ TVoxelArray64<uint8> FVoxelTextureUtilities::CompressPng_Grayscale(
 ///////////////////////////////////////////////////////////////////////////////
 
 bool FVoxelTextureUtilities::UncompressPng_RGB(
-	const TConstVoxelArrayView64<uint8> CompressedData,
-	TVoxelArray64<FVoxelColor3>& OutColorData,
-	int32& OutWidth,
-	int32& OutHeight)
-{
-	return Uncompress_RGB(
-		CompressedData,
-		OutColorData,
-		OutWidth,
-		OutHeight);
-}
-
-bool FVoxelTextureUtilities::Uncompress_RGB(
-	const TConstVoxelArrayView64<uint8> CompressedData,
+	const TConstArrayView64<uint8>& CompressedData,
 	TVoxelArray64<FVoxelColor3>& OutColorData,
 	int32& OutWidth,
 	int32& OutHeight)
@@ -406,7 +391,7 @@ bool FVoxelTextureUtilities::Uncompress_RGB(
 }
 
 bool FVoxelTextureUtilities::UncompressPng_Grayscale(
-	const TConstVoxelArrayView64<uint8> CompressedData,
+	const TConstArrayView64<uint8>& CompressedData,
 	TVoxelArray64<uint16>& OutGrayscaleData,
 	int32& OutWidth,
 	int32& OutHeight)

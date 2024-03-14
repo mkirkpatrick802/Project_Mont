@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -23,11 +23,11 @@ private:
 		int32 Int32;
 		int64 Int64;
 		FVoxelNameWrapper Name;
-		UClass* Class;
+		TSubclassOf<UObject> Class;
 		UScriptStruct* SharedStructType;
 		uint64 Raw;
 	};
-	FSharedVoidPtr SharedStruct;
+	TSharedPtr<const FVoxelSharedStructOpaque> SharedStruct;
 
 public:
 	FORCEINLINE FVoxelRuntimePinValue()
@@ -62,7 +62,7 @@ public:
 	static FVoxelRuntimePinValue MakeStruct(FConstVoxelStructView Struct);
 
 public:
-	template<typename T, typename = std::enable_if_t<!std::is_same_v<T, FVoxelBuffer>>>
+	template<typename T, typename = typename TEnableIf<!std::is_same_v<T, FVoxelBuffer>>::Type>
 	static FVoxelRuntimePinValue Make(const T& Value)
 	{
 		checkStatic(TIsSafeVoxelPinValue<T>::Value);
@@ -118,7 +118,7 @@ public:
 		return Result;
 	}
 
-	template<typename T, typename = std::enable_if_t<!std::is_same_v<T, FVoxelBuffer>>>
+	template<typename T, typename = typename TEnableIf<!std::is_same_v<T, FVoxelBuffer>>::Type>
 	static FVoxelRuntimePinValue Make(const TSharedRef<const T>& Value)
 	{
 		checkStatic(TIsSafeVoxelPinValue<T>::Value);
@@ -127,11 +127,11 @@ public:
 		FVoxelRuntimePinValue Result;
 		Result.Type = FVoxelPinType::MakeStruct(StructView.GetStruct());
 		Result.SharedStructType = StructView.GetStruct();
-		Result.SharedStruct = MakeSharedVoidRef(Value);
+		Result.SharedStruct = ReinterpretCastRef<TSharedRef<const FVoxelSharedStructOpaque>>(Value);
 		return Result;
 	}
 
-	template<typename T, typename = std::enable_if_t<!std::is_same_v<T, FVoxelBuffer>>>
+	template<typename T, typename = typename TEnableIf<!std::is_same_v<T, FVoxelBuffer>>::Type>
 	static FVoxelRuntimePinValue Make(const TSharedRef<T>& Value)
 	{
 		return FVoxelRuntimePinValue::Make<T>(StaticCastSharedRef<const T>(Value));
@@ -217,9 +217,9 @@ public:
 	template<typename T>
 	static constexpr bool IsStructValue =
 		!std::is_same_v<T, FVoxelNameWrapper> &&
-		std::is_same_v<FVoxelUtilities::TPropertyType<T>, FStructProperty>;
+		std::is_same_v<FVoxelObjectUtilities::TPropertyType<T>, FStructProperty>;
 
-	template<typename T, typename = std::enable_if_t<!std::is_same_v<T, FName>>>
+	template<typename T, typename = typename TEnableIf<!std::is_same_v<T, FName>>::Type>
 	FORCEINLINE const T& Get() const
 	{
 		checkStatic(TIsSafeVoxelPinValue<T>::Value);
@@ -275,7 +275,7 @@ public:
 			return *Value;
 		}
 	}
-	template<typename T, typename = void, typename = std::enable_if_t<std::is_same_v<T, FName>>>
+	template<typename T, typename = void, typename = typename TEnableIf<std::is_same_v<T, FName>>::Type>
 	FORCEINLINE const T Get() const
 	{
 		return Get<FVoxelNameWrapper>();

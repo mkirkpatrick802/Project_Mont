@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -43,30 +43,24 @@ public:
 		UTexture2DArray* ExistingTexture = nullptr);
 
 public:
-	static TVoxelArray64<uint8> CompressPng_RGB(
-		TConstVoxelArrayView64<FVoxelColor3> ColorData,
+	static TArray64<uint8> CompressPng_RGB(
+		const TConstArrayView64<FVoxelColor3>& ColorData,
 		int32 Width,
 		int32 Height);
 
-	static TVoxelArray64<uint8> CompressPng_Grayscale(
-		TConstVoxelArrayView64<uint16> GrayscaleData,
+	static TArray64<uint8> CompressPng_Grayscale(
+		const TConstArrayView64<uint16>& GrayscaleData,
 		int32 Width,
 		int32 Height);
 
 	static bool UncompressPng_RGB(
-		TConstVoxelArrayView64<uint8> CompressedData,
-		TVoxelArray64<FVoxelColor3>& OutColorData,
-		int32& OutWidth,
-		int32& OutHeight);
-
-	static bool Uncompress_RGB(
-		TConstVoxelArrayView64<uint8> CompressedData,
+		const TConstArrayView64<uint8>& CompressedData,
 		TVoxelArray64<FVoxelColor3>& OutColorData,
 		int32& OutWidth,
 		int32& OutHeight);
 
 	static bool UncompressPng_Grayscale(
-		TConstVoxelArrayView64<uint8> CompressedData,
+		const TConstArrayView64<uint8>& CompressedData,
 		TVoxelArray64<uint16>& OutGrayscaleData,
 		int32& OutWidth,
 		int32& OutHeight);

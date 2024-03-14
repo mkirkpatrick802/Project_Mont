@@ -1,4 +1,4 @@
-﻿// Copyright Voxel Plugin SAS. All Rights Reserved.
+﻿// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -37,13 +37,6 @@ public:
 	FVoxelBox GetBounds() const;
 	FVoxelVectorBuffer GetPositions() const;
 
-public:
-	bool TryFilter(
-		const FVoxelBox& BoundsToFilter,
-		FVoxelInt32Buffer& OutIndices,
-		FVoxelVectorBuffer& OutPositions) const;
-
-public:
 	void Initialize(
 		const FVoxelVectorBuffer& NewPositions,
 		const TOptional<FVoxelBox>& NewBounds = {});
@@ -59,35 +52,20 @@ public:
 		float Step,
 		const FIntVector& Size);
 
-private:
-	struct FCell
-	{
-		int32 Num = 0;
-		int32 Index = 0;
-	};
-	struct FCells
-	{
-		FVoxelInt64Buffer Cells;
-		FVoxelInt32Buffer Indices;
-		int32 Step = 0;
-		FVector Offset = FVector(ForceInit);
-		FIntVector GridSize = FIntVector(ForceInit);
-	};
+public:
+	static FVoxelQuery TransformQuery(
+		const FVoxelQuery& Query,
+		const FMatrix& Transform);
 
+private:
 	TSharedPtr<const FGrid> Grid;
 	bool bIsGradient = false;
 	TOptional<FVoxelBox> PrecomputedBounds;
 	TSharedPtr<const TVoxelUniqueFunction<FVoxelVectorBuffer()>> Compute;
 
-	mutable FVoxelCriticalSection CriticalSection;
+	mutable FVoxelFastCriticalSection CriticalSection;
 	mutable TOptional<FVoxelBox> CachedBounds_RequiresLock;
 	mutable TOptional<FVoxelVectorBuffer> CachedPositions_RequiresLock;
-	mutable TOptional<FCells> CachedCells_RequiresLock;
 
 	void CheckBounds() const;
-	FVoxelBox GetBounds_RequiresLock() const;
-	FVoxelVectorBuffer GetPositions_RequiresLock() const;
-	const FCells& GetCells_RequiresLock() const;
-
-	friend class FVoxelPositionQueryParameterHelper;
 };

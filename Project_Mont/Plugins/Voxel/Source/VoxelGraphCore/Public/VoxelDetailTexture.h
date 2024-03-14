@@ -1,4 +1,4 @@
-// Copyright Voxel Plugin SAS. All Rights Reserved.
+// Copyright Voxel Plugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -8,14 +8,14 @@
 #include "VoxelObjectWithGuid.h"
 #include "VoxelDetailTexture.generated.h"
 
-class FTextureResource;
+class FVoxelQuery;
 class FVoxelDependency;
-class FVoxelDetailTexture;
+class FVoxelDetailTexturePool;
 class FVoxelDetailTextureManager;
 class FVoxelDetailTextureAllocation;
 
 UCLASS(Abstract, meta = (VoxelAssetType))
-class VOXELGRAPHCORE_API UVoxelDetailTextureBase : public UVoxelObjectWithGuid
+class VOXELGRAPHCORE_API UVoxelDetailTexture : public UVoxelObjectWithGuid
 {
 	GENERATED_BODY()
 
@@ -33,7 +33,6 @@ public:
 #endif
 	//~ End UObject Interface
 
-	virtual FVoxelPinType GetInnerType() const VOXEL_PURE_VIRTUAL({});
 	virtual EPixelFormat GetPixelFormat() const VOXEL_PURE_VIRTUAL({});
 	virtual int32 GetNumTextures() const { return 1; }
 };
@@ -51,7 +50,7 @@ enum class EVoxelFloatDetailTextureType : uint8
 };
 
 UCLASS()
-class VOXELGRAPHCORE_API UVoxelFloatDetailTexture : public UVoxelDetailTextureBase
+class VOXELGRAPHCORE_API UVoxelFloatDetailTexture : public UVoxelDetailTexture
 {
 	GENERATED_BODY()
 
@@ -59,69 +58,65 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Config");
 	EVoxelFloatDetailTextureType Type = EVoxelFloatDetailTextureType::Float32;
 
-	//~ Begin UVoxelDetailTextureBase Interface
-	virtual FVoxelPinType GetInnerType() const override;
-	virtual EPixelFormat GetPixelFormat() const override;
-	//~ End UVoxelDetailTextureBase Interface
+	//~ Begin UVoxelDetailTexture Interface
+	virtual EPixelFormat GetPixelFormat() const override
+	{
+		switch (Type)
+		{
+		default: ensure(false);
+		case EVoxelFloatDetailTextureType::Float32: return PF_R32_FLOAT;
+		case EVoxelFloatDetailTextureType::Float16: return PF_G16;
+		case EVoxelFloatDetailTextureType::Float8: return PF_G8;
+		}
+	}
+	//~ End UVoxelDetailTexture Interface
 };
 
 UCLASS()
-class VOXELGRAPHCORE_API UVoxelColorDetailTexture : public UVoxelDetailTextureBase
+class VOXELGRAPHCORE_API UVoxelColorDetailTexture : public UVoxelDetailTexture
 {
 	GENERATED_BODY()
 
 public:
-	//~ Begin UVoxelDetailTextureBase Interface
-	virtual FVoxelPinType GetInnerType() const override;
-	virtual EPixelFormat GetPixelFormat() const override;
-	//~ End UVoxelDetailTextureBase Interface
+	//~ Begin UVoxelDetailTexture Interface
+	virtual EPixelFormat GetPixelFormat() const override
+	{
+		return PF_R8G8B8A8;
+	}
+	//~ End UVoxelDetailTexture Interface
 };
 
 UCLASS()
-class VOXELGRAPHCORE_API UVoxelMaterialDetailTexture : public UVoxelDetailTextureBase
+class VOXELGRAPHCORE_API UVoxelMaterialIdDetailTexture : public UVoxelDetailTexture
 {
 	GENERATED_BODY()
 
 public:
-	//~ Begin UVoxelDetailTextureBase Interface
-	virtual FVoxelPinType GetInnerType() const override;
-	virtual EPixelFormat GetPixelFormat() const override;
-	virtual int32 GetNumTextures() const override;
-	//~ End UVoxelDetailTextureBase Interface
+	//~ Begin UVoxelDetailTexture Interface
+	virtual EPixelFormat GetPixelFormat() const override
+	{
+		return PF_R32_UINT;
+	}
+	virtual int32 GetNumTextures() const override
+	{
+		return 2;
+	}
+	//~ End UVoxelDetailTexture Interface
 };
 
 UCLASS()
-class VOXELGRAPHCORE_API UVoxelNormalDetailTexture : public UVoxelDetailTextureBase
+class VOXELGRAPHCORE_API UVoxelNormalDetailTexture : public UVoxelDetailTexture
 {
 	GENERATED_BODY()
 
 public:
-	//~ Begin UVoxelDetailTextureBase Interface
-	virtual FVoxelPinType GetInnerType() const override;
-	virtual EPixelFormat GetPixelFormat() const override;
-	//~ End UVoxelDetailTextureBase Interface
-};
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-USTRUCT(DisplayName = "Detail Texture")
-struct FVoxelDetailTextureRef
-{
-	GENERATED_BODY()
-
-	TWeakPtr<FVoxelDetailTexture> WeakDetailTexture;
-};
-
-DECLARE_VOXEL_OBJECT_PIN_TYPE(FVoxelDetailTextureRef);
-
-USTRUCT()
-struct FVoxelDetailTextureRefPinType : public FVoxelObjectPinType
-{
-	GENERATED_BODY()
-
-	DEFINE_VOXEL_OBJECT_PIN_TYPE(FVoxelDetailTextureRef, UVoxelDetailTextureBase);
+	//~ Begin UVoxelDetailTexture Interface
+	virtual EPixelFormat GetPixelFormat() const override
+	{
+		// R16 so we can use GatherRed
+		return PF_R16_UINT;
+	}
+	//~ End UVoxelDetailTexture Interface
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -129,9 +124,11 @@ struct FVoxelDetailTextureRefPinType : public FVoxelObjectPinType
 ///////////////////////////////////////////////////////////////////////////////
 
 USTRUCT(DisplayName = "Float Detail Texture")
-struct FVoxelFloatDetailTextureRef : public FVoxelDetailTextureRef
+struct FVoxelFloatDetailTextureRef
 {
 	GENERATED_BODY()
+
+	TWeakPtr<FVoxelDetailTexturePool> WeakPool;
 };
 
 DECLARE_VOXEL_OBJECT_PIN_TYPE(FVoxelFloatDetailTextureRef);
@@ -149,9 +146,11 @@ struct FVoxelFloatDetailTextureRefPinType : public FVoxelObjectPinType
 ///////////////////////////////////////////////////////////////////////////////
 
 USTRUCT(DisplayName = "Color Detail Texture")
-struct FVoxelColorDetailTextureRef : public FVoxelDetailTextureRef
+struct FVoxelColorDetailTextureRef
 {
 	GENERATED_BODY()
+
+	TWeakPtr<FVoxelDetailTexturePool> WeakPool;
 };
 
 DECLARE_VOXEL_OBJECT_PIN_TYPE(FVoxelColorDetailTextureRef);
@@ -168,20 +167,22 @@ struct FVoxelColorDetailTextureRefPinType : public FVoxelObjectPinType
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-USTRUCT(DisplayName = "Material Detail Texture")
-struct FVoxelMaterialDetailTextureRef : public FVoxelDetailTextureRef
+USTRUCT(DisplayName = "Material Id Detail Texture")
+struct FVoxelMaterialIdDetailTextureRef
 {
 	GENERATED_BODY()
+
+	TWeakPtr<FVoxelDetailTexturePool> WeakPool;
 };
 
-DECLARE_VOXEL_OBJECT_PIN_TYPE(FVoxelMaterialDetailTextureRef);
+DECLARE_VOXEL_OBJECT_PIN_TYPE(FVoxelMaterialIdDetailTextureRef);
 
 USTRUCT()
-struct FVoxelMaterialDetailTextureRefPinType : public FVoxelObjectPinType
+struct FVoxelMaterialIdDetailTextureRefPinType : public FVoxelObjectPinType
 {
 	GENERATED_BODY()
 
-	DEFINE_VOXEL_OBJECT_PIN_TYPE(FVoxelMaterialDetailTextureRef, UVoxelMaterialDetailTexture);
+	DEFINE_VOXEL_OBJECT_PIN_TYPE(FVoxelMaterialIdDetailTextureRef, UVoxelMaterialIdDetailTexture);
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -189,9 +190,11 @@ struct FVoxelMaterialDetailTextureRefPinType : public FVoxelObjectPinType
 ///////////////////////////////////////////////////////////////////////////////
 
 USTRUCT(DisplayName = "Normal Detail Texture")
-struct FVoxelNormalDetailTextureRef : public FVoxelDetailTextureRef
+struct FVoxelNormalDetailTextureRef
 {
 	GENERATED_BODY()
+
+	TWeakPtr<FVoxelDetailTexturePool> WeakPool;
 };
 
 DECLARE_VOXEL_OBJECT_PIN_TYPE(FVoxelNormalDetailTextureRef);
@@ -243,7 +246,7 @@ public:
 		int32 TextureSize,
 		EPixelFormat PixelFormat,
 		int32 NumTextures,
-		const FVoxelDetailTexture& DetailTexture);
+		const FVoxelDetailTexturePool& Pool);
 	~FVoxelDetailTextureAllocator();
 
 	void AddReferencedObjects(FReferenceCollector& Collector);
@@ -252,13 +255,13 @@ public:
 	void Update_GameThread();
 
 private:
-	TArray<TObjectPtr<UTexture2D>> Textures_GameThread;
+	TArray<UTexture2D*> Textures_GameThread;
 	const TSharedRef<FVoxelDetailTextureDynamicMaterialParameter> DynamicParameter = MakeVoxelShared<FVoxelDetailTextureDynamicMaterialParameter>();
 
 	VOXEL_ALLOCATED_SIZE_TRACKER_CUSTOM(STAT_VoxelDetailTextureMemory, DetailTextureMemory);
 
 private:
-	FVoxelCriticalSection CriticalSection;
+	FVoxelFastCriticalSection CriticalSection;
 
 	int32 SizeInBlocks_RequiresLock = 0;
 	TVoxelArray<FVoxelDetailTextureAllocationRange> FreeRanges_RequiresLock;
@@ -314,7 +317,7 @@ class VOXELGRAPHCORE_API FVoxelDetailTextureUpload : public TSharedFromThis<FVox
 public:
 	FVoxelDetailTextureUpload(
 		const FVoxelDetailTextureAllocation& Allocation,
-		int32 TextureIndex);
+		const int32 TextureIndex);
 
 	bool GetUploadInfo(
 		FVoxelDetailTextureCoordinate& OutCoordinate,
@@ -347,15 +350,15 @@ private:
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-class VOXELGRAPHCORE_API FVoxelDetailTexture : public TSharedFromThis<FVoxelDetailTexture>
+class VOXELGRAPHCORE_API FVoxelDetailTexturePool : public TSharedFromThis<FVoxelDetailTexturePool>
 {
 public:
-	const TWeakObjectPtr<UVoxelDetailTextureBase> WeakDetailTexture;
-	const TSubclassOf<UVoxelDetailTextureBase> Class;
+	const TWeakObjectPtr<UVoxelDetailTexture> WeakDetailTexture;
+	const TSubclassOf<UVoxelDetailTexture> Class;
 	const FName Name;
 	const FName Guid;
 
-	explicit FVoxelDetailTexture(UVoxelDetailTextureBase& DetailTexture);
+	explicit FVoxelDetailTexturePool(UVoxelDetailTexture& DetailTexture);
 
 	void AddReferencedObjects(FReferenceCollector& Collector);
 
@@ -364,7 +367,6 @@ public:
 		int32 Num,
 		const FVoxelQuery& Query);
 
-	void UpdateAllocators_GameThread();
 	void UpdateTextureSize_GameThread();
 	void UpdatePixelFormat_GameThread();
 	int32 GetTextureSize_AnyThread(int32 LOD, const FVoxelQuery& Query);
@@ -372,7 +374,7 @@ public:
 private:
 	const TSharedRef<FVoxelDependency> PixelFormatDependency;
 
-	FVoxelCriticalSection CriticalSection;
+	FVoxelFastCriticalSection CriticalSection;
 	EPixelFormat PixelFormat_RequiresLock = {};
 	int32 NumTextures_RequiresLock = 0;
 	TVoxelArray<int32> LODToTextureSize_RequiresLock;
@@ -387,9 +389,8 @@ private:
 class VOXELGRAPHCORE_API FVoxelDetailTextureManager : public FVoxelSingleton
 {
 public:
-	TSharedRef<FVoxelDetailTexture> FindOrAdd_GameThread(UVoxelDetailTextureBase& Texture);
-	void UpdateAllocators_GameThread();
-	void Update_GameThread(const UVoxelDetailTextureBase& Texture) const;
+	TSharedRef<FVoxelDetailTexturePool> FindOrAddPool_GameThread(UVoxelDetailTexture& Texture);
+	void UpdatePool_GameThread(const UVoxelDetailTexture& Texture) const;
 
 	//~ Begin FVoxelSingleton Interface
 	virtual void Tick() override;
@@ -397,7 +398,7 @@ public:
 	//~ End FVoxelSingleton Interface
 
 private:
-	TMap<TObjectPtr<UVoxelDetailTextureBase>, TSharedPtr<FVoxelDetailTexture>> ObjectToDetailTexture;
+	TMap<UVoxelDetailTexture*, TSharedPtr<FVoxelDetailTexturePool>> TextureToPool;
 	TQueue<TSharedPtr<FVoxelDetailTextureUpload>, EQueueMode::Mpsc> PendingUploads;
 	TQueue<TWeakPtr<FVoxelDetailTextureAllocator>, EQueueMode::Mpsc> AllocatorsToUpdate;
 
