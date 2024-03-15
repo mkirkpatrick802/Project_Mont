@@ -30,6 +30,8 @@ protected:
 
 public:
 
+	float Damage;
+
 private:
 
 	UPROPERTY(EditAnywhere, Category = Projectile)

@@ -38,7 +38,7 @@ public:
 
 	AInteractableObject();
 
-	void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	UFUNCTION(BlueprintNativeEvent)
 	void Interacted(ATPPCharacter* Player);
@@ -46,6 +46,9 @@ public:
 	void ToggleInteractWidget(bool Enabled) const;
 
 	void SetObjectState(EObjectState NewObjectState);
+
+	// For Crosshair Interaction
+	virtual FLinearColor GetColor() const override;
 
 protected:
 

@@ -53,7 +53,7 @@ void UCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActo
 		HitTarget = HitResult.ImpactPoint;
 
 		// Hit Target Debugging
-		{
+		/*{
 			DrawDebugSphere(GetWorld(), HitTarget, 12, 12, FColor::Red);
 
 			if (GEngine)
@@ -62,6 +62,19 @@ void UCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActo
 					GEngine->AddOnScreenDebugMessage(1, 15.0f, FColor::Blue, FString::Printf(TEXT("Hit: %s"), *HitResult.GetActor()->GetActorNameOrLabel()));
 				else
 					GEngine->AddOnScreenDebugMessage(1, 15.f, FColor::Red, FString::Printf(TEXT("Target Not Found")));
+			}
+		}*/
+
+		if(EquippedWeapon)
+		{
+			if (HitResult.GetActor() && HitResult.GetActor()->Implements<UInteractWithCrosshairsInterface>())
+			{
+				IInteractWithCrosshairsInterface* Interface = Cast<IInteractWithCrosshairsInterface>(HitResult.GetActor());
+				HUDPackage.CrosshairColor = Interface->GetColor();
+			}
+			else
+			{
+				HUDPackage.CrosshairColor = EquippedWeapon->BaseCrosshairColor;
 			}
 		}
 
@@ -221,7 +234,6 @@ void UCombatComponent::SetCombatCrosshairs(float DeltaTime)
 
 			HUDPackage.CrosshairSpread = .5f + CrosshairVelocityFactor + CrosshairInAirFactor + CrosshairAimFactor + CrosshairShootingFactor;
 
-			HUDPackage.CrosshairColor = EquippedWeapon->BaseCrosshairColor;
 			HUDPackage.CrosshairSize = EquippedWeapon->CrosshairSize;
 
 			HUD->SetHudPackage(HUDPackage);

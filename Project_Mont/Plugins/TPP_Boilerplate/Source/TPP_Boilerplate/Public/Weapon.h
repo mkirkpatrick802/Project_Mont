@@ -39,6 +39,13 @@ private:
 public:
 
 	/*
+	 *	Weapon Damage
+	 */
+
+	UPROPERTY(EditAnywhere, Category=Combat)
+	float Damage = 2;
+
+	/*
 	 *  Weapon Crosshairs Textures
 	 */
 

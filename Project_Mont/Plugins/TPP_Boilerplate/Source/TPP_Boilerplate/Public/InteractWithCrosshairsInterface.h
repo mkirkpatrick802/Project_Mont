@@ -15,4 +15,7 @@ class TPP_BOILERPLATE_API IInteractWithCrosshairsInterface
 	GENERATED_BODY()
 
 public:
+
+	virtual FLinearColor GetColor() const = 0;
+
 };

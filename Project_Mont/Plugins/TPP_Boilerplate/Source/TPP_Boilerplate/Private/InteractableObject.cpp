@@ -48,6 +48,11 @@ void AInteractableObject::SetObjectState(const EObjectState NewObjectState)
 	}
 }
 
+FLinearColor AInteractableObject::GetColor() const
+{
+	return FLinearColor::Blue;
+}
+
 void AInteractableObject::OnRep_ObjectState()
 {
 	switch (CurrentObjectState)

@@ -78,6 +78,11 @@ void ATPPCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLif
 }
 
 
+FLinearColor ATPPCharacter::GetColor() const
+{
+	return FLinearColor::Red;
+}
+
 void ATPPCharacter::BeginPlay()
 {
 	Super::BeginPlay();

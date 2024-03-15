@@ -92,6 +92,9 @@ public:
 	UFUNCTION(NetMulticast, Unreliable)
 	void MulticastHit();
 
+	// For Crosshair Interaction
+	virtual FLinearColor GetColor() const override;
+
 protected:
 
 	virtual void BeginPlay() override;
