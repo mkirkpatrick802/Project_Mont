@@ -3,19 +3,23 @@
 #include "CoreMinimal.h"
 #include "Health.h"
 #include "InteractWithCrosshairsInterface.h"
-#include "VoxelCharacter.h"
-#include "EnemyBase.generated.h"
+#include "GameFramework/Character.h"
+#include "EnemyCharacterBase.generated.h"
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FAttackFinishedDelegate);
 
 UCLASS()
-class PROJECT_MONT_API AEnemyBase : public AVoxelCharacter, public IInteractWithCrosshairsInterface
+class PROJECT_MONT_API AEnemyCharacterBase : public ACharacter, public IInteractWithCrosshairsInterface
 {
 	GENERATED_BODY()
 
 public:
 
-	AEnemyBase();
+	AEnemyCharacterBase();
 	virtual void BeginPlay() override;
 
+	UFUNCTION(BlueprintCallable, Category=Combat)
+	virtual void MeleeAttack();
 
 protected:
 
@@ -26,22 +30,35 @@ private:
 	UFUNCTION()
 	void OnHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit);
 
+	UFUNCTION()
+	void OnMontageEnded(UAnimMontage* AnimMontage, bool bArg);
+
+public:
+
+	UPROPERTY(BlueprintAssignable)
+	FAttackFinishedDelegate AttackFinishedDelegate;
+
 protected:
 
 	UPROPERTY(EditAnywhere, Category="Health")
 	float MaxHealth = 10;
 
-private:
-	Health EnemyHealth;
+	UPROPERTY(EditAnywhere, Category=Combat)
+	UAnimMontage* AttackMontage;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Damage")
-	UMaterialInterface* DamageMaterial;
+private:
+
+	Health HitPoints;
 
 	UPROPERTY()
 	UMaterialInstanceDynamic* DynamicMaterialInstance;
+
+	UPROPERTY()
+	UAnimInstance* AnimationInstance;
 
 public:
 
 	// For Crosshair Interaction
 	FORCEINLINE virtual FLinearColor GetColor() const override { return FLinearColor::Red; }
+
 };
