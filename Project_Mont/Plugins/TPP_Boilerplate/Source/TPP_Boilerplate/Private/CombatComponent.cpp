@@ -7,9 +7,9 @@
 #include "Engine/SkeletalMeshSocket.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Net/UnrealNetwork.h"
-#include "Weapon.h"
 #include "Engine.h"
-#include "Engine/World.h"
+#include "MeleeWeapon.h"
+#include "ProjectileWeapon.h"
 
 UCombatComponent::UCombatComponent()
 {
@@ -95,8 +95,25 @@ void UCombatComponent::EquipWeapon(AWeapon* WeaponToEquip)
 	EquippedWeapon->SetObjectState(EObjectState::EWS_PickedUp);
 	EquippedWeapon->TogglePhysics(false);
 
-	if(const USkeletalMeshSocket* HandSocket = Character->GetMesh()->GetSocketByName(FName("RightHandSocket")))
-		HandSocket->AttachActor(EquippedWeapon, Character->GetMesh());
+	switch(EquippedWeapon->GetWeaponType())
+	{
+	case EWeaponType::EWT_TwoHandedMelee:
+
+		if (const USkeletalMeshSocket* HandSocket = Character->GetMesh()->GetSocketByName(FName("TwoHandedMelee")))
+			HandSocket->AttachActor(EquippedWeapon, Character->GetMesh());
+
+		break;
+
+	case EWeaponType::EWT_Rifle:
+
+		if (const USkeletalMeshSocket* HandSocket = Character->GetMesh()->GetSocketByName(FName("Rifle")))
+			HandSocket->AttachActor(EquippedWeapon, Character->GetMesh());
+
+		break;
+
+	default: 
+		break;
+	}
 
 	EquippedWeapon->SetOwner(Character);
 
@@ -126,8 +143,8 @@ void UCombatComponent::DropWeapon()
 	EquippedWeapon->TogglePhysics(true);
 	EquippedWeapon = nullptr;
 
-	Character->GetCharacterMovement()->bOrientRotationToMovement = true;
-	Character->bUseControllerRotationYaw = false;
+	//Character->GetCharacterMovement()->bOrientRotationToMovement = true;
+	//Character->bUseControllerRotationYaw = false;
 }
 
 /*
@@ -154,16 +171,26 @@ void UCombatComponent::Fire()
 	}
 }
 
+void UCombatComponent::Melee()
+{
+	if(AMeleeWeapon* MeleeWeapon = Cast<AMeleeWeapon>(EquippedWeapon))
+	{
+		MeleeWeapon->Melee();
+	}
+}
+
 void UCombatComponent::StartFireTimer()
 {
 	if (!Character) return;
-	Character->GetWorldTimerManager().SetTimer(FireTimer, this, &UCombatComponent::FireTimerFinished, EquippedWeapon->FireDelay);
+
+	if (const AProjectileWeapon* ProjectileWeapon = Cast<AProjectileWeapon>(EquippedWeapon))
+		Character->GetWorldTimerManager().SetTimer(FireTimer, this, &UCombatComponent::FireTimerFinished, ProjectileWeapon->GetFireDelay());
 }
 
 void UCombatComponent::FireTimerFinished()
 {
 	CanFire = true;
-	if (IsFireButtonPressed && EquippedWeapon->IsAutomatic)
+	if (IsFireButtonPressed && Cast<AProjectileWeapon>(EquippedWeapon) && Cast<AProjectileWeapon>(EquippedWeapon)->GetAutomaticState())
 	{
 		Fire();
 	}
@@ -223,7 +250,8 @@ void UCombatComponent::SetCombatCrosshairs(float DeltaTime)
 
 			if(IsAiming)
 			{
-				CrosshairAimFactor = FMath::FInterpTo(CrosshairAimFactor, -.58f, DeltaTime, EquippedWeapon->GetZoomInterpSpeed());
+				if(const AProjectileWeapon* ProjectileWeapon = Cast<AProjectileWeapon>(EquippedWeapon))
+					CrosshairAimFactor = FMath::FInterpTo(CrosshairAimFactor, -.58f, DeltaTime, ProjectileWeapon->GetZoomInterpSpeed());
 			}
 			else
 			{
@@ -243,6 +271,8 @@ void UCombatComponent::SetCombatCrosshairs(float DeltaTime)
 
 void UCombatComponent::ToggleAiming()
 {
+	if(EquippedWeapon && Cast<AMeleeWeapon>(EquippedWeapon)) return;
+
 	// Update Client
 	IsAiming = !IsAiming;
 	if(Character)
@@ -267,17 +297,20 @@ void UCombatComponent::InterpFOV(float DeltaTime)
 {
 	if (!EquippedWeapon) return;
 
-	if(IsAiming)
+	if (const AProjectileWeapon* ProjectileWeapon = Cast<AProjectileWeapon>(EquippedWeapon))
 	{
-		CurrentFOV = FMath::FInterpTo(CurrentFOV, EquippedWeapon->GetZoomedFOV(), DeltaTime, EquippedWeapon->GetZoomInterpSpeed());
-	}
-	else
-	{
-		CurrentFOV = FMath::FInterpTo(CurrentFOV, DefaultFOV, DeltaTime, ZoomInterpSpeed);
-	}
+		if (IsAiming)
+		{
+			CurrentFOV = FMath::FInterpTo(CurrentFOV, ProjectileWeapon->GetZoomedFOV(), DeltaTime, ProjectileWeapon->GetZoomInterpSpeed());
+		}
+		else
+		{
+			CurrentFOV = FMath::FInterpTo(CurrentFOV, DefaultFOV, DeltaTime, ZoomInterpSpeed);
+		}
 
-	if(Character && Character->GetFollowCamera())
-	{
-		Character->GetFollowCamera()->SetFieldOfView(CurrentFOV);
+		if (Character && Character->GetFollowCamera())
+		{
+			Character->GetFollowCamera()->SetFieldOfView(CurrentFOV);
+		}
 	}
 }

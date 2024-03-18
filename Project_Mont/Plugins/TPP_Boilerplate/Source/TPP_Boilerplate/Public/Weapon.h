@@ -3,12 +3,20 @@
 #include "CoreMinimal.h"
 #include "InteractableObject.h"
 #include "PickupObject.h"
-#include "GameFramework/Actor.h"
 #include "Weapon.generated.h"
 
 class UAnimationAsset;
 class UWidgetComponent;
 class USphereComponent;
+
+UENUM(BlueprintType)
+enum class EWeaponType : uint8
+{
+	EWT_TwoHandedMelee UMETA(DisplayName = "Two Handed Melee"),
+	EWT_Rifle UMETA(DisplayName = "Rifle"),
+
+	EWT_Max UMETA(DisplayName = "Max"),
+};
 
 UCLASS()
 class TPP_BOILERPLATE_API AWeapon : public APickupObject
@@ -25,6 +33,7 @@ public:
 	virtual void Tick(float DeltaTime) override;
 
 	virtual void Fire(const FVector& HitTarget);
+	virtual void Melee();
 
 protected:
 
@@ -33,7 +42,7 @@ protected:
 
 private:
 
-	UPROPERTY(EditAnywhere, Category = "Weapon Properties")
+	UPROPERTY(EditAnywhere, Category = "Weapon Animation")
 	UAnimationAsset* FireAnimation;
 
 public:
@@ -74,35 +83,19 @@ public:
 	UPROPERTY(EditAnywhere, Category = Crosshairs)
 	float CrosshairSize = .8;
 
-	/*
-	*	Zoomed FOV while aiming
-	*/
+protected:
 
-	UPROPERTY(EditAnywhere, Category=Aiming)
-	float ZoomedFov = 40;
-
-	UPROPERTY(EditAnywhere, Category = Aiming)
-	float ZoomInterpSpeed = 20;
-
-	/*
-	 *	Automatic Fire
-	 */
-
-	UPROPERTY(EditAnywhere, Category = Combat)
-	float FireDelay = .15f;
-
-	UPROPERTY(EditAnywhere, Category = Combat)
-	bool IsAutomatic = true;
+	UPROPERTY(EditAnywhere, Category = "Weapon Properties")
+	EWeaponType WeaponType = EWeaponType::EWT_Rifle;
 
 private:
 
-	UPROPERTY(EditAnywhere, Category = Combat)
+	UPROPERTY(EditAnywhere, Category = "Weapon Animations")
 	TSubclassOf<class ACasing> CasingClass;
 
 public:
 
 	FORCEINLINE USkeletalMeshComponent* GetWeaponMesh() const { return WeaponMesh; }
-	FORCEINLINE float GetZoomedFOV() const { return ZoomedFov; }
-	FORCEINLINE float GetZoomInterpSpeed() const { return ZoomInterpSpeed; }
+	FORCEINLINE EWeaponType GetWeaponType() const { return WeaponType; }
 
 };

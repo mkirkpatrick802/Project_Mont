@@ -32,6 +32,7 @@ protected:
 	void OnRep_EquippedWeapon();
 	void Fire();
 
+	void Melee();
 	void FireButtonPressed(bool Pressed);
 
 	UFUNCTION(Server, Reliable)

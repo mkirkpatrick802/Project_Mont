@@ -67,7 +67,7 @@ class TPP_BOILERPLATE_API ATPPCharacter : public ACharacter, public IInteractWit
 	UInputAction* AimAction;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
-	UInputAction* FireAction;
+	UInputAction* AttackAction;
 
 
 public:
@@ -112,7 +112,7 @@ protected:
 
 	virtual void Jump() override;
 
-	void StartFiringWeapon(const FInputActionValue& Value);
+	void Attack(const FInputActionValue& Value);
 	void StopFiringWeapon(const FInputActionValue& Value);
 
 	void PlayHitReactMontage();

@@ -37,6 +37,10 @@ void UTPPAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 
 	IsWeaponEquipped = TPPCharacter->IsWeaponEquipped();
 	EquippedWeapon = TPPCharacter->GetEquippedWeapon();
+
+	if (EquippedWeapon)
+		EquippedWeaponType = EquippedWeapon->GetWeaponType();
+
 	IsAiming = TPPCharacter->IsAiming();
 	RotateRootBone = TPPCharacter->ShouldRotateRootBone();
 

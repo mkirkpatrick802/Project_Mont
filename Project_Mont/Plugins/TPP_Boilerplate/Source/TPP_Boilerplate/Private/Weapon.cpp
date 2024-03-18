@@ -21,9 +21,15 @@ AWeapon::AWeapon()
 	InteractWidget->AttachToComponent(RootComponent, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
 
 	WeaponMesh = Cast<USkeletalMeshComponent>(ModelComponent);
-	WeaponMesh->SetCollisionResponseToAllChannels(ECR_Block);
-	WeaponMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
-	WeaponMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	WeaponMesh->SetGenerateOverlapEvents(true);
+
+	WeaponMesh->SetSimulatePhysics(true);
+	WeaponMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	WeaponMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
+	WeaponMesh->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+	WeaponMesh->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
+	WeaponMesh->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
+	WeaponMesh->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Overlap);
 }
 
 void AWeapon::BeginPlay()
@@ -52,14 +58,18 @@ void AWeapon::Fire(const FVector& HitTarget)
 		if (const USkeletalMeshSocket* AmmoEjectSocket = WeaponMesh->GetSocketByName(FName("AmmoEject")))
 		{
 			const FTransform SocketTransform = AmmoEjectSocket->GetSocketTransform(WeaponMesh);
-			FActorSpawnParameters SpawnParams;
-			UWorld* World = GetWorld();
-			if (World)
+			if (UWorld* World = GetWorld())
 			{
+				const FActorSpawnParameters SpawnParams;
 				World->SpawnActor<ACasing>(CasingClass, SocketTransform.GetLocation(), SocketTransform.GetRotation().Rotator(), SpawnParams);
 			}
 		}
 	}
+}
+
+void AWeapon::Melee()
+{
+
 }
 
 bool AWeapon::EquipRequest(const ATPPCharacter* Player)

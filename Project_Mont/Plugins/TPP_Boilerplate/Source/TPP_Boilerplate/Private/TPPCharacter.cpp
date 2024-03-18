@@ -7,6 +7,7 @@
 #include "EnhancedInputSubsystems.h"
 #include "InteractComponent.h"
 #include "InventoryComponent.h"
+#include "ProjectileWeapon.h"
 #include "Types.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -129,9 +130,9 @@ void ATPPCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompon
 		EnhancedInputComponent->BindAction(AimAction, ETriggerEvent::Canceled, this, &ATPPCharacter::ToggleAim);
 
 		//Fire
-		EnhancedInputComponent->BindAction(FireAction, ETriggerEvent::Started, this, &ATPPCharacter::StartFiringWeapon);
-		EnhancedInputComponent->BindAction(FireAction, ETriggerEvent::Completed, this, &ATPPCharacter::StopFiringWeapon);
-		EnhancedInputComponent->BindAction(FireAction, ETriggerEvent::Canceled, this, &ATPPCharacter::StopFiringWeapon);
+		EnhancedInputComponent->BindAction(AttackAction, ETriggerEvent::Started, this, &ATPPCharacter::Attack);
+		EnhancedInputComponent->BindAction(AttackAction, ETriggerEvent::Completed, this, &ATPPCharacter::StopFiringWeapon);
+		EnhancedInputComponent->BindAction(AttackAction, ETriggerEvent::Canceled, this, &ATPPCharacter::StopFiringWeapon);
 
 		// Drop Object
 		EnhancedInputComponent->BindAction(DropAction, ETriggerEvent::Started, this, &ATPPCharacter::DropObject);
@@ -263,16 +264,27 @@ void ATPPCharacter::Interact(const FInputActionValue& Value)
  *	Weapon Logic
  */
 
-void ATPPCharacter::StartFiringWeapon(const FInputActionValue& Value)
+void ATPPCharacter::Attack(const FInputActionValue& Value)
 {
 	if(!Combat) return;
-	Combat->FireButtonPressed(true);
+
+	if(IsWeaponEquipped() && Cast<AProjectileWeapon>(GetEquippedWeapon()))
+	{
+		Combat->FireButtonPressed(true);
+		return;
+	}
+
+	Combat->Melee();
 }
 
 void ATPPCharacter::StopFiringWeapon(const FInputActionValue& Value)
 {
 	if (!Combat) return;
-	Combat->FireButtonPressed(false);
+
+	if (IsWeaponEquipped() && Cast<AProjectileWeapon>(GetEquippedWeapon()))
+	{
+		Combat->FireButtonPressed(false);
+	}
 }
 
 

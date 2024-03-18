@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Animation/AnimInstance.h"
 #include "TurningInPlace.h"
+#include "Weapon.h"
 #include "TPPAnimInstance.generated.h"
 
 class ATPPCharacter;
@@ -57,6 +58,9 @@ private:
 	bool IsWeaponEquipped;
 
 	class AWeapon* EquippedWeapon;
+
+	UPROPERTY(BlueprintReadOnly, Category = Combat, meta = (AllowPrivateAccess = "true"))
+	EWeaponType EquippedWeaponType;
 
 	UPROPERTY(BlueprintReadOnly, Category = Combat, meta = (AllowPrivateAccess = "true"))
 	bool IsAiming;
