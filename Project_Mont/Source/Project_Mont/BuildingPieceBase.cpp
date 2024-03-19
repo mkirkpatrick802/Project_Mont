@@ -24,7 +24,8 @@ void ABuildingPieceBase::Tick(float DeltaTime)
 	Super::Tick(DeltaTime);
 }
 
-void ABuildingPieceBase::Placed()
+void ABuildingPieceBase::Placed() const
 {
 	StaticMesh->SetMaterial(0, DefaultMaterial);
+	StaticMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 }

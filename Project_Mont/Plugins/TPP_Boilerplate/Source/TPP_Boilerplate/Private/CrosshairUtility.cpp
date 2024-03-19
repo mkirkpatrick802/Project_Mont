@@ -18,7 +18,7 @@ CrosshairUtility::~CrosshairUtility()
 {
 }
 
-void CrosshairUtility::TraceUnderCrosshairs(const ATPPCharacter* Character, FHitResult& TraceHitResult, FHUDPackage& HUDPackage, bool OffsetStart, float OffsetLength, float TraceLength, ECollisionChannel TraceChannel)
+void CrosshairUtility::TraceUnderCrosshairs(const ATPPCharacter* Character, FHitResult& TraceHitResult, bool OffsetStart, float OffsetLength, float TraceLength, ECollisionChannel TraceChannel)
 {
 	FVector2D ViewportSize;
 	if (GEngine && GEngine->GameViewport)

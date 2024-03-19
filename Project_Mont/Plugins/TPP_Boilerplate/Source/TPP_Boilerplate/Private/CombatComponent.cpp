@@ -42,6 +42,8 @@ void UCombatComponent::BeginPlay()
 	}
 }
 
+
+// TODO: Move a lot of this to the player character so other components can use it (HitResult && HUDPackage)
 void UCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
@@ -49,7 +51,7 @@ void UCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActo
 	if(Character && Character->IsLocallyControlled())
 	{
 		FHitResult HitResult;
-		CrosshairUtility::TraceUnderCrosshairs(Character, HitResult, HUDPackage, true, AimSnapOffset);
+		CrosshairUtility::TraceUnderCrosshairs(Character, HitResult, true, AimSnapOffset);
 		HitTarget = HitResult.ImpactPoint;
 
 		// Hit Target Debugging
@@ -69,7 +71,7 @@ void UCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActo
 		{
 			if (HitResult.GetActor() && HitResult.GetActor()->Implements<UInteractWithCrosshairsInterface>())
 			{
-				IInteractWithCrosshairsInterface* Interface = Cast<IInteractWithCrosshairsInterface>(HitResult.GetActor());
+				const IInteractWithCrosshairsInterface* Interface = Cast<IInteractWithCrosshairsInterface>(HitResult.GetActor());
 				HUDPackage.CrosshairColor = Interface->GetColor();
 			}
 			else
