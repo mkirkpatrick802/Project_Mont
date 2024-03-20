@@ -47,11 +47,14 @@ private:
 	UPROPERTY()
 	ACharacter* Character;
 
+	UPROPERTY()
+	ABuildingPieceBase* PreviewMesh;
+
 	UPROPERTY(EditAnywhere)
 	TSubclassOf<ABuildingPieceBase> CurrentBuildPiece;
 
 	UPROPERTY(EditAnywhere, Category="Building Settings")
-	float MaxBuildDistance;
+	float MaxBuildDistance = 500;
 
 	FVector PreviewLocation;
 

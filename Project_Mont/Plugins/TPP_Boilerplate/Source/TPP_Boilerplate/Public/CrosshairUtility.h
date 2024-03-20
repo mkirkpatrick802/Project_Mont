@@ -15,5 +15,5 @@ public:
 	CrosshairUtility();
 	~CrosshairUtility();
 
-	static void TraceUnderCrosshairs(const ATPPCharacter* Character, FHitResult& TraceHitResult, bool OffsetStart = true, float OffsetLength = 200, float TraceLength = TRACE_LENGTH, ECollisionChannel TraceChannel = ECC_Visibility);
+	static void TraceUnderCrosshairs(const ATPPCharacter* Character, FHitResult& TraceHitResult, float OffsetLength = 200, float TraceLength = TRACE_LENGTH, ECollisionChannel TraceChannel = ECC_Visibility, FCollisionQueryParams CollisionQueryParams = FCollisionQueryParams::DefaultQueryParam);
 };

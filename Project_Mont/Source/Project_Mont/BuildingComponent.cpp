@@ -47,14 +47,30 @@ void UBuildingComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAc
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
+	if(!IsBuilding) return;
+
+	if (!PreviewMesh)
+		PreviewMesh = GetWorld()->SpawnActor<ABuildingPieceBase>(CurrentBuildPiece);
+
 	if(const auto TPPCharacter = Cast<ATPPCharacter>(Character))
 	{
 		FHitResult HitResult;
-		CrosshairUtility::TraceUnderCrosshairs(TPPCharacter, HitResult, true, 100, MaxBuildDistance);
+		FCollisionQueryParams QueryParams;
+		QueryParams.AddIgnoredActor(TPPCharacter);
+		QueryParams.AddIgnoredActor(PreviewMesh);
+
+		const float OffsetLength = 300;
+		CrosshairUtility::TraceUnderCrosshairs(TPPCharacter, HitResult, OffsetLength, MaxBuildDistance + (OffsetLength/2), ECC_Visibility, QueryParams);
 
 		if (HitResult.GetActor())
 		{
 			PreviewLocation = HitResult.ImpactPoint;
+			PreviewMesh->SetActorLocation(PreviewLocation);
+		}
+		else
+		{
+			PreviewMesh->Destroy();
+			PreviewMesh = nullptr;
 		}
 	}
 }
@@ -63,6 +79,12 @@ void UBuildingComponent::ToggleBuildMode(const FInputActionValue& InputActionVal
 {
 	IsBuilding = !IsBuilding;
 	PlaceAction->bConsumeInput = IsBuilding;
+
+	if(!IsBuilding && PreviewMesh)
+	{
+		PreviewMesh->Destroy();
+		PreviewMesh = nullptr;
+	}
 }
 
 void UBuildingComponent::PlacePiece(const FInputActionValue& InputActionValue)

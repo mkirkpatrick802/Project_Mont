@@ -51,7 +51,7 @@ void UCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActo
 	if(Character && Character->IsLocallyControlled())
 	{
 		FHitResult HitResult;
-		CrosshairUtility::TraceUnderCrosshairs(Character, HitResult, true, AimSnapOffset);
+		CrosshairUtility::TraceUnderCrosshairs(Character, HitResult, AimSnapOffset);
 		HitTarget = HitResult.ImpactPoint;
 
 		// Hit Target Debugging

@@ -18,7 +18,7 @@ CrosshairUtility::~CrosshairUtility()
 {
 }
 
-void CrosshairUtility::TraceUnderCrosshairs(const ATPPCharacter* Character, FHitResult& TraceHitResult, bool OffsetStart, float OffsetLength, float TraceLength, ECollisionChannel TraceChannel)
+void CrosshairUtility::TraceUnderCrosshairs(const ATPPCharacter* Character, FHitResult& TraceHitResult, float OffsetLength, float TraceLength, ECollisionChannel TraceChannel, FCollisionQueryParams CollisionQueryParams)
 {
 	FVector2D ViewportSize;
 	if (GEngine && GEngine->GameViewport)
@@ -40,7 +40,7 @@ void CrosshairUtility::TraceUnderCrosshairs(const ATPPCharacter* Character, FHit
 	{
 		FVector Start = CrosshairWorldPosition;
 
-		if (Character && OffsetStart)
+		if (Character && OffsetLength > 0)
 		{
 			const float DistanceToCharacter = (Character->GetActorLocation() - Start).Size();
 			Start += CrosshairWorldDirection * (DistanceToCharacter + (Character->GetCameraBoom()->TargetArmLength - OffsetLength));
@@ -48,7 +48,7 @@ void CrosshairUtility::TraceUnderCrosshairs(const ATPPCharacter* Character, FHit
 
 		const FVector End = Start + CrosshairWorldDirection * TraceLength;
 
-		Character->GetWorld()->LineTraceSingleByChannel(TraceHitResult, Start, End, TraceChannel);
+		Character->GetWorld()->LineTraceSingleByChannel(TraceHitResult, Start, End, TraceChannel, CollisionQueryParams);
 
 		if (!TraceHitResult.bBlockingHit)
 			TraceHitResult.ImpactPoint = End;
