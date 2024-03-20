@@ -89,6 +89,7 @@ void UCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActo
  *	Equip Weapon
  */
 
+// TODO: Replicate this from clients to server
 void UCombatComponent::EquipWeapon(AWeapon* WeaponToEquip)
 {
 	if(!Character || !WeaponToEquip) return;
