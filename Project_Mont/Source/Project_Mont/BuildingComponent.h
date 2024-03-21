@@ -15,10 +15,13 @@ class PROJECT_MONT_API UBuildingComponent : public UActorComponent
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
-	class UInputMappingContext* BuildingMappingContext;
+	class UInputMappingContext* PlayerStateMappingContext;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	class UInputAction* BuildModeAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	class UInputMappingContext* BuildingMappingContext;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	class UInputAction* PlaceAction;
@@ -32,17 +35,21 @@ public:
 
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
+	UFUNCTION(BlueprintCallable, Category=Building)
+	void BuildPieceSelected(TSubclassOf<ABuildingPieceBase> SelectedPiece);
+
 private:
 
 	UFUNCTION()
-	void ToggleBuildMode(const FInputActionValue& InputActionValue);
+	void ToggleBuildModeInput(const FInputActionValue& InputActionValue);
+	void ToggleBuildMode();
 
 	UFUNCTION()
 	void PlacePiece(const FInputActionValue& InputActionValue);
 
 private:
 
-	bool IsBuilding = false;
+	bool IsBuilding;
 
 	UPROPERTY()
 	ACharacter* Character;
@@ -50,7 +57,7 @@ private:
 	UPROPERTY()
 	ABuildingPieceBase* PreviewMesh;
 
-	UPROPERTY(EditAnywhere)
+	UPROPERTY()
 	TSubclassOf<ABuildingPieceBase> CurrentBuildPiece;
 
 	UPROPERTY(EditAnywhere, Category="Building Settings")

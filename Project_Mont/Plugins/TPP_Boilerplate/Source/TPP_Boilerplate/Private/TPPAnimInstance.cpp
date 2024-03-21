@@ -32,16 +32,17 @@ void UTPPAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	IsCrouched = TPPCharacter->bIsCrouched;
 	TurningInPlace = TPPCharacter->GetTurningInPlace();
 
-	IsHoldingObject = TPPCharacter->IsHoldingObject();
+	/*IsHoldingObject = TPPCharacter->IsHoldingObject();
 	HeldObject = TPPCharacter->GetHeldObject();
 
 	IsWeaponEquipped = TPPCharacter->IsWeaponEquipped();
-	EquippedWeapon = TPPCharacter->GetEquippedWeapon();
+	EquippedWeapon = TPPCharacter->GetEquippedWeapon();*/
 
 	if (EquippedWeapon)
 		EquippedWeaponType = EquippedWeapon->GetWeaponType();
 
-	IsAiming = TPPCharacter->IsAiming();
+	/*
+	IsAiming = TPPCharacter->IsAiming();*/
 	RotateRootBone = TPPCharacter->ShouldRotateRootBone();
 
 	// Offset Yaw for Strafing
@@ -73,10 +74,10 @@ void UTPPAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 
 		if (TPPCharacter->IsLocallyControlled())
 		{
-			IsLocallyControlled = true;
+			/*IsLocallyControlled = true;
 			const FTransform RightHandTransform = TPPCharacter->GetMesh()->GetSocketTransform(FName("hand_r"), RTS_World);
 			const FRotator LookAtRotation = UKismetMathLibrary::FindLookAtRotation(RightHandTransform.GetLocation(), RightHandTransform.GetLocation() + (RightHandTransform.GetLocation() - TPPCharacter->GetHitTarget()));
-			RightHandRotation = FMath::RInterpTo(RightHandRotation, LookAtRotation, DeltaSeconds, 40.f);
+			RightHandRotation = FMath::RInterpTo(RightHandRotation, LookAtRotation, DeltaSeconds, 40.f);*/
 		}
 	}
 }

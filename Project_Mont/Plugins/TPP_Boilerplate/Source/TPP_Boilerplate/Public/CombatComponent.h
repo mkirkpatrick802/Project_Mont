@@ -73,6 +73,9 @@ private:
 	UPROPERTY(Replicated)
 	bool IsAiming;
 
+	UPROPERTY(EditAnywhere, Category = Camera)
+	float AimSensitivity;
+
 	float BaseWalkSpeed;
 
 	UPROPERTY(EditAnywhere, Category = Combat)

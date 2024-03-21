@@ -13,6 +13,8 @@
 UInteractComponent::UInteractComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
+
+	InteractionSphere = CreateDefaultSubobject<USphereComponent>(TEXT("Interaction Sphere"));
 }
 
 void UInteractComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -27,10 +29,13 @@ void UInteractComponent::BeginPlay()
 	Super::BeginPlay();
 
 	Character = Cast<ATPPCharacter>(GetOwner());
-	if(Character)
-	{
-		InteractionSphere = Character->GetInteractionSphere();
-	}
+
+	InteractionSphere->RegisterComponent();
+	InteractionSphere->AttachToComponent(Character->GetRootComponent(), FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+	InteractionSphere->SetCollisionObjectType(ECC_WorldStatic);
+	InteractionSphere->SetCollisionResponseToChannel(ECC_Visibility, ECR_Ignore);
+	InteractionSphere->SetSphereRadius(100);
+	InteractionSphere->SetGenerateOverlapEvents(true);
 
 	if(InteractionSphere)
 	{

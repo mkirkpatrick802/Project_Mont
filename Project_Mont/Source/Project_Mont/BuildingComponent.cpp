@@ -19,6 +19,9 @@ void UBuildingComponent::BeginPlay()
 	if (ACharacter* Owner = Cast<ACharacter>(GetOwner()))
 		Character = Owner;
 
+	CurrentBuildPiece = nullptr;
+	IsBuilding = false;
+
 	SetupInput();
 }
 
@@ -30,24 +33,24 @@ void UBuildingComponent::SetupInput()
 	{
 		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(Controller->GetLocalPlayer()))
 		{
-			Subsystem->AddMappingContext(BuildingMappingContext, 1);
+			Subsystem->AddMappingContext(PlayerStateMappingContext, 1);
 		}
 
 		if(UEnhancedInputComponent* EnhancedInputComponent = CastChecked<UEnhancedInputComponent>(Controller->InputComponent))
 		{
-			EnhancedInputComponent->BindAction(PlaceAction, ETriggerEvent::Started, this, &UBuildingComponent::PlacePiece);
-			EnhancedInputComponent->BindAction(BuildModeAction, ETriggerEvent::Started, this, &UBuildingComponent::ToggleBuildMode);
+			EnhancedInputComponent->BindAction(BuildModeAction, ETriggerEvent::Started, this, &UBuildingComponent::ToggleBuildModeInput);
 		}
 	}
-
-	PlaceAction->bConsumeInput = false;
 }
 
 void UBuildingComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	if(!IsBuilding) return;
+	if (GEngine)
+		GEngine->AddOnScreenDebugMessage(2, 15.0f, FColor::Red, FString::Printf(TEXT("Consume Input: %d"), PlaceAction->bConsumeInput));
+
+	if(!IsBuilding || !CurrentBuildPiece) return;
 
 	if (!PreviewMesh)
 		PreviewMesh = GetWorld()->SpawnActor<ABuildingPieceBase>(CurrentBuildPiece);
@@ -75,21 +78,59 @@ void UBuildingComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAc
 	}
 }
 
-void UBuildingComponent::ToggleBuildMode(const FInputActionValue& InputActionValue)
+void UBuildingComponent::BuildPieceSelected(TSubclassOf<ABuildingPieceBase> SelectedPiece)
+{
+	CurrentBuildPiece = SelectedPiece;
+	ToggleBuildMode();
+}
+
+void UBuildingComponent::ToggleBuildModeInput(const FInputActionValue& InputActionValue)
+{
+	if (!CurrentBuildPiece) return;
+	ToggleBuildMode();
+}
+
+void UBuildingComponent::ToggleBuildMode()
 {
 	IsBuilding = !IsBuilding;
-	PlaceAction->bConsumeInput = IsBuilding;
 
-	if(!IsBuilding && PreviewMesh)
+	if (!IsBuilding && PreviewMesh)
 	{
 		PreviewMesh->Destroy();
 		PreviewMesh = nullptr;
+	}
+
+	if (IsBuilding)
+	{
+		if (const APlayerController* Controller = Cast<APlayerController>(Character->GetController()))
+		{
+			if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(Controller->GetLocalPlayer()))
+			{
+				Subsystem->AddMappingContext(BuildingMappingContext, 1);
+			}
+
+			if (UEnhancedInputComponent* EnhancedInputComponent = CastChecked<UEnhancedInputComponent>(Controller->InputComponent))
+			{
+				PlaceAction->bConsumeInput = true;
+				EnhancedInputComponent->BindAction(PlaceAction, ETriggerEvent::Started, this, &UBuildingComponent::PlacePiece);
+			}
+		}
+	}
+	else
+	{
+		if (const APlayerController* Controller = Cast<APlayerController>(Character->GetController()))
+		{
+			if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(Controller->GetLocalPlayer()))
+			{
+				Subsystem->RemoveMappingContext(BuildingMappingContext);
+			}
+		}
 	}
 }
 
 void UBuildingComponent::PlacePiece(const FInputActionValue& InputActionValue)
 {
-	if(!IsBuilding) return;
+	if(!IsBuilding || !CurrentBuildPiece) return;
 	if(PreviewLocation == FVector::Zero()) return;
 
 	const auto SpawnedPiece = GetWorld()->SpawnActor<ABuildingPieceBase>(CurrentBuildPiece, PreviewLocation, FRotator::ZeroRotator);

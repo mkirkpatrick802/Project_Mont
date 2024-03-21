@@ -14,7 +14,6 @@
 UCombatComponent::UCombatComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
-
 	AimWalkSpeed = 250.f;
 }
 
@@ -209,7 +208,7 @@ void UCombatComponent::MulticastFire_Implementation(const FVector_NetQuantize& T
 	if (!EquippedWeapon) return;
 	if (Character)
 	{
-		Character->PlayFireMontage(IsAiming);
+		//Character->PlayFireMontage(IsAiming);
 		EquippedWeapon->Fire(TraceHitTarget);
 	}
 }
@@ -281,6 +280,7 @@ void UCombatComponent::ToggleAiming()
 	if(Character)
 	{
 		Character->GetCharacterMovement()->MaxWalkSpeed = IsAiming ? AimWalkSpeed : BaseWalkSpeed;
+		Character->SetCameraSensitivity(IsAiming ? AimSensitivity : Character->GetCurrentCameraSensitivity());
 	}
 
 	// Update Server

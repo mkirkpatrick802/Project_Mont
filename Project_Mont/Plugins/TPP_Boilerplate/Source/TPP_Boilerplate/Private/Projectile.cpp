@@ -46,7 +46,7 @@ void AProjectile::OnHit(UPrimitiveComponent* HitComp, AActor* OtherActor, UPrimi
 {
 	if(ATPPCharacter* Character = Cast<ATPPCharacter>(OtherActor))
 	{
-		Character->MulticastHit();
+		//Character->MulticastHit();
 	}
 
 	Destroy();

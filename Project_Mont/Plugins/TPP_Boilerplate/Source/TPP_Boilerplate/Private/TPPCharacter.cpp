@@ -8,11 +8,11 @@
 #include "InteractComponent.h"
 #include "InventoryComponent.h"
 #include "ProjectileWeapon.h"
+#include "TPPController.h"
 #include "Types.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/KismetMathLibrary.h"
-#include "Net/UnrealNetwork.h"
 #include "Weapon.h"
 #include "Components/SphereComponent.h"
 
@@ -41,19 +41,13 @@ ATPPCharacter::ATPPCharacter()
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
 
-	Combat = CreateDefaultSubobject<UCombatComponent>(TEXT("Combat Component"));
-	Combat->SetIsReplicated(true);
+	CombatComponent = CreateDefaultSubobject<UCombatComponent>(TEXT("Combat Component"));
+	CombatComponent->SetIsReplicated(true);
 
 	InteractComponent = CreateDefaultSubobject<UInteractComponent>(TEXT("Interaction Component"));
+	
 
 	InventoryComponent = CreateDefaultSubobject<UInventoryComponent>(TEXT("Inventory Component"));
-
-	InteractionSphere = CreateDefaultSubobject<USphereComponent>(TEXT("Interaction Sphere"));
-	InteractionSphere->SetupAttachment(RootComponent);
-	InteractionSphere->SetCollisionObjectType(ECC_WorldStatic);
-	InteractionSphere->SetCollisionResponseToChannel(ECC_Visibility, ECR_Ignore);
-	InteractionSphere->SetSphereRadius(100);
-	InteractionSphere->SetGenerateOverlapEvents(true);
 
 	GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
 
@@ -67,9 +61,9 @@ ATPPCharacter::ATPPCharacter()
 void ATPPCharacter::PostInitializeComponents()
 {
 	Super::PostInitializeComponents();
-	if(Combat)
+	if(CombatComponent)
 	{
-		Combat->Character = this;
+		CombatComponent->Character = this;
 	}
 }
 
@@ -88,14 +82,16 @@ void ATPPCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
+	CurrentCameraSensitivity = BaseSensitivity;
+	PlayerController = Cast<ATPPController>(Controller);
+	check(!PlayerController)
+
+
 	//Add Input Mapping Context
-	if (const APlayerController* PlayerController = Cast<APlayerController>(Controller))
-	{
-		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PlayerController->GetLocalPlayer()))
-		{
-			Subsystem->AddMappingContext(DefaultMappingContext, 0);
-		}
-	}
+	InputSubsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PlayerController->GetLocalPlayer());
+
+	if(InputSubsystem)
+		InputSubsystem->AddMappingContext(TPPMovementMappingContext, 0);
 }
 
 void ATPPCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -103,47 +99,53 @@ void ATPPCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompon
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 
 	// Set up action bindings
-	if (UEnhancedInputComponent* EnhancedInputComponent = CastChecked<UEnhancedInputComponent>(PlayerInputComponent)) 
-	{
-		
-		//Jumping
-		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Started, this, &ATPPCharacter::Jump);
-		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
-		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Canceled, this, &ACharacter::StopJumping);
 
-		//Moving
-		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &ATPPCharacter::Move);
+	EnhancedInputComponent = Cast<UEnhancedInputComponent>(PlayerInputComponent);
+	check(!EnhancedInputComponent)
 
-		//Looking
-		EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &ATPPCharacter::Look);
+	//Jumping
+	EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Started, this, &ATPPCharacter::Jump);
+	EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
+	EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Canceled, this, &ACharacter::StopJumping);
+	
+	//Moving
+	EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &ATPPCharacter::Move);
+	
+	//Looking
+	EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &ATPPCharacter::Look);
+	
+	//Crouching
+	EnhancedInputComponent->BindAction(CrouchAction, ETriggerEvent::Started, this, &ATPPCharacter::ToggleCrouch);
+	EnhancedInputComponent->BindAction(CrouchAction, ETriggerEvent::Completed, this, &ATPPCharacter::ToggleCrouch);
+	EnhancedInputComponent->BindAction(CrouchAction, ETriggerEvent::Canceled, this, &ATPPCharacter::ToggleCrouch);
+	
+	/*
+	//Aim
+	EnhancedInputComponent->BindAction(AimAction, ETriggerEvent::Started, this, &ATPPCharacter::ToggleAim);
+	EnhancedInputComponent->BindAction(AimAction, ETriggerEvent::Completed, this, &ATPPCharacter::ToggleAim);
+	EnhancedInputComponent->BindAction(AimAction, ETriggerEvent::Canceled, this, &ATPPCharacter::ToggleAim);
+	
+	//Fire
+	EnhancedInputComponent->BindAction(AttackAction, ETriggerEvent::Started, this, &ATPPCharacter::Attack);
+	EnhancedInputComponent->BindAction(AttackAction, ETriggerEvent::Completed, this, &ATPPCharacter::StopFiringWeapon);
+	EnhancedInputComponent->BindAction(AttackAction, ETriggerEvent::Canceled, this, &ATPPCharacter::StopFiringWeapon);
+	
+	// Drop Object
+	EnhancedInputComponent->BindAction(DropAction, ETriggerEvent::Started, this, &ATPPCharacter::DropObject);
 
-		EnhancedInputComponent->BindAction(InteractAction, ETriggerEvent::Started, this, &ATPPCharacter::Interact);
+	// Interact
+	EnhancedInputComponent->BindAction(InteractAction, ETriggerEvent::Started, this, &ATPPCharacter::Interact);
+	*/
 
-		//Crouching
-		EnhancedInputComponent->BindAction(CrouchAction, ETriggerEvent::Started, this, &ATPPCharacter::ToggleCrouch);
-		EnhancedInputComponent->BindAction(CrouchAction, ETriggerEvent::Completed, this, &ATPPCharacter::ToggleCrouch);
-		EnhancedInputComponent->BindAction(CrouchAction, ETriggerEvent::Canceled, this, &ATPPCharacter::ToggleCrouch);
-
-		//Aim
-		EnhancedInputComponent->BindAction(AimAction, ETriggerEvent::Started, this, &ATPPCharacter::ToggleAim);
-		EnhancedInputComponent->BindAction(AimAction, ETriggerEvent::Completed, this, &ATPPCharacter::ToggleAim);
-		EnhancedInputComponent->BindAction(AimAction, ETriggerEvent::Canceled, this, &ATPPCharacter::ToggleAim);
-
-		//Fire
-		EnhancedInputComponent->BindAction(AttackAction, ETriggerEvent::Started, this, &ATPPCharacter::Attack);
-		EnhancedInputComponent->BindAction(AttackAction, ETriggerEvent::Completed, this, &ATPPCharacter::StopFiringWeapon);
-		EnhancedInputComponent->BindAction(AttackAction, ETriggerEvent::Canceled, this, &ATPPCharacter::StopFiringWeapon);
-
-		// Drop Object
-		EnhancedInputComponent->BindAction(DropAction, ETriggerEvent::Started, this, &ATPPCharacter::DropObject);
-	}
 }
 
 void ATPPCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	if(GetLocalRole() > ROLE_SimulatedProxy && IsLocallyControlled())
+	CurrentDeltaTime = DeltaTime;
+
+	/*if(GetLocalRole() > ROLE_SimulatedProxy && IsLocallyControlled())
 	{
 		AimOffset(DeltaTime);
 	}
@@ -158,7 +160,7 @@ void ATPPCharacter::Tick(float DeltaTime)
 		CalculateAO_Pitch();
 	}
 
-	HideCameraIfCharacterClose();
+	HideCameraIfCharacterClose();*/
 }
 
 void ATPPCharacter::OnRep_ReplicatedMovement()
@@ -169,23 +171,24 @@ void ATPPCharacter::OnRep_ReplicatedMovement()
 	TimeSinceLastMovementReplication = 0.f;
 }
 
+// TODO: Clean This
 void ATPPCharacter::HideCameraIfCharacterClose()
 {
 	if(!IsLocallyControlled()) return;
 	if((FollowCamera->GetComponentLocation() - GetActorLocation()).Size() < CameraThreshold)
 	{
 		GetMesh()->SetVisibility(false);
-		if(Combat && Combat->EquippedWeapon && Combat->EquippedWeapon->GetWeaponMesh())
+		if(CombatComponent && CombatComponent->EquippedWeapon && CombatComponent->EquippedWeapon->GetWeaponMesh())
 		{
-			Combat->EquippedWeapon->GetWeaponMesh()->bOwnerNoSee = true;
+			CombatComponent->EquippedWeapon->GetWeaponMesh()->bOwnerNoSee = true;
 		}
 	}
 	else
 	{
 		GetMesh()->SetVisibility(true);
-		if (Combat && Combat->EquippedWeapon && Combat->EquippedWeapon->GetWeaponMesh())
+		if (CombatComponent && CombatComponent->EquippedWeapon && CombatComponent->EquippedWeapon->GetWeaponMesh())
 		{
-			Combat->EquippedWeapon->GetWeaponMesh()->bOwnerNoSee = false;
+			CombatComponent->EquippedWeapon->GetWeaponMesh()->bOwnerNoSee = false;
 		}
 	}
 }
@@ -203,7 +206,7 @@ float ATPPCharacter::CalculateSpeed()
 
 void ATPPCharacter::Move(const FInputActionValue& Value)
 {
-	FVector2D MovementVector = Value.Get<FVector2D>();
+	const FVector2D MovementVector = Value.Get<FVector2D>();
 
 	if (Controller != nullptr)
 	{
@@ -221,12 +224,15 @@ void ATPPCharacter::Move(const FInputActionValue& Value)
 
 void ATPPCharacter::Look(const FInputActionValue& Value)
 {
-	FVector2D LookAxisVector = Value.Get<FVector2D>();
+	const FVector2D LookAxisVector = Value.Get<FVector2D>();
 
 	if (Controller != nullptr)
 	{
-		AddControllerYawInput(LookAxisVector.X);
-		AddControllerPitchInput(LookAxisVector.Y);
+		const float HorizontalAxis = LookAxisVector.X * CurrentCameraSensitivity * CurrentDeltaTime;
+		const float VerticalAxis = LookAxisVector.Y * CurrentCameraSensitivity * CurrentDeltaTime;
+
+		AddControllerYawInput(HorizontalAxis);
+		AddControllerPitchInput(VerticalAxis);
 	}
 }
 
@@ -252,19 +258,10 @@ void ATPPCharacter::Jump()
 }
 
 /*
- *	Object Interaction
- */
-
-void ATPPCharacter::Interact(const FInputActionValue& Value)
-{
-	InteractComponent->InteractRequest();
-}
-
-/*
  *	Weapon Logic
  */
 
-void ATPPCharacter::Attack(const FInputActionValue& Value)
+/*void ATPPCharacter::Attack(const FInputActionValue& Value)
 {
 	if(!Combat) return;
 
@@ -291,9 +288,9 @@ void ATPPCharacter::StopFiringWeapon(const FInputActionValue& Value)
 bool ATPPCharacter::IsWeaponEquipped()
 {
 	return Combat && Combat->EquippedWeapon;
-}
+}*/
 
-bool ATPPCharacter::IsHoldingObject()
+/*bool ATPPCharacter::IsHoldingObject()
 {
 	return InteractComponent && InteractComponent->PickedUpObject;
 }
@@ -308,9 +305,9 @@ AInteractableObject* ATPPCharacter::GetHeldObject()
 {
 	if (!InteractComponent) return nullptr;
 	return Cast<AInteractableObject>(InteractComponent->PickedUpObject);
-}
+}*/
 
-void ATPPCharacter::ToggleAim(const FInputActionValue& Value)
+/*void ATPPCharacter::ToggleAim(const FInputActionValue& Value)
 {
 	if (Combat)
 	{
@@ -340,12 +337,12 @@ void ATPPCharacter::PlayFireMontage(bool IsAiming)
 		const FName SectionName = IsAiming ? FName("RifleAim") : FName("RifleHip");
 		AnimInstance->Montage_JumpToSection(SectionName);
 	}
-}
+}*/
 
 void ATPPCharacter::PlayHitReactMontage()
 {
-	if (!Combat) return;
-	if (!Combat->EquippedWeapon) return;
+	/*if (!CombatComponent) return;
+	if (!CombatComponent->EquippedWeapon) return;
 
 	UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance();
 	if (AnimInstance && HitReactMontage)
@@ -353,10 +350,10 @@ void ATPPCharacter::PlayHitReactMontage()
 		AnimInstance->Montage_Play(HitReactMontage);
 		const FName SectionName("FromFront");
 		AnimInstance->Montage_JumpToSection(SectionName);
-	}
+	}*/
 }
 
-void ATPPCharacter::MulticastHit_Implementation()
+/*void ATPPCharacter::MulticastHit_Implementation()
 {
 	PlayHitReactMontage();
 }
@@ -395,11 +392,11 @@ void ATPPCharacter::AimOffset(float DeltaTime)
 	}
 
 	CalculateAO_Pitch();
-}
+}*/
 
 void ATPPCharacter::SimProxiesTurn()
 {
-	if (!Combat || !Combat->EquippedWeapon) return;
+	if (!CombatComponent || !CombatComponent->EquippedWeapon) return;
 
 	RotateRootBone = false;
 
@@ -435,7 +432,7 @@ void ATPPCharacter::SimProxiesTurn()
 	TurningInPlace = ETurningInPlace::ETIP_NotTurning;
 }
 
-void ATPPCharacter::CalculateAO_Pitch()
+/*void ATPPCharacter::CalculateAO_Pitch()
 {
 	AO_Pitch = GetBaseAimRotation().Pitch;
 	if (AO_Pitch > 90.f && !IsLocallyControlled())
@@ -445,7 +442,7 @@ void ATPPCharacter::CalculateAO_Pitch()
 		const FVector2D OutRange(-90.f, 0.f);
 		AO_Pitch = FMath::GetMappedRangeValueClamped(InRange, OutRange, AO_Pitch);
 	}
-}
+}*/
 
 void ATPPCharacter::TurnInPlace(float DeltaTime)
 {
@@ -471,8 +468,8 @@ void ATPPCharacter::TurnInPlace(float DeltaTime)
 	}
 }
 
-FVector ATPPCharacter::GetHitTarget() const
+/*FVector ATPPCharacter::GetHitTarget() const
 {
 	if (!Combat) return FVector();
 	return Combat->HitTarget;
-}
+}*/

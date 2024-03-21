@@ -6,6 +6,8 @@
 #include "TurningInPlace.h"
 #include "TPPCharacter.generated.h"
 
+class UEnhancedInputLocalPlayerSubsystem;
+class ATPPController;
 class AInteractableObject;
 class AWeapon;
 struct FInputActionValue;
@@ -27,7 +29,7 @@ class TPP_BOILERPLATE_API ATPPCharacter : public ACharacter, public IInteractWit
 	class UCameraComponent* FollowCamera;
 
 	UPROPERTY(VisibleAnywhere, Category = Combat)
-	class UCombatComponent* Combat;
+	class UCombatComponent* CombatComponent;
 
 	UPROPERTY(VisibleAnywhere, Category = Interaction)
 	class UInteractComponent* InteractComponent;
@@ -35,15 +37,12 @@ class TPP_BOILERPLATE_API ATPPCharacter : public ACharacter, public IInteractWit
 	UPROPERTY(VisibleAnywhere, Category = Inventory)
 	class UInventoryComponent* InventoryComponent;
 
-	UPROPERTY(VisibleAnywhere, Category = Interaction)
-	class USphereComponent* InteractionSphere;
-
 /*
  *		Inputs
  */
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
-	class UInputMappingContext* DefaultMappingContext;
+	class UInputMappingContext* TPPMovementMappingContext;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	class UInputAction* JumpAction;
@@ -61,6 +60,7 @@ class TPP_BOILERPLATE_API ATPPCharacter : public ACharacter, public IInteractWit
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	UInputAction* InteractAction;
 
+	// TODO: Move to interact component
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	UInputAction* DropAction;
 
@@ -83,7 +83,7 @@ public:
 	virtual void Tick(float DeltaTime) override;
 	virtual void OnRep_ReplicatedMovement() override;
 
-	bool IsWeaponEquipped();
+	/*bool IsWeaponEquipped();
 	bool IsHoldingObject();
 
 	AWeapon* GetEquippedWeapon();
@@ -93,7 +93,7 @@ public:
 	void PlayFireMontage(bool IsAiming);
 
 	UFUNCTION(NetMulticast, Unreliable)
-	void MulticastHit();
+	void MulticastHit();*/
 
 	// For Crosshair Interaction
 	virtual FLinearColor GetColor() const override;
@@ -105,18 +105,18 @@ protected:
 	void Move(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
 	void ToggleCrouch(const FInputActionValue& Value);
-	void Interact(const FInputActionValue& Value);
+	/*void Interact(const FInputActionValue& Value);
 	void ToggleAim(const FInputActionValue& Value);
-	void DropObject(const FInputActionValue& Value);
+	void DropObject(const FInputActionValue& Value);*/
 
-	void CalculateAO_Pitch();
-	void AimOffset(float DeltaTime);
+	//void CalculateAO_Pitch();
+	//void AimOffset(float DeltaTime);
 	void SimProxiesTurn();
 
 	virtual void Jump() override;
 
-	void Attack(const FInputActionValue& Value);
-	void StopFiringWeapon(const FInputActionValue& Value);
+	//void Attack(const FInputActionValue& Value);
+	//void StopFiringWeapon(const FInputActionValue& Value);
 
 	void PlayHitReactMontage();
 
@@ -127,6 +127,20 @@ private:
 	float CalculateSpeed();
 
 private:
+
+	// Input
+	UEnhancedInputLocalPlayerSubsystem* InputSubsystem;
+	UEnhancedInputComponent* EnhancedInputComponent;
+
+	ATPPController* PlayerController;
+
+	float CurrentDeltaTime;
+
+	// Camera Turn Rate
+	UPROPERTY(EditAnywhere, Category=Camera)
+	float BaseSensitivity;
+
+	float CurrentCameraSensitivity = 1;
 
 	// Animation
 	float AO_Yaw;
@@ -165,10 +179,12 @@ public:
 	FORCEINLINE bool ShouldRotateRootBone() const { return RotateRootBone; }
 	FVector GetHitTarget() const;
 	FORCEINLINE USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
-	FORCEINLINE USphereComponent* GetInteractionSphere() const { return InteractionSphere; }
 
 	UFUNCTION(BlueprintCallable)
 	FORCEINLINE UInteractComponent* GetInteractComponent() const { return InteractComponent; }
 
-	FORCEINLINE UCombatComponent* GetCombatComponent() const { return Combat; }
+	FORCEINLINE UCombatComponent* GetCombatComponent() const { return CombatComponent; }
+
+	FORCEINLINE float GetCurrentCameraSensitivity() const { return CurrentCameraSensitivity; }
+	FORCEINLINE void SetCameraSensitivity(const float NewSensitivity) { CurrentCameraSensitivity = NewSensitivity; }
 };

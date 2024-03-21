@@ -14,6 +14,9 @@ class TPP_BOILERPLATE_API UInteractComponent : public UActorComponent
 {
 	GENERATED_BODY()
 
+	UPROPERTY(VisibleAnywhere, Category = Interaction)
+	class USphereComponent* InteractionSphere;
+
 public:	
 
 	UInteractComponent();
@@ -73,6 +76,4 @@ private:
 
 	class ATPPController* Controller;
 	ATPPCharacter* Character;
-
-	class USphereComponent* InteractionSphere;
 };
