@@ -1,26 +1,22 @@
 #include "Weapon.h"
 
-#include "Casing.h"
-#include "CombatComponent.h"
-#include "TPPCharacter.h"
 #include "Components/WidgetComponent.h"
-#include "Engine/SkeletalMeshSocket.h"
 
 AWeapon::AWeapon()
 {
 	PrimaryActorTick.bCanEverTick = false;
 	bReplicates = true;
 
-	ModelComponent->UnregisterComponent();
-	ModelComponent->DestroyComponent(false);
+	MeshComponent->UnregisterComponent();
+	MeshComponent->DestroyComponent(false);
 
-	ModelComponent = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Weapon Mesh"));
-	ModelComponent->SetupAttachment(RootComponent);
-	SetRootComponent(ModelComponent);
+	MeshComponent = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Weapon Mesh"));
+	MeshComponent->SetupAttachment(RootComponent);
+	SetRootComponent(MeshComponent);
 
-	InteractWidget->AttachToComponent(RootComponent, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+	InteractWidget->SetupAttachment(RootComponent);
 
-	WeaponMesh = Cast<USkeletalMeshComponent>(ModelComponent);
+	WeaponMesh = Cast<USkeletalMeshComponent>(MeshComponent);
 	WeaponMesh->SetGenerateOverlapEvents(true);
 
 	WeaponMesh->SetSimulatePhysics(true);
@@ -42,43 +38,10 @@ void AWeapon::Tick(float DeltaTime)
 	Super::Tick(DeltaTime);
 }
 
-/*
- *		Fire
- */
-
-void AWeapon::Fire(const FVector& HitTarget)
+void AWeapon::Attack(const FVector& HitTarget)
 {
-	if (FireAnimation)
+	if (AttackAnimation)
 	{
-		WeaponMesh->PlayAnimation(FireAnimation, false);
+		WeaponMesh->PlayAnimation(AttackAnimation, false);
 	}
-
-	if (CasingClass)
-	{
-		if (const USkeletalMeshSocket* AmmoEjectSocket = WeaponMesh->GetSocketByName(FName("AmmoEject")))
-		{
-			const FTransform SocketTransform = AmmoEjectSocket->GetSocketTransform(WeaponMesh);
-			if (UWorld* World = GetWorld())
-			{
-				const FActorSpawnParameters SpawnParams;
-				World->SpawnActor<ACasing>(CasingClass, SocketTransform.GetLocation(), SocketTransform.GetRotation().Rotator(), SpawnParams);
-			}
-		}
-	}
-}
-
-void AWeapon::Melee()
-{
-
-}
-
-bool AWeapon::EquipRequest(const ATPPCharacter* Player)
-{
-	if(UCombatComponent* Combat = Player->GetCombatComponent())
-	{
-		Combat->EquipWeapon(this);
-		return true;
-	}
-
-	return false;
 }

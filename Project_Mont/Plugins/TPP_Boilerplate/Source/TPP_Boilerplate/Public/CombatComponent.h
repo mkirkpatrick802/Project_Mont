@@ -5,6 +5,10 @@
 #include "Components/ActorComponent.h"
 #include "CombatComponent.generated.h"
 
+class ATPPCharacter;
+class UInputAction;
+class UInputMappingContext;
+class AWeapon;
 class ATPPHUD;
 class ATPPController;
 
@@ -13,37 +17,67 @@ class TPP_BOILERPLATE_API UCombatComponent : public UActorComponent
 {
 	GENERATED_BODY()
 
+	/*
+	*	Inputs
+	*/
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat Input", meta = (AllowPrivateAccess = "true"))
+	UInputMappingContext* CombatMappingContext;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat Input", meta = (AllowPrivateAccess = "true"))
+	UInputAction* AttackAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat Input", meta = (AllowPrivateAccess = "true"))
+	UInputAction* AimAction;
+
+
 public:	
 
-	friend class ATPPCharacter;
-
 	UCombatComponent();
+	virtual void BeginPlay() override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
-	void EquipWeapon(class AWeapon* WeaponToEquip);
-	void DropWeapon();
+	void EquipWeapon(AWeapon* WeaponToEquip);
 
-protected:
+private:
 
-	virtual void BeginPlay() override;
+	/*
+	*	Init
+	*/
 
 	UFUNCTION()
-	void OnRep_EquippedWeapon();
-	void Fire();
+	void SetupInput();
 
-	void Melee();
-	void FireButtonPressed(bool Pressed);
+	void SetDefaults();
+
+	/*
+	*	Standard Attack
+	*/
+
+	void StartAttack();
+	void Attack();
 
 	UFUNCTION(Server, Reliable)
-	void ServerFire(const FVector_NetQuantize& TraceHitTarget);
+	void ServerAttack();
 
 	UFUNCTION(NetMulticast, Reliable)
-	void MulticastFire(const FVector_NetQuantize& TraceHitTarget);
+	void MulticastAttack();
+
+	void StartAttackTimer();
+	void AttackTimerFinished();
+
+	void StopAttack();
+
+	/*
+	*	Crosshair Setup
+	*/
 
 	void SetCombatCrosshairs(float DeltaTime);
 
-private:
+	/*
+	*	Aiming
+	*/
 
 	void ToggleAiming();
 
@@ -52,11 +86,16 @@ private:
 
 	void InterpFOV(float DeltaTime);
 
-	void StartFireTimer();
-	void FireTimerFinished();
-
-
 private:
+
+	/*
+	*	Attacking
+	*/
+
+	bool IsAttackButtonPressed;
+	bool CanAttack;
+
+	FTimerHandle AttackTimer;
 
 	UPROPERTY()
 	ATPPCharacter* Character;
@@ -67,7 +106,7 @@ private:
 	UPROPERTY()
 	ATPPHUD* HUD;
 
-	UPROPERTY(ReplicatedUsing = OnRep_EquippedWeapon)
+	UPROPERTY(Replicated)
 	AWeapon* EquippedWeapon;
 
 	UPROPERTY(Replicated)
@@ -81,8 +120,6 @@ private:
 	UPROPERTY(EditAnywhere, Category = Combat)
 	float AimWalkSpeed;
 
-	bool IsFireButtonPressed;
-
 	FHUDPackage HUDPackage;
 	float CrosshairVelocityFactor;
 	float CrosshairInAirFactor;
@@ -92,6 +129,9 @@ private:
 	/*
 	 *	Aiming and FOV
 	*/
+
+	UPROPERTY(EditAnywhere, Category = Combat)
+	float AimSnapOffset = 200;
 
 	float DefaultFOV;
 
@@ -108,13 +148,11 @@ private:
 	*/
 
 	FVector HitTarget;
-	bool CanFire = true;
 
-	FTimerHandle FireTimer;
+public:
 
-protected:
+	FORCEINLINE bool IsWeaponEquipped() { return EquippedWeapon != nullptr; }
 
-	UPROPERTY(EditAnywhere, Category = Combat)
-	float AimSnapOffset = 200;
+	FORCEINLINE void DropWeapon() { EquippedWeapon = nullptr; }
 
 };

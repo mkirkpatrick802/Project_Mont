@@ -8,15 +8,15 @@ AInteractableObject::AInteractableObject()
 	PrimaryActorTick.bCanEverTick = true;
 	bReplicates = true;
 
-	ModelComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Static Mesh"));
-	ModelComponent->SetupAttachment(RootComponent);
-	SetRootComponent(ModelComponent);
+	MeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Static Mesh"));
+	MeshComponent->SetupAttachment(RootComponent);
+	SetRootComponent(MeshComponent);
 
 	InteractWidget = CreateDefaultSubobject<UWidgetComponent>(TEXT("Interact Widget"));
 	InteractWidget->SetupAttachment(RootComponent);
 	InteractWidget->SetVisibility(false);
 
-	StaticMesh = Cast<UStaticMeshComponent>(ModelComponent);
+	StaticMesh = Cast<UStaticMeshComponent>(MeshComponent);
 	StaticMesh->SetCollisionObjectType(ECC_WorldDynamic);
 	StaticMesh->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
 	StaticMesh->SetIsReplicated(true);
@@ -29,23 +29,6 @@ void AInteractableObject::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(AInteractableObject, CurrentObjectState)
-}
-
-void AInteractableObject::SetObjectState(const EObjectState NewObjectState)
-{
-	CurrentObjectState = NewObjectState;
-
-	switch (CurrentObjectState)
-	{
-	case EObjectState::EWS_PickedUp:
-		ToggleInteractWidget(false);
-
-		break;
-	case EObjectState::EWS_Dropped:
-
-		break;
-	default: ;
-	}
 }
 
 FLinearColor AInteractableObject::GetColor() const
@@ -71,6 +54,23 @@ void AInteractableObject::OnRep_ObjectState()
 void AInteractableObject::ToggleInteractWidget(const bool Enabled) const
 {
 	InteractWidget->SetVisibility(Enabled);
+}
+
+void AInteractableObject::SetObjectState(const EObjectState NewObjectState)
+{
+	CurrentObjectState = NewObjectState;
+
+	switch (CurrentObjectState)
+	{
+	case EObjectState::EWS_PickedUp:
+		ToggleInteractWidget(false);
+
+		break;
+	case EObjectState::EWS_Dropped:
+
+		break;
+	default:;
+	}
 }
 
 void AInteractableObject::Interacted_Implementation(ATPPCharacter* Player) {}

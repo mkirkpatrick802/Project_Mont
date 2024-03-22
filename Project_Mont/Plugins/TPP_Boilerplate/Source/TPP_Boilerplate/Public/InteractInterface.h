@@ -16,16 +16,4 @@ class UInteractInterface : public UInteractWithCrosshairsInterface
 class TPP_BOILERPLATE_API IInteractInterface : public IInteractWithCrosshairsInterface
 {
 	GENERATED_BODY()
-
-public:
-
-	UFUNCTION(BlueprintCallable, BlueprintNativeEvent, Category="Interact")
-	void EnteredInteractionZone(ATPPCharacter* Player);
-
-	UFUNCTION(BlueprintCallable, BlueprintNativeEvent, Category = "Interact")
-	void LeftInteractionZone(ATPPCharacter* Player);
-
-	UFUNCTION(BlueprintCallable, BlueprintNativeEvent, Category = "Interact")
-	void InteractRequest(ATPPCharacter* Player);
-
 };

@@ -6,6 +6,9 @@
 #include "InteractComponent.generated.h"
 
 
+class UInputAction;
+class UInputMappingContext;
+class USphereComponent;
 class ATPPCharacter;
 class AInteractableObject;
 
@@ -14,24 +17,34 @@ class TPP_BOILERPLATE_API UInteractComponent : public UActorComponent
 {
 	GENERATED_BODY()
 
+	/*
+	*	Components
+	*/
+
 	UPROPERTY(VisibleAnywhere, Category = Interaction)
-	class USphereComponent* InteractionSphere;
+	USphereComponent* InteractionSphere;
+
+	/*
+	*	Inputs
+	*/
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction Input", meta = (AllowPrivateAccess = "true"))
+	UInputMappingContext* InteractionMappingContext;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction Input", meta = (AllowPrivateAccess = "true"))
+	UInputAction* InteractAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction Input", meta = (AllowPrivateAccess = "true"))
+	UInputAction* DropAction;
 
 public:	
 
 	UInteractComponent();
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
-	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
-	void InteractRequest();
+	void ToggleHeldObjectVisibility(bool IsVisible);
 
-	UFUNCTION(BlueprintCallable)
-	void InteractWithObject(AActor* ObjectToInteract);
-
-	UFUNCTION(BlueprintCallable)
-	void PickUpObjectRequest(APickupObject* ObjectToPickUp);
-
-	void DropObjectRequest();
+	void PickUpObject(APickupObject* ObjectToPickUp);
 
 protected:
 
@@ -39,27 +52,24 @@ protected:
 
 private:
 
+	void SetupComponents();
+
+	UFUNCTION()
+	void SetupInput();
+
 	UFUNCTION()
 	void OnInteractionSphereBeginOverlap(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
 
 	UFUNCTION()
 	void OnInteractionSphereEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
 
-	void PickUpObject(APickupObject* ObjectToPickUp);
+	/*
+	*	Interaction
+	*/
 
-	UFUNCTION(Server, Reliable)
-	void ServerPickUpObjectRequest(APickupObject* ObjectToPickUp);
+	void InteractRequest();
 
-	UFUNCTION(NetMulticast, Reliable)
-	void MulticastPickUpObjectRequest(APickupObject* ObjectToPickUp);
-
-	void DropObject();
-
-	UFUNCTION(Server, Reliable)
-	void ServerDropObjectRequest(APickupObject* ObjectToDrop);
-
-	UFUNCTION(NetMulticast, Reliable)
-	void MulticastDropObjectRequest();
+	void InteractWithObject(AActor* ObjectToInteract);
 
 	UFUNCTION(Server, Reliable)
 	void ServerInteraction(AActor* Object, ATPPCharacter* Player);
@@ -67,12 +77,37 @@ private:
 	UFUNCTION(NetMulticast, Reliable)
 	void MulticastInteraction(AActor* Object, ATPPCharacter* Player);
 
+	/*
+	*	Pick Up
+	*/
+
+	UFUNCTION(Server, Reliable)
+	void ServerPickUpObjectRequest(APickupObject* ObjectToPickUp);
+
+	UFUNCTION(NetMulticast, Reliable)
+	void MulticastPickUpObjectRequest(APickupObject* ObjectToPickUp);
+
+	/*
+	*	Drop
+	*/
+
+	void DropObjectRequest();
+
+	UFUNCTION(Server, Reliable)
+	void ServerDropObjectRequest(APickupObject* ObjectToDrop);
+
+	UFUNCTION(NetMulticast, Reliable)
+	void MulticastDropObjectRequest();
+
 public:
 
 	UPROPERTY(Replicated)
 	APickupObject* PickedUpObject;
 
 private:
+
+	UPROPERTY(EditAnywhere, Category=Interaction)
+	float InteractionRadius = 200;
 
 	class ATPPController* Controller;
 	ATPPCharacter* Character;

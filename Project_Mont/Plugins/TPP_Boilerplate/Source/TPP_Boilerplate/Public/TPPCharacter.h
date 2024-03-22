@@ -12,15 +12,17 @@ class AInteractableObject;
 class AWeapon;
 struct FInputActionValue;
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSetupPlayerInputDelegate);
+
 UCLASS()
 class TPP_BOILERPLATE_API ATPPCharacter : public ACharacter, public IInteractWithCrosshairsInterface
 {
 
 	GENERATED_BODY()
 
-/*
- *		Components
- */
+	/*
+	*	Components
+	*/
 
 	UPROPERTY(VisibleAnywhere, Category = Camera)
 	class USpringArmComponent* CameraBoom;
@@ -37,106 +39,86 @@ class TPP_BOILERPLATE_API ATPPCharacter : public ACharacter, public IInteractWit
 	UPROPERTY(VisibleAnywhere, Category = Inventory)
 	class UInventoryComponent* InventoryComponent;
 
-/*
- *		Inputs
- */
+	/*
+	*	Inputs
+	*/
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
-	class UInputMappingContext* TPPMovementMappingContext;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement Input", meta = (AllowPrivateAccess = "true"))
+	class UInputMappingContext* MovementMappingContext;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement Input", meta = (AllowPrivateAccess = "true"))
 	class UInputAction* JumpAction;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement Input", meta = (AllowPrivateAccess = "true"))
 	UInputAction* CrouchAction;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement Input", meta = (AllowPrivateAccess = "true"))
 	UInputAction* MoveAction;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement Input", meta = (AllowPrivateAccess = "true"))
 	UInputAction* LookAction;
-
-	// TODO: Move to interact component
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
-	UInputAction* InteractAction;
-
-	// TODO: Move to interact component
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
-	UInputAction* DropAction;
-
-	// TODO: Move to combat component
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
-	UInputAction* AimAction;
-
-	// TODO: Move to combat component
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
-	UInputAction* AttackAction;
-
 
 public:
 
 	ATPPCharacter();
-
-	virtual void PostInitializeComponents() override;
+	virtual void BeginPlay() override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 	virtual void Tick(float DeltaTime) override;
 	virtual void OnRep_ReplicatedMovement() override;
 
-	/*bool IsWeaponEquipped();
-	bool IsHoldingObject();
-
-	AWeapon* GetEquippedWeapon();
-	AInteractableObject* GetHeldObject();
-	bool IsAiming();
-
-	void PlayFireMontage(bool IsAiming);
-
-	UFUNCTION(NetMulticast, Unreliable)
-	void MulticastHit();*/
-
 	// For Crosshair Interaction
 	virtual FLinearColor GetColor() const override;
 
-protected:
+	/*
+	*	Animations
+	*/
 
-	virtual void BeginPlay() override;
+	void PlayAttackMontage(UAnimMontage* AttackMontage);
+	void PlayHitReactMontage();
+
+protected:
 
 	void Move(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
 	void ToggleCrouch(const FInputActionValue& Value);
-	/*void Interact(const FInputActionValue& Value);
-	void ToggleAim(const FInputActionValue& Value);
-	void DropObject(const FInputActionValue& Value);*/
 
-	//void CalculateAO_Pitch();
-	//void AimOffset(float DeltaTime);
+	void CalculateAO_Pitch();
+	void AimOffset(const float DeltaTime);
 	void SimProxiesTurn();
 
 	virtual void Jump() override;
 
-	//void Attack(const FInputActionValue& Value);
-	//void StopFiringWeapon(const FInputActionValue& Value);
-
-	void PlayHitReactMontage();
 
 private:
 
 	void TurnInPlace(float DeltaTime);
-	void HideCameraIfCharacterClose();
+	void HideCharacterIfCameraClose();
 	float CalculateSpeed();
+
+public:
+
+	FSetupPlayerInputDelegate SetupPlayerInputDelegate;
 
 private:
 
-	// Input
-	UEnhancedInputLocalPlayerSubsystem* InputSubsystem;
-	UEnhancedInputComponent* EnhancedInputComponent;
-
+	// References
+	UPROPERTY()
 	ATPPController* PlayerController;
+
+	// Input
+	UPROPERTY()
+	UEnhancedInputLocalPlayerSubsystem* InputSubsystem;
+
+	UPROPERTY()
+	UEnhancedInputComponent* EnhancedInputComponent;
 
 	float CurrentDeltaTime;
 
-	// Camera Turn Rate
+	// Camera Settings
+	UPROPERTY(EditAnywhere, Category = Camera)
+	float CameraThreshold = 200.f;
+
 	UPROPERTY(EditAnywhere, Category=Camera)
 	float BaseSensitivity;
 
@@ -150,15 +132,6 @@ private:
 
 	ETurningInPlace TurningInPlace;
 
-	UPROPERTY(EditAnywhere, Category = Combat)
-	class UAnimMontage* FireWeaponMontage;
-
-	UPROPERTY(EditAnywhere, Category = Combat)
-	class UAnimMontage* HitReactMontage;
-
-	UPROPERTY(EditAnywhere, Category = Camera)
-	float CameraThreshold = 200.f;
-
 	bool RotateRootBone;
 	float TurnThreshold = .5f;
 	FRotator ProxyRotationLastFrame;
@@ -168,16 +141,22 @@ private:
 
 public:
 
-	/**
+	/*
 	*	Getters & Setters
 	*/
+
+	/*
+	*	Input
+	*/
+
+	FORCEINLINE UEnhancedInputLocalPlayerSubsystem* GetInputSubsystem() const { return InputSubsystem; }
+	FORCEINLINE UEnhancedInputComponent* GetInputComponent() const { return EnhancedInputComponent; }
 
 	FORCEINLINE float GetAO_Yaw() const { return AO_Yaw; }
 	FORCEINLINE float GetAO_Pitch() const { return AO_Pitch; }
 	FORCEINLINE ETurningInPlace GetTurningInPlace() const { return TurningInPlace; }
 	FORCEINLINE UCameraComponent* GetFollowCamera() const { return FollowCamera; }
 	FORCEINLINE bool ShouldRotateRootBone() const { return RotateRootBone; }
-	FVector GetHitTarget() const;
 	FORCEINLINE USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
 
 	UFUNCTION(BlueprintCallable)

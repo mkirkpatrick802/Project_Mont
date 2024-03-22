@@ -8,6 +8,8 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "Engine.h"
+#include "EnhancedInputComponent.h"
+#include "EnhancedInputSubsystems.h"
 #include "MeleeWeapon.h"
 #include "ProjectileWeapon.h"
 
@@ -28,12 +30,21 @@ void UCombatComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 void UCombatComponent::BeginPlay()
 {
 	Super::BeginPlay();
+	Character = Cast<ATPPCharacter>(GetOwner());
 
-	if(Character)
+	SetDefaults();
+	Character->SetupPlayerInputDelegate.AddDynamic(this, &UCombatComponent::SetupInput);
+}
+
+void UCombatComponent::SetDefaults()
+{
+	CanAttack = true;
+
+	if (Character)
 	{
 		BaseWalkSpeed = Character->GetCharacterMovement()->MaxWalkSpeed;
 
-		if(Character->GetFollowCamera())
+		if (Character->GetFollowCamera())
 		{
 			DefaultFOV = Character->GetFollowCamera()->FieldOfView;
 			CurrentFOV = DefaultFOV;
@@ -41,6 +52,24 @@ void UCombatComponent::BeginPlay()
 	}
 }
 
+void UCombatComponent::SetupInput()
+{
+	if (const auto InputSubsystem = Character->GetInputSubsystem())
+	{
+		InputSubsystem->AddMappingContext(CombatMappingContext, 0);
+	}
+
+	if (const auto InputComponent = Character->GetInputComponent())
+	{
+		InputComponent->BindAction(AttackAction, ETriggerEvent::Started, this, &UCombatComponent::StartAttack);
+		InputComponent->BindAction(AttackAction, ETriggerEvent::Canceled, this, &UCombatComponent::StopAttack);
+		InputComponent->BindAction(AttackAction, ETriggerEvent::Completed, this, &UCombatComponent::StopAttack);
+
+		InputComponent->BindAction(AimAction, ETriggerEvent::Started, this, &UCombatComponent::ToggleAiming);
+		InputComponent->BindAction(AimAction, ETriggerEvent::Canceled, this, &UCombatComponent::ToggleAiming);
+		InputComponent->BindAction(AimAction, ETriggerEvent::Completed, this, &UCombatComponent::ToggleAiming);
+	}
+}
 
 // TODO: Move a lot of this to the player character so other components can use it (HitResult && HUDPackage)
 void UCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -84,148 +113,15 @@ void UCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActo
 	}
 }
 
-/*
- *	Equip Weapon
- */
-
-// TODO: Replicate this from clients to server
-void UCombatComponent::EquipWeapon(AWeapon* WeaponToEquip)
+void UCombatComponent::SetCombatCrosshairs(const float DeltaTime)
 {
-	if(!Character || !WeaponToEquip) return;
-
-	EquippedWeapon = WeaponToEquip;
-	EquippedWeapon->SetObjectState(EObjectState::EWS_PickedUp);
-	EquippedWeapon->TogglePhysics(false);
-
-	switch(EquippedWeapon->GetWeaponType())
-	{
-	case EWeaponType::EWT_TwoHandedMelee:
-
-		if (const USkeletalMeshSocket* HandSocket = Character->GetMesh()->GetSocketByName(FName("TwoHandedMelee")))
-			HandSocket->AttachActor(EquippedWeapon, Character->GetMesh());
-
-		break;
-
-	case EWeaponType::EWT_Rifle:
-
-		if (const USkeletalMeshSocket* HandSocket = Character->GetMesh()->GetSocketByName(FName("Rifle")))
-			HandSocket->AttachActor(EquippedWeapon, Character->GetMesh());
-
-		break;
-
-	default: 
-		break;
-	}
-
-	EquippedWeapon->SetOwner(Character);
-
-	Character->GetCharacterMovement()->bOrientRotationToMovement = false;
-	Character->bUseControllerRotationYaw = true;
-}
-
-void UCombatComponent::OnRep_EquippedWeapon()
-{
-	if(EquippedWeapon && Character)
-	{
-		Character->GetCharacterMovement()->bOrientRotationToMovement = false;
-		Character->bUseControllerRotationYaw = true;
-	}
-}
-
-/*
- *	Drop Weapon
- */
-
-void UCombatComponent::DropWeapon()
-{
-	if (!Character || !EquippedWeapon) return;
-	EquippedWeapon->SetObjectState(EObjectState::EWS_Dropped);
-	EquippedWeapon->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
-	EquippedWeapon->SetOwner(nullptr);
-	EquippedWeapon->TogglePhysics(true);
-	EquippedWeapon = nullptr;
-
-	//Character->GetCharacterMovement()->bOrientRotationToMovement = true;
-	//Character->bUseControllerRotationYaw = false;
-}
-
-/*
- *	Fire Weapon
- */
-
-void UCombatComponent::FireButtonPressed(const bool Pressed)
-{
-	IsFireButtonPressed = Pressed; 
-	if(IsFireButtonPressed && EquippedWeapon)
-	{
-		Fire();
-	}
-}
-
-void UCombatComponent::Fire()
-{
-	if(CanFire)
-	{
-		CanFire = false;
-		ServerFire(HitTarget);
-		CrosshairShootingFactor = 0.5f;
-		StartFireTimer();
-	}
-}
-
-void UCombatComponent::Melee()
-{
-	if(AMeleeWeapon* MeleeWeapon = Cast<AMeleeWeapon>(EquippedWeapon))
-	{
-		MeleeWeapon->Melee();
-	}
-}
-
-void UCombatComponent::StartFireTimer()
-{
-	if (!Character) return;
-
-	if (const AProjectileWeapon* ProjectileWeapon = Cast<AProjectileWeapon>(EquippedWeapon))
-		Character->GetWorldTimerManager().SetTimer(FireTimer, this, &UCombatComponent::FireTimerFinished, ProjectileWeapon->GetFireDelay());
-}
-
-void UCombatComponent::FireTimerFinished()
-{
-	CanFire = true;
-	if (IsFireButtonPressed && Cast<AProjectileWeapon>(EquippedWeapon) && Cast<AProjectileWeapon>(EquippedWeapon)->GetAutomaticState())
-	{
-		Fire();
-	}
-}
-
-void UCombatComponent::ServerFire_Implementation(const FVector_NetQuantize& TraceHitTarget)
-{
-	MulticastFire(TraceHitTarget);
-}
-
-void UCombatComponent::MulticastFire_Implementation(const FVector_NetQuantize& TraceHitTarget)
-{
-	if (!EquippedWeapon) return;
-	if (Character)
-	{
-		//Character->PlayFireMontage(IsAiming);
-		EquippedWeapon->Fire(TraceHitTarget);
-	}
-}
-
-/*
- *	Aiming
- */
-
-void UCombatComponent::SetCombatCrosshairs(float DeltaTime)
-{
-	if(!Character || !Character->Controller || !EquippedWeapon) return;
+	if (!Character || !Character->Controller || !EquippedWeapon) return;
 
 	Controller = Controller == nullptr ? Cast<ATPPController>(Character->Controller) : Controller;
-	if(Controller)
+	if (Controller)
 	{
 		HUD = HUD == nullptr ? Cast<ATPPHUD>(Controller->GetHUD()) : HUD;
-		if(HUD)
+		if (HUD)
 		{
 			HUDPackage.CombatMode = true;
 			HUDPackage.CrosshairsCenter = EquippedWeapon->CrosshairsCenter;
@@ -241,7 +137,7 @@ void UCombatComponent::SetCombatCrosshairs(float DeltaTime)
 
 			CrosshairVelocityFactor = FMath::GetMappedRangeValueClamped(WalkSpeedRange, VelocityMultiplierRange, Velocity.Size());
 
-			if(Character->GetCharacterMovement()->IsFalling())
+			if (Character->GetCharacterMovement()->IsFalling())
 			{
 				CrosshairInAirFactor = FMath::FInterpTo(CrosshairInAirFactor, 2.25f, DeltaTime, 2.25f);
 			}
@@ -250,9 +146,9 @@ void UCombatComponent::SetCombatCrosshairs(float DeltaTime)
 				CrosshairInAirFactor = FMath::FInterpTo(CrosshairInAirFactor, 0.f, DeltaTime, 30.f);
 			}
 
-			if(IsAiming)
+			if (IsAiming)
 			{
-				if(const AProjectileWeapon* ProjectileWeapon = Cast<AProjectileWeapon>(EquippedWeapon))
+				if (const AProjectileWeapon* ProjectileWeapon = Cast<AProjectileWeapon>(EquippedWeapon))
 					CrosshairAimFactor = FMath::FInterpTo(CrosshairAimFactor, -.58f, DeltaTime, ProjectileWeapon->GetZoomInterpSpeed());
 			}
 			else
@@ -270,6 +166,99 @@ void UCombatComponent::SetCombatCrosshairs(float DeltaTime)
 		}
 	}
 }
+
+/*
+ *	Equip Weapon
+ */
+
+void UCombatComponent::EquipWeapon(AWeapon* WeaponToEquip)
+{
+	if(!Character || !WeaponToEquip) return;
+
+	EquippedWeapon = WeaponToEquip;
+
+	switch(EquippedWeapon->GetWeaponType())
+	{
+	case EWeaponType::EWT_TwoHandedMelee:
+
+		if (const USkeletalMeshSocket* HandSocket = Character->GetMesh()->GetSocketByName(FName("TwoHandedMelee")))
+			HandSocket->AttachActor(EquippedWeapon, Character->GetMesh());
+
+		break;
+
+	case EWeaponType::EWT_Rifle:
+
+		if (const USkeletalMeshSocket* HandSocket = Character->GetMesh()->GetSocketByName(FName("Rifle")))
+			HandSocket->AttachActor(EquippedWeapon, Character->GetMesh());
+
+		break;
+	default: 
+		break;
+	}
+}
+
+void UCombatComponent::StartAttack()
+{
+	IsAttackButtonPressed = true;
+	if (EquippedWeapon)
+	{
+		Attack();
+	}
+}
+
+void UCombatComponent::Attack()
+{
+	if (CanAttack && EquippedWeapon)
+	{
+		CanAttack = false;
+		CrosshairShootingFactor = .5f;
+		ServerAttack();
+
+		// Attack Loop
+		StartAttackTimer();
+	}
+}
+
+void UCombatComponent::ServerAttack_Implementation()
+{
+	MulticastAttack();
+}
+
+void UCombatComponent::MulticastAttack_Implementation()
+{
+	if (!EquippedWeapon) return;
+
+	if (Character)
+	{
+		// TODO
+		// Character->PlayFireMontage(IsAiming);
+		EquippedWeapon->Attack(HitTarget);
+	}
+}
+
+void UCombatComponent::StartAttackTimer()
+{
+	if (!Character) return;
+	Character->GetWorldTimerManager().SetTimer(AttackTimer, this, &UCombatComponent::AttackTimerFinished, EquippedWeapon->GetAttackDelay());
+}
+
+void UCombatComponent::AttackTimerFinished()
+{
+	CanAttack = true;
+	if(IsAttackButtonPressed)
+	{
+		Attack();
+	}
+}
+
+void UCombatComponent::StopAttack()
+{
+	IsAttackButtonPressed = false;
+}
+
+/*
+ *	Aiming
+ */
 
 void UCombatComponent::ToggleAiming()
 {

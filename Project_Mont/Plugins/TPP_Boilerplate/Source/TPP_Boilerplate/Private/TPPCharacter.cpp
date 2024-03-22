@@ -7,20 +7,17 @@
 #include "EnhancedInputSubsystems.h"
 #include "InteractComponent.h"
 #include "InventoryComponent.h"
-#include "ProjectileWeapon.h"
 #include "TPPController.h"
 #include "Types.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/KismetMathLibrary.h"
-#include "Weapon.h"
-#include "Components/SphereComponent.h"
 
 ATPPCharacter::ATPPCharacter()
 {
 	PrimaryActorTick.bCanEverTick = true;
-	bUseControllerRotationYaw = false;
-	GetCharacterMovement()->bOrientRotationToMovement = true;
+	bUseControllerRotationYaw = true;
+	GetCharacterMovement()->bOrientRotationToMovement = false;
 	GetCharacterMovement()->NavAgentProps.bCanCrouch = true;
 	GetCharacterMovement()->RotationRate = FRotator(0, 600, 0);
 	GetCharacterMovement()->MaxWalkSpeed = 600;
@@ -45,7 +42,6 @@ ATPPCharacter::ATPPCharacter()
 	CombatComponent->SetIsReplicated(true);
 
 	InteractComponent = CreateDefaultSubobject<UInteractComponent>(TEXT("Interaction Component"));
-	
 
 	InventoryComponent = CreateDefaultSubobject<UInventoryComponent>(TEXT("Inventory Component"));
 
@@ -58,24 +54,9 @@ ATPPCharacter::ATPPCharacter()
 	TurningInPlace = ETurningInPlace::ETIP_NotTurning;
 }
 
-void ATPPCharacter::PostInitializeComponents()
-{
-	Super::PostInitializeComponents();
-	if(CombatComponent)
-	{
-		CombatComponent->Character = this;
-	}
-}
-
 void ATPPCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-}
-
-
-FLinearColor ATPPCharacter::GetColor() const
-{
-	return FLinearColor::Red;
 }
 
 void ATPPCharacter::BeginPlay()
@@ -84,14 +65,15 @@ void ATPPCharacter::BeginPlay()
 
 	CurrentCameraSensitivity = BaseSensitivity;
 	PlayerController = Cast<ATPPController>(Controller);
-	check(!PlayerController)
-
+	check(PlayerController != nullptr)
 
 	//Add Input Mapping Context
 	InputSubsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PlayerController->GetLocalPlayer());
 
 	if(InputSubsystem)
-		InputSubsystem->AddMappingContext(TPPMovementMappingContext, 0);
+		InputSubsystem->AddMappingContext(MovementMappingContext, 0);
+
+	SetupPlayerInputDelegate.Broadcast();
 }
 
 void ATPPCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -101,7 +83,7 @@ void ATPPCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompon
 	// Set up action bindings
 
 	EnhancedInputComponent = Cast<UEnhancedInputComponent>(PlayerInputComponent);
-	check(!EnhancedInputComponent)
+	check(EnhancedInputComponent != nullptr)
 
 	//Jumping
 	EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Started, this, &ATPPCharacter::Jump);
@@ -118,25 +100,6 @@ void ATPPCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompon
 	EnhancedInputComponent->BindAction(CrouchAction, ETriggerEvent::Started, this, &ATPPCharacter::ToggleCrouch);
 	EnhancedInputComponent->BindAction(CrouchAction, ETriggerEvent::Completed, this, &ATPPCharacter::ToggleCrouch);
 	EnhancedInputComponent->BindAction(CrouchAction, ETriggerEvent::Canceled, this, &ATPPCharacter::ToggleCrouch);
-	
-	/*
-	//Aim
-	EnhancedInputComponent->BindAction(AimAction, ETriggerEvent::Started, this, &ATPPCharacter::ToggleAim);
-	EnhancedInputComponent->BindAction(AimAction, ETriggerEvent::Completed, this, &ATPPCharacter::ToggleAim);
-	EnhancedInputComponent->BindAction(AimAction, ETriggerEvent::Canceled, this, &ATPPCharacter::ToggleAim);
-	
-	//Fire
-	EnhancedInputComponent->BindAction(AttackAction, ETriggerEvent::Started, this, &ATPPCharacter::Attack);
-	EnhancedInputComponent->BindAction(AttackAction, ETriggerEvent::Completed, this, &ATPPCharacter::StopFiringWeapon);
-	EnhancedInputComponent->BindAction(AttackAction, ETriggerEvent::Canceled, this, &ATPPCharacter::StopFiringWeapon);
-	
-	// Drop Object
-	EnhancedInputComponent->BindAction(DropAction, ETriggerEvent::Started, this, &ATPPCharacter::DropObject);
-
-	// Interact
-	EnhancedInputComponent->BindAction(InteractAction, ETriggerEvent::Started, this, &ATPPCharacter::Interact);
-	*/
-
 }
 
 void ATPPCharacter::Tick(float DeltaTime)
@@ -158,9 +121,9 @@ void ATPPCharacter::Tick(float DeltaTime)
 		}
 
 		CalculateAO_Pitch();
-	}
+	}*/
 
-	HideCameraIfCharacterClose();*/
+	HideCharacterIfCameraClose();
 }
 
 void ATPPCharacter::OnRep_ReplicatedMovement()
@@ -171,33 +134,19 @@ void ATPPCharacter::OnRep_ReplicatedMovement()
 	TimeSinceLastMovementReplication = 0.f;
 }
 
-// TODO: Clean This
-void ATPPCharacter::HideCameraIfCharacterClose()
+void ATPPCharacter::HideCharacterIfCameraClose()
 {
-	if(!IsLocallyControlled()) return;
-	if((FollowCamera->GetComponentLocation() - GetActorLocation()).Size() < CameraThreshold)
+	if (!IsLocallyControlled()) return;
+	if ((FollowCamera->GetComponentLocation() - GetActorLocation()).Size() < CameraThreshold)
 	{
 		GetMesh()->SetVisibility(false);
-		if(CombatComponent && CombatComponent->EquippedWeapon && CombatComponent->EquippedWeapon->GetWeaponMesh())
-		{
-			CombatComponent->EquippedWeapon->GetWeaponMesh()->bOwnerNoSee = true;
-		}
+		InteractComponent->ToggleHeldObjectVisibility(false);
 	}
 	else
 	{
 		GetMesh()->SetVisibility(true);
-		if (CombatComponent && CombatComponent->EquippedWeapon && CombatComponent->EquippedWeapon->GetWeaponMesh())
-		{
-			CombatComponent->EquippedWeapon->GetWeaponMesh()->bOwnerNoSee = false;
-		}
+		InteractComponent->ToggleHeldObjectVisibility(true);
 	}
-}
-
-float ATPPCharacter::CalculateSpeed()
-{
-	FVector Velocity = GetVelocity();
-	Velocity.Z = 0;
-	return Velocity.Length();
 }
 
 /*
@@ -258,114 +207,31 @@ void ATPPCharacter::Jump()
 }
 
 /*
- *	Weapon Logic
+ *  Animations
  */
 
-/*void ATPPCharacter::Attack(const FInputActionValue& Value)
+void ATPPCharacter::PlayAttackMontage(UAnimMontage* AttackMontage)
 {
-	if(!Combat) return;
 
-	if(IsWeaponEquipped() && Cast<AProjectileWeapon>(GetEquippedWeapon()))
-	{
-		Combat->FireButtonPressed(true);
-		return;
-	}
-
-	Combat->Melee();
 }
-
-void ATPPCharacter::StopFiringWeapon(const FInputActionValue& Value)
-{
-	if (!Combat) return;
-
-	if (IsWeaponEquipped() && Cast<AProjectileWeapon>(GetEquippedWeapon()))
-	{
-		Combat->FireButtonPressed(false);
-	}
-}
-
-
-bool ATPPCharacter::IsWeaponEquipped()
-{
-	return Combat && Combat->EquippedWeapon;
-}*/
-
-/*bool ATPPCharacter::IsHoldingObject()
-{
-	return InteractComponent && InteractComponent->PickedUpObject;
-}
-
-AWeapon* ATPPCharacter::GetEquippedWeapon()
-{
-	if (Combat == nullptr) return nullptr;
-	return Combat->EquippedWeapon;
-}
-
-AInteractableObject* ATPPCharacter::GetHeldObject()
-{
-	if (!InteractComponent) return nullptr;
-	return Cast<AInteractableObject>(InteractComponent->PickedUpObject);
-}*/
-
-/*void ATPPCharacter::ToggleAim(const FInputActionValue& Value)
-{
-	if (Combat)
-	{
-		Combat->ToggleAiming();
-	}
-}
-
-void ATPPCharacter::DropObject(const FInputActionValue& Value)
-{
-	InteractComponent->DropObjectRequest();
-}
-
-bool ATPPCharacter::IsAiming()
-{
-	return Combat && Combat->IsAiming;
-}
-
-void ATPPCharacter::PlayFireMontage(bool IsAiming)
-{
-	if(!Combat) return;
-	if(!Combat->EquippedWeapon) return;
-
-	UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance();
-	if(AnimInstance && FireWeaponMontage)
-	{
-		AnimInstance->Montage_Play(FireWeaponMontage);
-		const FName SectionName = IsAiming ? FName("RifleAim") : FName("RifleHip");
-		AnimInstance->Montage_JumpToSection(SectionName);
-	}
-}*/
 
 void ATPPCharacter::PlayHitReactMontage()
 {
-	/*if (!CombatComponent) return;
-	if (!CombatComponent->EquippedWeapon) return;
 
-	UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance();
-	if (AnimInstance && HitReactMontage)
-	{
-		AnimInstance->Montage_Play(HitReactMontage);
-		const FName SectionName("FromFront");
-		AnimInstance->Montage_JumpToSection(SectionName);
-	}*/
 }
 
-/*void ATPPCharacter::MulticastHit_Implementation()
-{
-	PlayHitReactMontage();
-}
+/*
+ *	Aim Offset
+ */
 
 void ATPPCharacter::AimOffset(float DeltaTime)
 {
-	if(Combat && !Combat->EquippedWeapon) return;
+	if (!CombatComponent || !CombatComponent->IsWeaponEquipped()) return;
 
 	const float Speed = CalculateSpeed();
-	const bool IsinAir = GetCharacterMovement()->IsFalling();
+	const bool IsInAir = GetCharacterMovement()->IsFalling();
 
-	if(Speed == 0 && !IsinAir)
+	if(Speed == 0 && !IsInAir)
 	{
 		RotateRootBone = true;
 		const FRotator CurrentAimRotation = FRotator(0, GetBaseAimRotation().Yaw, 0);
@@ -380,7 +246,7 @@ void ATPPCharacter::AimOffset(float DeltaTime)
 		TurnInPlace(DeltaTime);
 	}
 
-	if(Speed > 0 || IsinAir)
+	if(Speed > 0 || IsInAir)
 	{
 		RotateRootBone = false;
 		StartingAimRotation = FRotator(0, GetBaseAimRotation().Yaw, 0);
@@ -392,12 +258,14 @@ void ATPPCharacter::AimOffset(float DeltaTime)
 	}
 
 	CalculateAO_Pitch();
-}*/
+}
+
+/*
+ *	Turn In-place
+ */
 
 void ATPPCharacter::SimProxiesTurn()
 {
-	if (!CombatComponent || !CombatComponent->EquippedWeapon) return;
-
 	RotateRootBone = false;
 
 	const float Speed = CalculateSpeed();
@@ -432,7 +300,7 @@ void ATPPCharacter::SimProxiesTurn()
 	TurningInPlace = ETurningInPlace::ETIP_NotTurning;
 }
 
-/*void ATPPCharacter::CalculateAO_Pitch()
+void ATPPCharacter::CalculateAO_Pitch()
 {
 	AO_Pitch = GetBaseAimRotation().Pitch;
 	if (AO_Pitch > 90.f && !IsLocallyControlled())
@@ -442,7 +310,7 @@ void ATPPCharacter::SimProxiesTurn()
 		const FVector2D OutRange(-90.f, 0.f);
 		AO_Pitch = FMath::GetMappedRangeValueClamped(InRange, OutRange, AO_Pitch);
 	}
-}*/
+}
 
 void ATPPCharacter::TurnInPlace(float DeltaTime)
 {
@@ -468,8 +336,14 @@ void ATPPCharacter::TurnInPlace(float DeltaTime)
 	}
 }
 
-/*FVector ATPPCharacter::GetHitTarget() const
+float ATPPCharacter::CalculateSpeed()
 {
-	if (!Combat) return FVector();
-	return Combat->HitTarget;
-}*/
+	FVector Velocity = GetVelocity();
+	Velocity.Z = 0;
+	return Velocity.Length();
+}
+
+FLinearColor ATPPCharacter::GetColor() const
+{
+	return FLinearColor::Red;
+}

@@ -1,9 +1,9 @@
 #include "MeleeWeapon.h"
 
-void AMeleeWeapon::Melee()
+void AMeleeWeapon::Attack(const FVector& HitTarget)
 {
-	Super::Melee();
+	Super::Attack();
 
 	if (GEngine)
-		GEngine->AddOnScreenDebugMessage(3, 15.0f, FColor::Blue, FString::Printf(TEXT("Melee Attack")));
+		GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Red, FString::Printf(TEXT("Axe Attack")));
 }

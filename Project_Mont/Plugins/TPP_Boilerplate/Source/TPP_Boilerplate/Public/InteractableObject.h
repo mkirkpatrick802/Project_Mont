@@ -26,7 +26,7 @@ class TPP_BOILERPLATE_API AInteractableObject : public APawn, public IInteractIn
 protected:
 
 	UPROPERTY()
-	USceneComponent* ModelComponent;
+	UMeshComponent* MeshComponent;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	UStaticMeshComponent* StaticMesh;

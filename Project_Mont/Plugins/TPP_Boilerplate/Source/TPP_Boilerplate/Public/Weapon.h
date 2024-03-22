@@ -32,26 +32,27 @@ public:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
 
-	virtual void Fire(const FVector& HitTarget);
-	virtual void Melee();
-
-protected:
-
-	UFUNCTION(BlueprintCallable)
-	bool EquipRequest(const ATPPCharacter* Player);
+	virtual void Attack(const FVector& HitTarget = FVector::ZeroVector);
 
 private:
 
 	UPROPERTY(EditAnywhere, Category = "Weapon Animation")
-	UAnimationAsset* FireAnimation;
+	UAnimationAsset* AttackAnimation;
 
 public:
+
+	/*
+	*	Weapon Damage
+	*/
+
+	UPROPERTY(EditAnywhere, Category = "Weapon Stats")
+	float AttackDelay = .15f;
 
 	/*
 	 *	Weapon Damage
 	 */
 
-	UPROPERTY(EditAnywhere, Category=Combat)
+	UPROPERTY(EditAnywhere, Category = "Weapon Stats")
 	float Damage = 2;
 
 	/*
@@ -88,14 +89,10 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Weapon Properties")
 	EWeaponType WeaponType = EWeaponType::EWT_Rifle;
 
-private:
-
-	UPROPERTY(EditAnywhere, Category = "Weapon Animations")
-	TSubclassOf<class ACasing> CasingClass;
-
 public:
 
 	FORCEINLINE USkeletalMeshComponent* GetWeaponMesh() const { return WeaponMesh; }
 	FORCEINLINE EWeaponType GetWeaponType() const { return WeaponType; }
+	FORCEINLINE float GetAttackDelay() const { return AttackDelay; }
 
 };

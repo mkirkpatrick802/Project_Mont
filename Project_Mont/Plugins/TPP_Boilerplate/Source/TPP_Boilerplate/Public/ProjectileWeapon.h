@@ -11,7 +11,7 @@ class TPP_BOILERPLATE_API AProjectileWeapon : public AWeapon
 
 public:
 
-	virtual void Fire(const FVector& HitTarget) override;
+	virtual void Attack(const FVector& HitTarget) override;
 
 protected:
 
@@ -25,16 +25,6 @@ protected:
 	UPROPERTY(EditAnywhere, Category = Aiming)
 	float ZoomInterpSpeed = 20;
 
-	/*
-	*	Automatic Fire
-	*/
-
-	UPROPERTY(EditAnywhere, Category = Combat)
-	float FireDelay = .15f;
-
-	UPROPERTY(EditAnywhere, Category = Combat)
-	bool IsAutomatic = true;
-
 private:
 
 	UPROPERTY(EditAnywhere, Category=Projectile)
@@ -44,7 +34,5 @@ public:
 
 	FORCEINLINE float GetZoomedFOV() const { return ZoomedFov; }
 	FORCEINLINE float GetZoomInterpSpeed() const { return ZoomInterpSpeed; }
-	FORCEINLINE float GetFireDelay() const { return FireDelay; }
-	FORCEINLINE bool GetAutomaticState() const { return IsAutomatic; }
 
 };

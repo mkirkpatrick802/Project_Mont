@@ -10,6 +10,7 @@ class TPP_BOILERPLATE_API AMeleeWeapon : public AWeapon
 	GENERATED_BODY()
 
 public:
-	virtual void Melee() override;
+
+	virtual void Attack(const FVector& HitTarget = FVector::ZeroVector) override;
 
 };

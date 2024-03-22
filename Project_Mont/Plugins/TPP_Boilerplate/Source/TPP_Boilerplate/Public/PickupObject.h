@@ -14,9 +14,13 @@ public:
 	APickupObject();
 	void TogglePhysics(bool Enabled) const;
 
-private:
+protected:
 
+	UFUNCTION(BlueprintCallable)
+	void PickUp(ATPPCharacter* Player);
 
 public:
+
+	FORCEINLINE UMeshComponent* GetMeshComponent() const { return MeshComponent; }
 
 };
