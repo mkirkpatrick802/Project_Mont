@@ -10,7 +10,7 @@
 	"DocsURL": "https://docs.voxelplugin.com",
 	"MarketplaceURL": "",
 	"SupportURL": "https://discord.voxelplugin.com",
-	"EngineVersion": "5.2.0",
+	"EngineVersion": "5.3",
 	"CanContainContent": true,
 	"Installed": true,
 	"Modules": [

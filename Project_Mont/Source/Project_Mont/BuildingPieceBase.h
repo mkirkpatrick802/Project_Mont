@@ -1,16 +1,45 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "BuildInterface.h"
 #include "GameFramework/Actor.h"
 #include "BuildingPieceBase.generated.h"
 
+#define ECC_FoundationSocket ECollisionChannel::ECC_GameTraceChannel3
+#define ECC_FloorSocket ECollisionChannel::ECC_GameTraceChannel4
+#define ECC_WallSocket ECollisionChannel::ECC_GameTraceChannel5
+
 UCLASS()
-class PROJECT_MONT_API ABuildingPieceBase : public AActor
+class PROJECT_MONT_API ABuildingPieceBase : public AActor, public IBuildInterface
 {
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere)
 	UStaticMeshComponent* StaticMesh;
+
+	UPROPERTY(EditAnywhere, Category = Sockets)
+	UBoxComponent* FoundationSocket_1;
+
+	UPROPERTY(EditAnywhere, Category = Sockets)
+	UBoxComponent* FoundationSocket_2;
+
+	UPROPERTY(EditAnywhere, Category = Sockets)
+	UBoxComponent* FoundationSocket_3;
+
+	UPROPERTY(EditAnywhere, Category = Sockets)
+	UBoxComponent* FoundationSocket_4;
+
+	UPROPERTY(EditAnywhere, Category = Sockets)
+	UBoxComponent* WallSocket_1;
+
+	UPROPERTY(EditAnywhere, Category = Sockets)
+	UBoxComponent* WallSocket_2;
+
+	UPROPERTY(EditAnywhere, Category = Sockets)
+	UBoxComponent* WallSocket_3;
+
+	UPROPERTY(EditAnywhere, Category = Sockets)
+	UBoxComponent* WallSocket_4;
 
 public:	
 
@@ -20,15 +49,32 @@ public:
 	virtual void Tick(float DeltaTime) override;
 
 	void Placed() const;
+	bool CheckIfBlocked();
+	void ToggleIncorrectMaterial(bool IncorrectLocation);
+
+	virtual TArray<UBoxComponent*> GetSnappingSockets() const override;
+
+private:
+
+	UBoxComponent* InitializeSocket(const FName& SocketName, ECollisionChannel CollisionChannel);
+
+public:
+
+	UPROPERTY(EditAnywhere, Category = "Building Settings")
+	TArray<TEnumAsByte<ECollisionChannel>> TraceChannels;
 
 protected:
 
-	UPROPERTY(EditAnywhere, Category = "Building")
+	UPROPERTY(EditAnywhere, Category = "Building Preview")
 	UMaterial* PreviewMaterial;
+
+	UPROPERTY(EditAnywhere, Category = "Building Preview")
+	UMaterial* IncorrectMaterial;
 
 private:
 
 	UPROPERTY()
-	UMaterialInterface* DefaultMaterial;
+	TArray<UMaterialInterface*> DefaultMaterials;
 
+	TArray<UBoxComponent*> SnappingSockets;
 };
