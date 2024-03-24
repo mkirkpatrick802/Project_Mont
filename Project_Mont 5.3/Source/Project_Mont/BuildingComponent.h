@@ -5,7 +5,6 @@
 #include "Components/ActorComponent.h"
 #include "BuildingComponent.generated.h"
 
-
 class ABuildingPieceBase;
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
@@ -42,14 +41,17 @@ private:
 
 	UFUNCTION()
 	void ToggleBuildModeInput(const FInputActionValue& InputActionValue);
-	void ToggleBuildMode();
+	void ToggleBuildMode(bool Value);
 
 	UFUNCTION()
 	void PlacePiece(const FInputActionValue& InputActionValue);
 
+	FTransform CheckForSnappingSockets(const FHitResult& Hit);
+
 private:
 
 	bool IsBuilding;
+	bool PlacementBlocked;
 
 	UPROPERTY()
 	ACharacter* Character;
@@ -63,6 +65,6 @@ private:
 	UPROPERTY(EditAnywhere, Category="Building Settings")
 	float MaxBuildDistance = 500;
 
-	FVector PreviewLocation;
+	FTransform PreviewTransform;
 
 };
