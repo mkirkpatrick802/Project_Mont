@@ -1,5 +1,7 @@
 #include "TPPAnimInstance.h"
 
+#include "CombatComponent.h"
+#include "InteractComponent.h"
 #include "TPPCharacter.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/KismetMathLibrary.h"
@@ -32,17 +34,24 @@ void UTPPAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	IsCrouched = TPPCharacter->bIsCrouched;
 	TurningInPlace = TPPCharacter->GetTurningInPlace();
 
-	/*IsHoldingObject = TPPCharacter->IsHoldingObject();
-	HeldObject = TPPCharacter->GetHeldObject();
+	IsHoldingObject = TPPCharacter->GetInteractComponent()->IsHoldingObject();
+	HeldObject = TPPCharacter->GetInteractComponent()->GetHeldObject();
 
-	IsWeaponEquipped = TPPCharacter->IsWeaponEquipped();
-	EquippedWeapon = TPPCharacter->GetEquippedWeapon();*/
+	if (AWeapon* Weapon = Cast<AWeapon>(HeldObject))
+	{
+		IsWeaponEquipped = true;
+		EquippedWeapon = Weapon;
+	}
+	else
+	{
+		IsWeaponEquipped = false;
+		EquippedWeapon = nullptr;
+	}
 
 	if (EquippedWeapon)
 		EquippedWeaponType = EquippedWeapon->GetWeaponType();
 
-	/*
-	IsAiming = TPPCharacter->IsAiming();*/
+	IsAiming = TPPCharacter->GetCombatComponent()->GetIsAiming();
 	RotateRootBone = TPPCharacter->ShouldRotateRootBone();
 
 	// Offset Yaw for Strafing
@@ -74,10 +83,10 @@ void UTPPAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 
 		if (TPPCharacter->IsLocallyControlled())
 		{
-			/*IsLocallyControlled = true;
+			IsLocallyControlled = true;
 			const FTransform RightHandTransform = TPPCharacter->GetMesh()->GetSocketTransform(FName("hand_r"), RTS_World);
-			const FRotator LookAtRotation = UKismetMathLibrary::FindLookAtRotation(RightHandTransform.GetLocation(), RightHandTransform.GetLocation() + (RightHandTransform.GetLocation() - TPPCharacter->GetHitTarget()));
-			RightHandRotation = FMath::RInterpTo(RightHandRotation, LookAtRotation, DeltaSeconds, 40.f);*/
+			const FRotator LookAtRotation = UKismetMathLibrary::FindLookAtRotation(RightHandTransform.GetLocation(), RightHandTransform.GetLocation() + (RightHandTransform.GetLocation() - TPPCharacter->GetCombatComponent()->GetHitTarget()));
+			RightHandRotation = FMath::RInterpTo(RightHandRotation, LookAtRotation, DeltaSeconds, 40.f);
 		}
 	}
 }

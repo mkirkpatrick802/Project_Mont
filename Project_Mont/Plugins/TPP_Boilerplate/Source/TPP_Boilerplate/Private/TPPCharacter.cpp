@@ -108,7 +108,7 @@ void ATPPCharacter::Tick(float DeltaTime)
 
 	CurrentDeltaTime = DeltaTime;
 
-	/*if(GetLocalRole() > ROLE_SimulatedProxy && IsLocallyControlled())
+	if(GetLocalRole() > ROLE_SimulatedProxy && IsLocallyControlled())
 	{
 		AimOffset(DeltaTime);
 	}
@@ -121,7 +121,7 @@ void ATPPCharacter::Tick(float DeltaTime)
 		}
 
 		CalculateAO_Pitch();
-	}*/
+	}
 
 	HideCharacterIfCameraClose();
 }

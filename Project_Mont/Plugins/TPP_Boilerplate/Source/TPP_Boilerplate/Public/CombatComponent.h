@@ -151,8 +151,9 @@ private:
 
 public:
 
-	FORCEINLINE bool IsWeaponEquipped() { return EquippedWeapon != nullptr; }
-
+	FORCEINLINE bool IsWeaponEquipped() const { return EquippedWeapon != nullptr; }
 	FORCEINLINE void DropWeapon() { EquippedWeapon = nullptr; }
+	FORCEINLINE FVector GetHitTarget() const { return HitTarget; }
+	FORCEINLINE bool GetIsAiming() const { return IsAiming; }
 
 };

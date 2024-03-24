@@ -111,4 +111,10 @@ private:
 
 	class ATPPController* Controller;
 	ATPPCharacter* Character;
+
+public:
+
+	FORCEINLINE bool IsHoldingObject() const { return PickedUpObject != nullptr; }
+	FORCEINLINE APickupObject* GetHeldObject() const { return PickedUpObject; }
+
 };

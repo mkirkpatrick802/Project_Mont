@@ -49,8 +49,12 @@ void UInteractComponent::SetupComponents()
 
 	InteractionSphere->RegisterComponent();
 	InteractionSphere->AttachToComponent(Character->GetRootComponent(), FAttachmentTransformRules::SnapToTargetNotIncludingScale);
-	InteractionSphere->SetCollisionObjectType(ECC_WorldStatic);
+	InteractionSphere->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	InteractionSphere->SetCollisionResponseToAllChannels(ECR_Ignore);
+	InteractionSphere->SetCollisionObjectType(ECC_PhysicsBody);
 	InteractionSphere->SetCollisionResponseToChannel(ECC_Visibility, ECR_Ignore);
+	InteractionSphere->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
+	InteractionSphere->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
 	InteractionSphere->SetSphereRadius(InteractionRadius);
 	InteractionSphere->SetGenerateOverlapEvents(true);
 
