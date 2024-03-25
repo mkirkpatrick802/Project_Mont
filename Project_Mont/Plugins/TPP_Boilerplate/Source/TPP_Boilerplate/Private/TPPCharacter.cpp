@@ -177,8 +177,8 @@ void ATPPCharacter::Look(const FInputActionValue& Value)
 
 	if (Controller != nullptr)
 	{
-		const float HorizontalAxis = LookAxisVector.X * CurrentCameraSensitivity * CurrentDeltaTime;
-		const float VerticalAxis = LookAxisVector.Y * CurrentCameraSensitivity * CurrentDeltaTime;
+		const float HorizontalAxis = LookAxisVector.X * CurrentCameraSensitivity;
+		const float VerticalAxis = LookAxisVector.Y * CurrentCameraSensitivity;
 
 		AddControllerYawInput(HorizontalAxis);
 		AddControllerPitchInput(VerticalAxis);

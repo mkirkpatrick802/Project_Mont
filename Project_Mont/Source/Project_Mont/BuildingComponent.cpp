@@ -5,6 +5,8 @@
 #include "EnhancedInputSubsystems.h"
 #include "GameFramework/Character.h"
 #include "CrosshairUtility.h"
+#include "SocketComponent.h"
+#include "SocketInterface.h"
 #include "TPPCharacter.h"
 #include "Components/BoxComponent.h"
 
@@ -70,7 +72,16 @@ void UBuildingComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAc
 
 		if (HitResult.GetActor())
 		{
-			PreviewTransform = CheckForSnappingSockets(HitResult);;
+			CurrentSocket = CheckForSnappingSockets(HitResult);
+			if(CurrentSocket)
+			{
+				PreviewTransform = CurrentSocket->GetComponentTransform();
+			}
+			else
+			{
+				PreviewTransform = FTransform(FRotator::ZeroRotator, HitResult.ImpactPoint);
+			}
+
 			PreviewMesh->SetActorTransform(PreviewTransform);
 		}
 		else
@@ -147,23 +158,63 @@ void UBuildingComponent::PlacePiece(const FInputActionValue& InputActionValue)
 	SpawnedPiece->Placed();
 }
 
-FTransform UBuildingComponent::CheckForSnappingSockets(const FHitResult& Hit)
+USocketComponent* UBuildingComponent::CheckForSnappingSockets(const FHitResult& Hit)
 {
-	if (!Hit.GetActor()) return FTransform();
-	if (!Hit.GetActor()->Implements<UBuildInterface>()) return FTransform(FRotator::ZeroRotator, Hit.ImpactPoint);
+	if (!Hit.GetActor()) return nullptr;
+	if (!Hit.GetActor()->Implements<UBuildInterface>()) return nullptr;
 
 	const ABuildingPieceBase* Piece = Cast<ABuildingPieceBase>(Hit.GetActor());
 
-	const UBoxComponent* Check = Cast<UBoxComponent>(Hit.GetComponent());
+	const USocketComponent* Check = Cast<USocketComponent>(Hit.GetComponent());
 	PlacementBlocked = Check == nullptr;
 	PreviewMesh->ToggleIncorrectMaterial(PlacementBlocked);
 
-	TArray<UBoxComponent*> Sockets = Piece->GetSnappingSockets();
-	for (UBoxComponent* Socket : Sockets)
+	TArray<USocketComponent*> Sockets = Piece->GetSnappingSockets();
+	for (USocketComponent* Socket : Sockets)
 	{
 		if(Cast<UPrimitiveComponent>(Socket) != Hit.GetComponent()) continue;
-		return Socket->GetComponentTransform();
+		return Socket;
 	}
 
-	return FTransform(FRotator::ZeroRotator, Hit.ImpactPoint);
+	return nullptr;
+}
+
+void UBuildingComponent::GetOtherSockets(const FVector& HitLocation, TArray<USocketComponent*>& Sockets)
+{
+	const UWorld* World = GetWorld();
+	if (!World) return;
+
+	TArray<FOverlapResult> OverlapResults;
+	FCollisionQueryParams QueryParams;
+	QueryParams.bTraceComplex = true; // Or false, depending on your needs
+	QueryParams.AddIgnoredActor(nullptr); // Add any actors you want to ignore during the query
+
+	// Define the shape of your overlap. In this case, a sphere
+	FCollisionShape CollisionShape;
+	CollisionShape.SetSphere(7);
+
+	// Perform the overlap query
+	const bool bHasOverlap = World->OverlapMultiByChannel(
+		OverlapResults,
+		HitLocation,
+		FQuat::Identity,
+		PreviewMesh->TraceChannels[0], // Use the trace channel that suits your scenario
+		CollisionShape,
+		QueryParams
+	);
+
+	if (bHasOverlap)
+	{
+		int key = 10;
+		for (const FOverlapResult& Result : OverlapResults)
+		{
+			if (UPrimitiveComponent* OverlappedComponent = Result.GetComponent())
+			{
+				if(!OverlappedComponent->Implements<USocketInterface>()) continue;
+
+				Sockets.AddUnique(Cast<USocketComponent>(OverlappedComponent));
+			}
+			key++;
+		}
+	}
 }

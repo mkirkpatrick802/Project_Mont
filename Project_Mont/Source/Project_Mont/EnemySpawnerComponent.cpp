@@ -36,8 +36,10 @@ void UEnemySpawnerComponent::SpawnWave(const int EnemyCount)
 
 void UEnemySpawnerComponent::SpawnEnemy(const FVector& Location, TSubclassOf<AEnemyCharacterBase> ToSpawn) const
 {
-	AEnemyCharacterBase* SpawnedEnemy = GetWorld()->SpawnActor<AEnemyCharacterBase>(ChaserEnemy, Location, FRotator::ZeroRotator);
-	SpawnedEnemy->SpawnDefaultController();
+	if (AEnemyCharacterBase* SpawnedEnemy = GetWorld()->SpawnActor<AEnemyCharacterBase>(ChaserEnemy, Location, FRotator::ZeroRotator))
+	{
+		SpawnedEnemy->SpawnDefaultController();
+	}
 }
 
 FVector UEnemySpawnerComponent::FindSpawnLocation()
@@ -49,8 +51,8 @@ FVector UEnemySpawnerComponent::FindSpawnLocation()
 	const float Y = Radius * FMath::Sin(Theta);
 	const float Z = IslandZ + 3000;
 
-	FVector Start = FVector(X, Y, Z);
-	FVector End = FVector(X, Y, IslandZ - 1000);
+	const FVector Start = FVector(X, Y, Z);
+	const FVector End = FVector(X, Y, IslandZ - 1000);
 
 	FHitResult HitResult;
 	GetWorld()->LineTraceSingleByChannel(HitResult, Start, End, ECC_Visibility);

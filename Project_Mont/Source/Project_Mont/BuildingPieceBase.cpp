@@ -1,6 +1,6 @@
 #include "BuildingPieceBase.h"
 
-#include "Components/BoxComponent.h"
+#include "SocketComponent.h"
 
 ABuildingPieceBase::ABuildingPieceBase()
 {
@@ -21,12 +21,17 @@ ABuildingPieceBase::ABuildingPieceBase()
 	WallSocket_2 = InitializeSocket(FName("Wall Socket 2"), ECC_WallSocket);
 	WallSocket_3 = InitializeSocket(FName("Wall Socket 3"), ECC_WallSocket);
 	WallSocket_4 = InitializeSocket(FName("Wall Socket 4"), ECC_WallSocket);
+
+	FloorSocket_1 = InitializeSocket(FName("Floor Socket 1"), ECC_FloorSocket);
+	FloorSocket_2 = InitializeSocket(FName("Floor Socket 2"), ECC_FloorSocket);
+	FloorSocket_3 = InitializeSocket(FName("Floor Socket 3"), ECC_FloorSocket);
+	FloorSocket_4 = InitializeSocket(FName("Floor Socket 4"), ECC_FloorSocket);
 }
 
 // Helper function to initialize foundation sockets
-UBoxComponent* ABuildingPieceBase::InitializeSocket(const FName& SocketName, const ECollisionChannel CollisionChannel)
+USocketComponent* ABuildingPieceBase::InitializeSocket(const FName& SocketName, const ECollisionChannel CollisionChannel)
 {
-	UBoxComponent* Socket = CreateDefaultSubobject<UBoxComponent>(SocketName);
+	USocketComponent* Socket = CreateDefaultSubobject<USocketComponent>(SocketName);
 	Socket->SetupAttachment(RootComponent);
 	Socket->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	Socket->SetCollisionResponseToAllChannels(ECR_Ignore);
@@ -54,6 +59,11 @@ void ABuildingPieceBase::BeginPlay()
 	SnappingSockets.AddUnique(WallSocket_2);
 	SnappingSockets.AddUnique(WallSocket_3);
 	SnappingSockets.AddUnique(WallSocket_4);
+
+	SnappingSockets.AddUnique(FloorSocket_1);
+	SnappingSockets.AddUnique(FloorSocket_2);
+	SnappingSockets.AddUnique(FloorSocket_3);
+	SnappingSockets.AddUnique(FloorSocket_4);
 }
 
 void ABuildingPieceBase::Tick(float DeltaTime)
@@ -88,4 +98,4 @@ void ABuildingPieceBase::ToggleIncorrectMaterial(bool IncorrectLocation)
 	}
 }
 
-TArray<UBoxComponent*> ABuildingPieceBase::GetSnappingSockets() const { return SnappingSockets; }
+TArray<USocketComponent*> ABuildingPieceBase::GetSnappingSockets() const { return SnappingSockets; }

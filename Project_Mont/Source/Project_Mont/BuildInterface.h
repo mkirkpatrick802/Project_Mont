@@ -4,7 +4,7 @@
 #include "UObject/Interface.h"
 #include "BuildInterface.generated.h"
 
-class UBoxComponent;
+class USocketComponent;
 
 UINTERFACE(MinimalAPI)
 class UBuildInterface : public UInterface
@@ -18,6 +18,6 @@ class PROJECT_MONT_API IBuildInterface
 
 public:
 
-	virtual TArray<UBoxComponent*> GetSnappingSockets() const = 0;
+	virtual TArray<USocketComponent*> GetSnappingSockets() const = 0;
 
 };

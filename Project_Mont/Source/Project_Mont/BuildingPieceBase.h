@@ -18,28 +18,40 @@ class PROJECT_MONT_API ABuildingPieceBase : public AActor, public IBuildInterfac
 	UStaticMeshComponent* StaticMesh;
 
 	UPROPERTY(EditAnywhere, Category = Sockets)
-	UBoxComponent* FoundationSocket_1;
+	USocketComponent* FoundationSocket_1;
 
 	UPROPERTY(EditAnywhere, Category = Sockets)
-	UBoxComponent* FoundationSocket_2;
+	USocketComponent* FoundationSocket_2;
 
 	UPROPERTY(EditAnywhere, Category = Sockets)
-	UBoxComponent* FoundationSocket_3;
+	USocketComponent* FoundationSocket_3;
 
 	UPROPERTY(EditAnywhere, Category = Sockets)
-	UBoxComponent* FoundationSocket_4;
+	USocketComponent* FoundationSocket_4;
 
 	UPROPERTY(EditAnywhere, Category = Sockets)
-	UBoxComponent* WallSocket_1;
+	USocketComponent* WallSocket_1;
 
 	UPROPERTY(EditAnywhere, Category = Sockets)
-	UBoxComponent* WallSocket_2;
+	USocketComponent* WallSocket_2;
 
 	UPROPERTY(EditAnywhere, Category = Sockets)
-	UBoxComponent* WallSocket_3;
+	USocketComponent* WallSocket_3;
 
 	UPROPERTY(EditAnywhere, Category = Sockets)
-	UBoxComponent* WallSocket_4;
+	USocketComponent* WallSocket_4;
+
+	UPROPERTY(EditAnywhere, Category = Sockets)
+	USocketComponent* FloorSocket_1;
+
+	UPROPERTY(EditAnywhere, Category = Sockets)
+	USocketComponent* FloorSocket_2;
+
+	UPROPERTY(EditAnywhere, Category = Sockets)
+	USocketComponent* FloorSocket_3;
+
+	UPROPERTY(EditAnywhere, Category = Sockets)
+	USocketComponent* FloorSocket_4;
 
 public:	
 
@@ -52,11 +64,11 @@ public:
 	bool CheckIfBlocked();
 	void ToggleIncorrectMaterial(bool IncorrectLocation);
 
-	virtual TArray<UBoxComponent*> GetSnappingSockets() const override;
+	virtual TArray<USocketComponent*> GetSnappingSockets() const override;
 
 private:
 
-	UBoxComponent* InitializeSocket(const FName& SocketName, ECollisionChannel CollisionChannel);
+	USocketComponent* InitializeSocket(const FName& SocketName, ECollisionChannel CollisionChannel);
 
 public:
 
@@ -76,5 +88,5 @@ private:
 	UPROPERTY()
 	TArray<UMaterialInterface*> DefaultMaterials;
 
-	TArray<UBoxComponent*> SnappingSockets;
+	TArray<USocketComponent*> SnappingSockets;
 };

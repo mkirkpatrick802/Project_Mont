@@ -5,6 +5,8 @@
 #include "Components/ActorComponent.h"
 #include "BuildingComponent.generated.h"
 
+class USocketComponent;
+class UBoxComponent;
 class ABuildingPieceBase;
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
@@ -46,7 +48,8 @@ private:
 	UFUNCTION()
 	void PlacePiece(const FInputActionValue& InputActionValue);
 
-	FTransform CheckForSnappingSockets(const FHitResult& Hit);
+	USocketComponent* CheckForSnappingSockets(const FHitResult& Hit);
+	void GetOtherSockets(const FVector& HitLocation, TArray<USocketComponent*>& Sockets);
 
 private:
 
@@ -65,6 +68,7 @@ private:
 	UPROPERTY(EditAnywhere, Category="Building Settings")
 	float MaxBuildDistance = 500;
 
+	USocketComponent* CurrentSocket;
 	FTransform PreviewTransform;
 
 };
