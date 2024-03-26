@@ -50,9 +50,6 @@ void UBuildingComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAc
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	if (GEngine)
-		GEngine->AddOnScreenDebugMessage(2, 15.0f, FColor::Red, FString::Printf(TEXT("Consume Input: %d"), PlaceAction->bConsumeInput));
-
 	if(!IsBuilding || !CurrentBuildPiece) return;
 
 	if (!PreviewMesh)
@@ -113,6 +110,7 @@ void UBuildingComponent::ToggleBuildModeInput(const FInputActionValue& InputActi
 void UBuildingComponent::ToggleBuildMode(bool Value)
 {
 	IsBuilding = Value;
+	PlacementBlocked = false;
 
 	if (!IsBuilding && PreviewMesh)
 	{
