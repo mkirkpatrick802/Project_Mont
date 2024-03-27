@@ -1,5 +1,8 @@
 #include "EnemySpawnerComponent.h"
 
+#include "Project_MontGameModeBase.h"
+#include "Kismet/GameplayStatics.h"
+
 UEnemySpawnerComponent::UEnemySpawnerComponent(): Debugging(false), MinRadius(0), MaxRadius(0), IslandZ(0)
 {
 	PrimaryComponentTick.bCanEverTick = true;
@@ -10,6 +13,9 @@ void UEnemySpawnerComponent::BeginPlay()
 	Super::BeginPlay();
 
 	IslandZ = GetOwner()->GetActorLocation().Z;
+
+	AProject_MontGameModeBase* GameMode = Cast<AProject_MontGameModeBase>(UGameplayStatics::GetGameMode(GetWorld()));
+	GameMode->EggStateChanged.AddDynamic(this, &UEnemySpawnerComponent::EggStateChanged);
 }
 
 void UEnemySpawnerComponent::TickComponent(float DeltaTime, ELevelTick TickType,
@@ -34,11 +40,14 @@ void UEnemySpawnerComponent::SpawnWave(const int EnemyCount)
 	}
 }
 
-void UEnemySpawnerComponent::SpawnEnemy(const FVector& Location, TSubclassOf<AEnemyCharacterBase> ToSpawn) const
+void UEnemySpawnerComponent::SpawnEnemy(const FVector& Location, TSubclassOf<AEnemyCharacterBase> ToSpawn)
 {
 	if (AEnemyCharacterBase* SpawnedEnemy = GetWorld()->SpawnActor<AEnemyCharacterBase>(ChaserEnemy, Location, FRotator::ZeroRotator))
 	{
 		SpawnedEnemy->SpawnDefaultController();
+		SpawnedEnemy->HasDiedDelegate.AddDynamic(this, &UEnemySpawnerComponent::EnemyDied);
+
+		SpawnedEnemies.AddUnique(SpawnedEnemy);
 	}
 }
 
@@ -58,4 +67,18 @@ FVector UEnemySpawnerComponent::FindSpawnLocation()
 	GetWorld()->LineTraceSingleByChannel(HitResult, Start, End, ECC_Visibility);
 
 	return HitResult.ImpactPoint;
+}
+
+void UEnemySpawnerComponent::EnemyDied(AEnemyCharacterBase* DeadEnemy)
+{
+	SpawnedEnemies.Remove(DeadEnemy);
+	DeadEnemy->Destroy();
+}
+
+void UEnemySpawnerComponent::EggStateChanged(bool NewEggState)
+{
+	for (const auto SpawnedEnemy : SpawnedEnemies)
+	{
+		SpawnedEnemy->EggStateChanged(NewEggState);
+	}
 }

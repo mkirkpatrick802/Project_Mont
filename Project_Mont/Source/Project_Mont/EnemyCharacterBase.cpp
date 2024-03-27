@@ -1,5 +1,6 @@
 #include "EnemyCharacterBase.h"
 
+#include "EnemyControllerBase.h"
 #include "Projectile.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -38,6 +39,15 @@ void AEnemyCharacterBase::BeginPlay()
 
 		AnimationInstance = MeshComponent->GetAnimInstance();
 	}
+
+	const float DelayTime = 0.2f;
+	FTimerHandle DelayTimerHandle;
+	GetWorldTimerManager().SetTimer(DelayTimerHandle, this, &AEnemyCharacterBase::DelayedStart, DelayTime, false);
+}
+
+void AEnemyCharacterBase::DelayedStart()
+{
+	EnemyController = Cast<AEnemyControllerBase>(Controller);
 }
 
 void AEnemyCharacterBase::MeleeAttack()
@@ -52,6 +62,12 @@ void AEnemyCharacterBase::MeleeAttack()
 	}
 }
 
+void AEnemyCharacterBase::EggStateChanged(const bool IsActive)
+{
+	if(EnemyController)
+		EnemyController->SetEggTarget(IsActive);
+}
+
 void AEnemyCharacterBase::OnMontageEnded(UAnimMontage* AnimMontage, bool bArg)
 {
 	if (AnimMontage == AttackMontage)
@@ -62,7 +78,11 @@ void AEnemyCharacterBase::OnHit(UPrimitiveComponent* HitComponent, AActor* Other
 {
 	if (const AProjectile* Projectile = Cast<AProjectile>(OtherActor))
 	{
-		if ((HitPoints -= Projectile->Damage) <= 0) { Destroy(); }
+		if ((HitPoints -= Projectile->Damage) <= 0)
+		{
+			HasDiedDelegate.Broadcast(this);
+			return;
+		}
 
 		Damaged();
 	}

@@ -12,7 +12,8 @@
 				"VoxelCore",
 				"AIModule",
 				"Engine",
-				"TPP_Boilerplate"
+				"TPP_Boilerplate",
+				"VoxelGraphCore"
 			]
 		}
 	],

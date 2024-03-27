@@ -13,11 +13,12 @@ public:
 
 	virtual void OnPossess(APawn* InPawn) override;
 
+	void SetEggTarget(bool TargetEgg);
+
 protected:
 
 	UFUNCTION(BlueprintNativeEvent, Category=Brain)
 	void SetBlackboardData();
-
 
 private:
 
@@ -28,4 +29,9 @@ protected:
 
 	UPROPERTY(EditAnywhere, Category=Brain)
 	UBehaviorTree* BehaviorTree;
+
+private:
+
+	UPROPERTY(EditAnywhere, Category=Egg)
+	TSubclassOf<AActor> Egg;
 };

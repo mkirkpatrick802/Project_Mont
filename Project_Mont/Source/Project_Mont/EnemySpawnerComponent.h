@@ -25,9 +25,15 @@ protected:
 
 private:
 
-	void SpawnEnemy(const FVector& Location, TSubclassOf<AEnemyCharacterBase> ToSpawn) const;
+	void SpawnEnemy(const FVector& Location, TSubclassOf<AEnemyCharacterBase> ToSpawn);
 
 	FVector FindSpawnLocation();
+
+	UFUNCTION()
+	void EggStateChanged(bool NewEggState);
+
+	UFUNCTION()
+	void EnemyDied(AEnemyCharacterBase* DeadEnemy);
 
 protected:
 
@@ -42,6 +48,9 @@ protected:
 
 	UPROPERTY(EditAnywhere, Category = "Enemy Spawning")
 	TSubclassOf<AEnemyCharacterBase> ChaserEnemy;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Enemy Spawning")
+	TArray<AEnemyCharacterBase*> SpawnedEnemies;
 
 private:
 

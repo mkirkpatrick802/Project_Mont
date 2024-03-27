@@ -6,7 +6,9 @@
 #include "GameFramework/Character.h"
 #include "EnemyCharacterBase.generated.h"
 
+class AEnemyControllerBase;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FAttackFinishedDelegate);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FHasDiedDelegate, AEnemyCharacterBase*, DeadEnemy);
 
 UCLASS()
 class PROJECT_MONT_API AEnemyCharacterBase : public ACharacter, public IInteractWithCrosshairsInterface
@@ -17,9 +19,12 @@ public:
 
 	AEnemyCharacterBase();
 	virtual void BeginPlay() override;
+	void DelayedStart();
 
 	UFUNCTION(BlueprintCallable, Category=Combat)
 	virtual void MeleeAttack();
+
+	void EggStateChanged(bool IsActive);
 
 protected:
 
@@ -38,6 +43,8 @@ public:
 	UPROPERTY(BlueprintAssignable)
 	FAttackFinishedDelegate AttackFinishedDelegate;
 
+	FHasDiedDelegate HasDiedDelegate;
+
 protected:
 
 	UPROPERTY(EditAnywhere, Category="Health")
@@ -55,6 +62,9 @@ private:
 
 	UPROPERTY()
 	UAnimInstance* AnimationInstance;
+
+	UPROPERTY()
+	AEnemyControllerBase* EnemyController;
 
 public:
 
