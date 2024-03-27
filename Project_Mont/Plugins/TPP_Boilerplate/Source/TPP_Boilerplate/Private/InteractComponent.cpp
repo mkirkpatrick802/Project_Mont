@@ -154,6 +154,8 @@ void UInteractComponent::MulticastPickUpObjectRequest_Implementation(APickupObje
 
 		if (const USkeletalMeshSocket* HandSocket = Character->GetMesh()->GetSocketByName(FName("RightHandSocket")))
 			HandSocket->AttachActor(PickedUpObject, Character->GetMesh());
+
+		Character->MoveIgnoreActorAdd(ObjectToPickUp);
 	}
 }
 
@@ -178,6 +180,7 @@ void UInteractComponent::MulticastDropObjectRequest_Implementation()
 	PickedUpObject->CurrentObjectState = EObjectState::EWS_Dropped;
 	PickedUpObject->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 
+	Character->MoveIgnoreActorRemove(PickedUpObject);
 	PickedUpObject->TogglePhysics(true);
 	PickedUpObject->SetOwner(nullptr);
 	PickedUpObject = nullptr;
