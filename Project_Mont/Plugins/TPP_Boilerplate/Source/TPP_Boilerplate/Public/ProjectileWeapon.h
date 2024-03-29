@@ -9,8 +9,12 @@ class TPP_BOILERPLATE_API AProjectileWeapon : public AWeapon
 {
 	GENERATED_BODY()
 
+	UPROPERTY(VisibleAnywhere, Category = "Weapon Properties")
+	UParticleSystemComponent* ParticleSystemComponent;
+
 public:
 
+	AProjectileWeapon();
 	virtual void Attack(const FVector& HitTarget) override;
 
 protected:

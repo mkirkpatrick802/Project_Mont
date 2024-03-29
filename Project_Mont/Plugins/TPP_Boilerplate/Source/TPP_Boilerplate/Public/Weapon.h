@@ -1,7 +1,6 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "InteractableObject.h"
 #include "PickupObject.h"
 #include "Weapon.generated.h"
 

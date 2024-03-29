@@ -90,14 +90,14 @@ void AEnemyCharacterBase::OnHit(UPrimitiveComponent* HitComponent, AActor* Other
 
 void AEnemyCharacterBase::Damaged()
 {
-	if (DynamicMaterialInstance)
+	if (USkeletalMeshComponent* MeshComponent = GetMesh())
 	{
-		DynamicMaterialInstance->SetScalarParameterValue("EmissiveMultiplier", .2f);
+		MeshComponent->SetMaterial(1, HitMaterial);
 
 		FTimerHandle TimerHandle;
 		GetWorld()->GetTimerManager().SetTimer(TimerHandle, [this]()
 			{
-				DynamicMaterialInstance->SetScalarParameterValue("EmissiveMultiplier", 0);
+				GetMesh()->SetMaterial(1, DynamicMaterialInstance);
 			}, 0.1f, false);
 	}
 }

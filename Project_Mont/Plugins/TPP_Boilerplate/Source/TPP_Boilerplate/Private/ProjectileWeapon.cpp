@@ -2,6 +2,13 @@
 
 #include "Projectile.h"
 #include "Engine/SkeletalMeshSocket.h"
+#include "Particles/ParticleSystemComponent.h"
+
+AProjectileWeapon::AProjectileWeapon()
+{
+	ParticleSystemComponent = CreateDefaultSubobject<UParticleSystemComponent>(TEXT("Muzzle Flash"));
+	ParticleSystemComponent->SetupAttachment(RootComponent);
+}
 
 void AProjectileWeapon::Attack(const FVector& HitTarget)
 {
@@ -28,5 +35,8 @@ void AProjectileWeapon::Attack(const FVector& HitTarget)
 				Spawned->Damage = Damage;
 			}
 		}
+
+		if (ParticleSystemComponent)
+			ParticleSystemComponent->Activate(true);
 	}
 }

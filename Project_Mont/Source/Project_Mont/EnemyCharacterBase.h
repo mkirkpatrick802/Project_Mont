@@ -57,6 +57,9 @@ private:
 
 	Health HitPoints;
 
+	UPROPERTY(EditAnywhere, Category = "Hit Response")
+	UMaterialInstance* HitMaterial;
+
 	UPROPERTY()
 	UMaterialInstanceDynamic* DynamicMaterialInstance;
 
