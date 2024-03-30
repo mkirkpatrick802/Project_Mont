@@ -1,7 +1,9 @@
 #include "EnemyCharacterBase.h"
 
+#include "DamageableInterface.h"
 #include "EnemyControllerBase.h"
 #include "Projectile.h"
+#include "Project_Mont.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
@@ -60,6 +62,38 @@ void AEnemyCharacterBase::MeleeAttack()
 		MontageEndedDelegate.BindUObject(this, &AEnemyCharacterBase::OnMontageEnded);
 		AnimationInstance->Montage_SetEndDelegate(MontageEndedDelegate);
 	}
+}
+
+void AEnemyCharacterBase::MeleeAttackCheck()
+{
+	if (!GetMesh() || AttackHit) return;
+
+	FVector StartLocation = GetMesh()->GetSocketLocation(TEXT("RightHandSocket"));
+	FVector ForwardVector = GetActorForwardVector();
+	FVector EndLocation = StartLocation + (ForwardVector * 40);
+
+	FHitResult OutHit;
+	FCollisionQueryParams CollisionParams;
+	CollisionParams.AddIgnoredActor(this);
+
+	if (GetWorld()->LineTraceSingleByChannel(OutHit, StartLocation, EndLocation, ECC_HitBox, CollisionParams) && OutHit.GetActor())
+	{
+		if (OutHit.GetActor()->Implements<UDamageableInterface>())
+		{
+			IDamageableInterface* HitObject = Cast<IDamageableInterface>(OutHit.GetActor());
+			HitObject->Hit(Damage);
+
+			AttackHit = true;
+		}
+
+		DrawDebugLine(GetWorld(), StartLocation, OutHit.ImpactPoint, FColor::Red, false, 1.0f, 0, 1.0f);
+		DrawDebugLine(GetWorld(), OutHit.ImpactPoint, EndLocation, FColor::Green, false, 1.0f, 0, 1.0f);
+	}
+}
+
+void AEnemyCharacterBase::MeleeAttackEnd()
+{
+	AttackHit = false;
 }
 
 void AEnemyCharacterBase::EggStateChanged(const bool IsActive)

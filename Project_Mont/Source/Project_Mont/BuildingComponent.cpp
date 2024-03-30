@@ -127,10 +127,15 @@ void UBuildingComponent::ToggleBuildMode(bool Value)
 				Subsystem->AddMappingContext(BuildingMappingContext, 1);
 			}
 
-			if (UEnhancedInputComponent* EnhancedInputComponent = CastChecked<UEnhancedInputComponent>(Controller->InputComponent))
+			if (!HaveActionsBeenBinded)
 			{
-				PlaceAction->bConsumeInput = true;
-				EnhancedInputComponent->BindAction(PlaceAction, ETriggerEvent::Started, this, &UBuildingComponent::PlacePiece);
+				if (UEnhancedInputComponent* EnhancedInputComponent = CastChecked<UEnhancedInputComponent>(Controller->InputComponent))
+				{
+					PlaceAction->bConsumeInput = true;
+					EnhancedInputComponent->BindAction(PlaceAction, ETriggerEvent::Started, this, &UBuildingComponent::PlacePiece);
+				}
+
+				HaveActionsBeenBinded = true;
 			}
 		}
 	}

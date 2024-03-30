@@ -53,6 +53,8 @@ private:
 
 private:
 
+	bool HaveActionsBeenBinded = false;
+
 	bool IsBuilding;
 	bool PlacementBlocked;
 

@@ -24,6 +24,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category=Combat)
 	virtual void MeleeAttack();
 
+	void MeleeAttackCheck();
+	void MeleeAttackEnd();
+
 	void EggStateChanged(bool IsActive);
 
 protected:
@@ -55,6 +58,9 @@ protected:
 
 private:
 
+	UPROPERTY(EditAnywhere, Category=Combat)
+	int Damage = 10;
+
 	Health HitPoints;
 
 	UPROPERTY(EditAnywhere, Category = "Hit Response")
@@ -68,6 +74,8 @@ private:
 
 	UPROPERTY()
 	AEnemyControllerBase* EnemyController;
+
+	bool AttackHit = false;
 
 public:
 
