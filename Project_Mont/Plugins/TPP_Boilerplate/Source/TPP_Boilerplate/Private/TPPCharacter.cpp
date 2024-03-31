@@ -52,6 +52,8 @@ ATPPCharacter::ATPPCharacter()
 	GetMesh()->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
 
 	TurningInPlace = ETurningInPlace::ETIP_NotTurning;
+
+	PlayerHealth = MaxHealth;
 }
 
 void ATPPCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -341,6 +343,17 @@ float ATPPCharacter::CalculateSpeed()
 	FVector Velocity = GetVelocity();
 	Velocity.Z = 0;
 	return Velocity.Length();
+}
+
+/*
+ *	Interfaces
+ */
+
+void ATPPCharacter::Hit(const float Damage)
+{
+	PlayerHealth -= Damage;
+	if (PlayerHealth.GetCurrentHealth() <= 0)
+		Destroy();
 }
 
 FLinearColor ATPPCharacter::GetColor() const

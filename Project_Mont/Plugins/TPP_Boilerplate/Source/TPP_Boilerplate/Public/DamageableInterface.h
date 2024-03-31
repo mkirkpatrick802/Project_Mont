@@ -10,7 +10,7 @@ class UDamageableInterface : public UInterface
 	GENERATED_BODY()
 };
 
-class PROJECT_MONT_API IDamageableInterface
+class TPP_BOILERPLATE_API IDamageableInterface
 {
 	GENERATED_BODY()
 

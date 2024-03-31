@@ -125,6 +125,12 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Building Settings")
 	TArray<TEnumAsByte<ECollisionChannel>> TraceChannels;
 
+	UPROPERTY(EditAnywhere, Category = "Piece Properties")
+	bool NeedsSocket = true;
+
+	UPROPERTY(EditAnywhere, Category = "Piece Properties")
+	int Cost = 2;
+
 protected:
 
 	UPROPERTY(EditAnywhere, Category = "Piece Properties")

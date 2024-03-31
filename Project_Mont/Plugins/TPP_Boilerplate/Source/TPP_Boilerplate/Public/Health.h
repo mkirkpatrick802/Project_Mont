@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 
-class PROJECT_MONT_API Health
+class TPP_BOILERPLATE_API Health
 {
 public:
 

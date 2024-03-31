@@ -55,6 +55,9 @@ void UBuildingComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAc
 	if (!PreviewMesh)
 		PreviewMesh = GetWorld()->SpawnActor<ABuildingPieceBase>(CurrentBuildPiece);
 
+	ResetPlacementBlocked();
+	InSocket = false;
+
 	if(const auto TPPCharacter = Cast<ATPPCharacter>(Character))
 	{
 		FHitResult HitResult;
@@ -87,6 +90,13 @@ void UBuildingComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAc
 			PreviewMesh = nullptr;
 		}
 	}
+
+	const ABuildingPieceBase* BuildPiece = CurrentBuildPiece.GetDefaultObject();
+	SetPlacementBlocked(BuildPiece->Cost > CurrentResources);
+	SetPlacementBlocked(BuildPiece->NeedsSocket && !InSocket);
+
+	if (PreviewMesh)
+		PreviewMesh->ToggleIncorrectMaterial(PlacementBlocked);
 }
 
 void UBuildingComponent::BuildPieceSelected(TSubclassOf<ABuildingPieceBase> SelectedPiece)
@@ -110,7 +120,6 @@ void UBuildingComponent::ToggleBuildModeInput(const FInputActionValue& InputActi
 void UBuildingComponent::ToggleBuildMode(bool Value)
 {
 	IsBuilding = Value;
-	PlacementBlocked = false;
 
 	if (!IsBuilding && PreviewMesh)
 	{
@@ -157,6 +166,10 @@ void UBuildingComponent::PlacePiece(const FInputActionValue& InputActionValue)
 	if(!IsBuilding || !CurrentBuildPiece) return;
 	if(PreviewTransform.GetLocation() == FVector::Zero()) return;
 
+	const ABuildingPieceBase* BuildPiece = CurrentBuildPiece.GetDefaultObject();
+	if(BuildPiece->Cost > CurrentResources) return;
+	CurrentResources -= BuildPiece->Cost;
+
 	const auto SpawnedPiece = GetWorld()->SpawnActor<ABuildingPieceBase>(CurrentBuildPiece, PreviewTransform);
 	SpawnedPiece->Placed();
 }
@@ -169,13 +182,13 @@ USocketComponent* UBuildingComponent::CheckForSnappingSockets(const FHitResult& 
 	const ABuildingPieceBase* Piece = Cast<ABuildingPieceBase>(Hit.GetActor());
 
 	const USocketComponent* Check = Cast<USocketComponent>(Hit.GetComponent());
-	PlacementBlocked = Check == nullptr;
-	PreviewMesh->ToggleIncorrectMaterial(PlacementBlocked);
+	SetPlacementBlocked(Check == nullptr);
 
 	TArray<USocketComponent*> Sockets = Piece->GetSnappingSockets();
 	for (USocketComponent* Socket : Sockets)
 	{
 		if(Cast<UPrimitiveComponent>(Socket) != Hit.GetComponent()) continue;
+		InSocket = true;
 		return Socket;
 	}
 
@@ -220,4 +233,15 @@ void UBuildingComponent::GetOtherSockets(const FVector& HitLocation, TArray<USoc
 			key++;
 		}
 	}
+}
+
+void UBuildingComponent::SetPlacementBlocked(const bool Blocked)
+{
+	if(PlacementBlocked) return;
+	PlacementBlocked = Blocked;
+}
+
+void UBuildingComponent::ResetPlacementBlocked()
+{
+	PlacementBlocked = false;
 }

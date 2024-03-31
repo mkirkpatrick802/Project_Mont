@@ -1,6 +1,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "DamageableInterface.h"
+#include "Health.h"
 #include "InteractWithCrosshairsInterface.h"
 #include "GameFramework/Character.h"
 #include "TurningInPlace.h"
@@ -15,7 +17,7 @@ struct FInputActionValue;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSetupPlayerInputDelegate);
 
 UCLASS()
-class TPP_BOILERPLATE_API ATPPCharacter : public ACharacter, public IInteractWithCrosshairsInterface
+class TPP_BOILERPLATE_API ATPPCharacter : public ACharacter, public IInteractWithCrosshairsInterface, public IDamageableInterface
 {
 
 	GENERATED_BODY()
@@ -92,6 +94,8 @@ protected:
 
 private:
 
+	virtual void Hit(const float Damage) override;
+
 	void TurnInPlace(float DeltaTime);
 	void HideCharacterIfCameraClose();
 	float CalculateSpeed();
@@ -101,6 +105,12 @@ public:
 	FSetupPlayerInputDelegate SetupPlayerInputDelegate;
 
 private:
+
+	// Health
+	UPROPERTY(EditAnywhere, Category=Health)
+	int MaxHealth = 150;
+
+	Health PlayerHealth;
 
 	// References
 	UPROPERTY()

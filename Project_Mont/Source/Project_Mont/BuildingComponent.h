@@ -51,12 +51,21 @@ private:
 	USocketComponent* CheckForSnappingSockets(const FHitResult& Hit);
 	void GetOtherSockets(const FVector& HitLocation, TArray<USocketComponent*>& Sockets);
 
+	void SetPlacementBlocked(const bool Blocked);
+	void ResetPlacementBlocked();
+
+protected:
+
+	UPROPERTY(BlueprintReadWrite, Category = "Resources")
+	int CurrentResources = 0;
+
 private:
 
+	bool InSocket = false;
 	bool HaveActionsBeenBinded = false;
 
 	bool IsBuilding;
-	bool PlacementBlocked;
+	bool PlacementBlocked = false;
 
 	UPROPERTY()
 	ACharacter* Character;
@@ -67,7 +76,7 @@ private:
 	UPROPERTY()
 	TSubclassOf<ABuildingPieceBase> CurrentBuildPiece;
 
-	UPROPERTY(EditAnywhere, Category="Building Settings")
+	UPROPERTY(EditAnywhere, Category = "Building Settings")
 	float MaxBuildDistance = 500;
 
 	USocketComponent* CurrentSocket;
