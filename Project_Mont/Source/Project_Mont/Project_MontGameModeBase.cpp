@@ -5,8 +5,8 @@ void AProject_MontGameModeBase::BeginPlay()
 	Super::BeginPlay();
 
 	FTimerHandle TimerHandle;
-	const float RandomInterval = FMath::RandRange(100.f, 200.f);
-    GetWorldTimerManager().SetTimer(TimerHandle, this, &AProject_MontGameModeBase::ActivateEgg, RandomInterval, false);
+	const float RandomInterval = FMath::RandRange(120.f, 250.f);
+    GetWorldTimerManager().SetTimer(TimerHandle, this, &AProject_MontGameModeBase::ActivateEgg, RandomInterval, true);
 }
 
 void AProject_MontGameModeBase::ActivateEgg() const
@@ -15,7 +15,7 @@ void AProject_MontGameModeBase::ActivateEgg() const
 	EggStateChanged.Broadcast(true);
 
 	FTimerHandle TimerHandle;
-	const float RandomInterval = FMath::RandRange(30.f, 40.f);
+	const float RandomInterval = FMath::RandRange(60.f, 90.f);
 	GetWorldTimerManager().SetTimer(TimerHandle, this, &AProject_MontGameModeBase::DeactivateEgg, RandomInterval, false);
 }
 
