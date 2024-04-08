@@ -9,8 +9,6 @@
 
 AEnemyCharacterBase::AEnemyCharacterBase()
 {
-	HitPoints = Health(MaxHealth);
-
 	GetCapsuleComponent()->SetCollisionObjectType(ECC_PhysicsBody);
 	GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
 
@@ -28,6 +26,8 @@ AEnemyCharacterBase::AEnemyCharacterBase()
 void AEnemyCharacterBase::BeginPlay()
 {
 	Super::BeginPlay();
+
+	HitPoints = Health(MaxHealth);
 
 	if (USkeletalMeshComponent* MeshComponent = GetMesh())
 	{
