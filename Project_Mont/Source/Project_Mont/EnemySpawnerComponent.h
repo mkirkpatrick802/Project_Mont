@@ -47,10 +47,15 @@ protected:
 	float MaxRadius;
 
 	UPROPERTY(EditAnywhere, Category = "Enemy Spawning")
+	float SpawningCheckZOffset = 3000;
+
+	UPROPERTY(EditAnywhere, Category = "Enemy Spawning")
 	TSubclassOf<AEnemyCharacterBase> ChaserEnemy;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Enemy Spawning")
 	TArray<AEnemyCharacterBase*> SpawnedEnemies;
+
+
 
 private:
 

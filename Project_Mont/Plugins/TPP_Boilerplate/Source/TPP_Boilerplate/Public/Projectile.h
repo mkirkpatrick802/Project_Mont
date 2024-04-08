@@ -18,7 +18,6 @@ class TPP_BOILERPLATE_API AProjectile : public AActor
 public:	
 
 	AProjectile();
-	virtual void Tick(float DeltaTime) override;
 	virtual void Destroyed() override;
 
 protected:
@@ -27,6 +26,10 @@ protected:
 
 	UFUNCTION()
 	virtual void OnHit(UPrimitiveComponent* HitComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit);
+
+private:
+
+	void DespawnProjectile();
 
 public:
 

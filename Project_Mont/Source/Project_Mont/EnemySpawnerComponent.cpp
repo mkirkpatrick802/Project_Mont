@@ -29,6 +29,8 @@ void UEnemySpawnerComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	const FVector End = Start + FVector(0, 0, 1000);
 	DrawDebugCylinder(GetWorld(), Start, End, MinRadius, 12, FColor::Blue);
 	DrawDebugCylinder(GetWorld(), Start, End, MaxRadius, 12, FColor::Red);
+	DrawDebugSphere(GetWorld(), FVector(GetOwner()->GetActorLocation().X, GetOwner()->GetActorLocation().Y, GetOwner()->GetActorLocation().Z + SpawningCheckZOffset), 
+	100, 16, FColor::Yellow, false, -1, 0, 5);
 }
 
 void UEnemySpawnerComponent::SpawnWave(const int EnemyCount)
@@ -58,10 +60,10 @@ FVector UEnemySpawnerComponent::FindSpawnLocation()
 
 	const float X = Radius * FMath::Cos(Theta);
 	const float Y = Radius * FMath::Sin(Theta);
-	const float Z = IslandZ + 3000;
+	const float Z = IslandZ + SpawningCheckZOffset;
 
 	const FVector Start = FVector(X, Y, Z);
-	const FVector End = FVector(X, Y, IslandZ - 1000);
+	const FVector End = FVector(X, Y, IslandZ - SpawningCheckZOffset);
 
 	FHitResult HitResult;
 	GetWorld()->LineTraceSingleByChannel(HitResult, Start, End, ECC_Visibility);
