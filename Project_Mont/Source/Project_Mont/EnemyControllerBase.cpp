@@ -2,6 +2,8 @@
 
 #include "BehaviorTree/BlackboardComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "Egg.h"
+#include "EnemyCharacterBase.h"
 
 void AEnemyControllerBase::OnPossess(APawn* InPawn)
 {
@@ -13,19 +15,21 @@ void AEnemyControllerBase::OnPossess(APawn* InPawn)
     GetWorldTimerManager().SetTimer(DelayTimerHandle, this, &AEnemyControllerBase::InitAIBrain, DelayTime, false);
 }
 
-void AEnemyControllerBase::SetEggTarget(const bool TargetEgg)
+void AEnemyControllerBase::SetEggTarget(const bool ShouldTargetEgg)
 {
-    if(TargetEgg)
+    if(ShouldTargetEgg)
     {
         TArray<AActor*> FoundActors;
         UGameplayStatics::GetAllActorsOfClass(GetWorld(), Egg, FoundActors);
         if (FoundActors.Num() > 0)
-			GetBlackboardComponent()->SetValueAsObject(FName("Target"), FoundActors[0]);
+            TargetEgg = Cast<AEgg>(FoundActors[0]);
     }
     else
     {
-        GetBlackboardComponent()->SetValueAsObject(FName("Target"), nullptr);
+        TargetEgg = nullptr;
     }
+
+    GetBlackboardComponent()->SetValueAsObject(FName("Target"), TargetEgg);
 }
 
 void AEnemyControllerBase::InitAIBrain()
@@ -34,7 +38,8 @@ void AEnemyControllerBase::InitAIBrain()
 
     RunBehaviorTree(BehaviorTree);
     SetBlackboardData();
-}
 
+    ControlledEnemy = Cast<AEnemyCharacterBase>(GetPawn());
+}
 
 void AEnemyControllerBase::SetBlackboardData_Implementation() { }

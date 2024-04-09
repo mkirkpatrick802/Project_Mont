@@ -4,6 +4,9 @@
 #include "AIController.h"
 #include "EnemyControllerBase.generated.h"
 
+class AEnemyCharacterBase;
+class AEgg;
+
 UCLASS()
 class PROJECT_MONT_API AEnemyControllerBase : public AAIController
 {
@@ -13,7 +16,7 @@ public:
 
 	virtual void OnPossess(APawn* InPawn) override;
 
-	void SetEggTarget(bool TargetEgg);
+	void SetEggTarget(bool ShouldTargetEgg);
 
 protected:
 
@@ -27,11 +30,17 @@ private:
 
 protected:
 
-	UPROPERTY(EditAnywhere, Category=Brain)
+	UPROPERTY()
 	UBehaviorTree* BehaviorTree;
+
+	UPROPERTY(BlueprintReadOnly, Category = Egg)
+	AEgg* TargetEgg;
+
+	UPROPERTY(BlueprintReadOnly)
+	AEnemyCharacterBase* ControlledEnemy;
 
 private:
 
-	UPROPERTY(EditAnywhere, Category=Egg)
-	TSubclassOf<AActor> Egg;
+	UPROPERTY(EditAnywhere, Category = Egg)
+	TSubclassOf<AEgg> Egg;
 };

@@ -27,7 +27,7 @@ public:
 	void MeleeAttackCheck();
 	void MeleeAttackEnd();
 
-	void EggStateChanged(bool IsActive);
+	virtual void EggStateChanged(bool IsActive);
 
 protected:
 
@@ -47,6 +47,9 @@ public:
 	FAttackFinishedDelegate AttackFinishedDelegate;
 
 	FHasDiedDelegate HasDiedDelegate;
+
+	UPROPERTY(BlueprintReadWrite)
+	ACharacter* SeenPlayer;
 
 protected:
 
