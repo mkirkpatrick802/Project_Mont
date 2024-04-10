@@ -14,10 +14,15 @@ class PROJECT_MONT_API AEgg : public APickupObject, public IDamageableInterface
 public:
 
 	AEgg();
+	virtual void BeginPlay() override;
 	virtual void Hit(float Damage) override;
+
+protected:
+
+	UPROPERTY(EditAnywhere, Category=Health)
+	float MaxHealth = 100;
 
 private:
 
 	Health EggHealth;
-
 };

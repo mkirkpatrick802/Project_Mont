@@ -1,5 +1,6 @@
 #include "Brawler.h"
 
+#include "EnemyControllerBase.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
 void ABrawler::BeginPlay()
@@ -8,13 +9,38 @@ void ABrawler::BeginPlay()
 
 	CurrentState = EBrawlerEnemyState::BES_Wander;
 	GetCharacterMovement()->MaxWalkSpeed = WanderMaxWalkSpeed;
+
+
+	EnemyController->CurrentTargetChangedDelegate.AddDynamic(this, &ABrawler::TargetStateChanged);
 }
 
-void ABrawler::EggStateChanged(bool IsActive)
+void ABrawler::TargetStateChanged(const ETargetState NewState)
 {
-	Super::EggStateChanged(IsActive);
+	switch(NewState)
+	{
+	case ETargetState::TS_Player:
 
-	SetCurrentState(IsActive ? EBrawlerEnemyState::BES_Charge : EBrawlerEnemyState::BES_Wander);
+		if (IsEggActive)
+		{
+			SetCurrentState(EBrawlerEnemyState::BES_Charge);
+		}
+		else
+		{
+			SetCurrentState(EBrawlerEnemyState::BES_Chase);
+		}
+
+		break;
+	case ETargetState::TS_Egg:
+
+		SetCurrentState(EBrawlerEnemyState::BES_Charge);
+
+		break;
+	case ETargetState::TS_Update:
+
+		SetCurrentState(EBrawlerEnemyState::BES_Wander);
+
+		break;
+	}
 }
 
 void ABrawler::SetCurrentState(const EBrawlerEnemyState NewState)
@@ -24,13 +50,19 @@ void ABrawler::SetCurrentState(const EBrawlerEnemyState NewState)
 	switch (CurrentState)
 	{
 	case EBrawlerEnemyState::BES_Wander:
+
 		GetCharacterMovement()->MaxWalkSpeed = WanderMaxWalkSpeed;
+
 		break;
 	case EBrawlerEnemyState::BES_Chase:
+
 		GetCharacterMovement()->MaxWalkSpeed = ChaseMaxWalkSpeed;
+
 		break;
 	case EBrawlerEnemyState::BES_Charge:
+
 		GetCharacterMovement()->MaxWalkSpeed = ChargeMaxWalkSpeed;
+
 		break;
 	}
 }

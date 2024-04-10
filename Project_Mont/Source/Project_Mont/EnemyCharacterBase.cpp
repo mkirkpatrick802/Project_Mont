@@ -4,8 +4,10 @@
 #include "EnemyControllerBase.h"
 #include "Projectile.h"
 #include "Project_Mont.h"
+#include "Project_MontGameModeBase.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Perception/PawnSensingComponent.h"
 
 AEnemyCharacterBase::AEnemyCharacterBase()
 {
@@ -21,6 +23,8 @@ AEnemyCharacterBase::AEnemyCharacterBase()
 
 	bUseControllerRotationYaw = false;
 	GetCharacterMovement()->bUseControllerDesiredRotation = true;
+
+	PawnSensingComponent = CreateDefaultSubobject<UPawnSensingComponent>(TEXT("Pawn Sensing Component"));
 }
 
 void AEnemyCharacterBase::BeginPlay()
@@ -42,6 +46,11 @@ void AEnemyCharacterBase::BeginPlay()
 		AnimationInstance = MeshComponent->GetAnimInstance();
 	}
 
+	if (PawnSensingComponent)
+		PawnSensingComponent->OnSeePawn.AddDynamic(this, &AEnemyCharacterBase::OnSeePawn);
+
+	EnemyController = Cast<AEnemyControllerBase>(Controller);
+
 	const float DelayTime = 0.2f;
 	FTimerHandle DelayTimerHandle;
 	GetWorldTimerManager().SetTimer(DelayTimerHandle, this, &AEnemyCharacterBase::DelayedStart, DelayTime, false);
@@ -49,7 +58,41 @@ void AEnemyCharacterBase::BeginPlay()
 
 void AEnemyCharacterBase::DelayedStart()
 {
-	EnemyController = Cast<AEnemyControllerBase>(Controller);
+	if(!Spawner)
+	{
+		AProject_MontGameModeBase* CurrentGameMode = Cast<AProject_MontGameModeBase>(GetWorld()->GetAuthGameMode());
+		CurrentGameMode->EggStateChanged.AddDynamic(this, &AEnemyCharacterBase::EggStateChanged);
+	}
+}
+
+void AEnemyCharacterBase::OnSeePawn(APawn* SeenPawn)
+{
+	if(DeaggroTimerHandle.IsValid())
+		GetWorldTimerManager().ClearTimer(DeaggroTimerHandle);
+
+	StartDeaggroCountdown();
+
+	if (SeenPlayer) return;
+	SeenPlayer = Cast<ACharacter>(SeenPawn);
+	EnemyController->SetCurrentTargetState(ETargetState::TS_Player);
+
+	if (GEngine)
+		GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Blue, FString::Printf(TEXT("Gained Aggro")));
+}
+
+void AEnemyCharacterBase::StartDeaggroCountdown()
+{
+	if (!SeenPlayer) return;
+	GetWorldTimerManager().SetTimer(DeaggroTimerHandle, this, &AEnemyCharacterBase::Deaggro, DeaggroTime, false);
+}
+
+void AEnemyCharacterBase::Deaggro()
+{
+	SeenPlayer = nullptr;
+	EnemyController->SetCurrentTargetState(ETargetState::TS_Update);
+
+	if (GEngine)
+		GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Blue, FString::Printf(TEXT("Lost Aggro")));
 }
 
 void AEnemyCharacterBase::MeleeAttack()
@@ -60,7 +103,15 @@ void AEnemyCharacterBase::MeleeAttack()
 
 		FOnMontageEnded MontageEndedDelegate;
 		MontageEndedDelegate.BindUObject(this, &AEnemyCharacterBase::OnMontageEnded);
-		AnimationInstance->Montage_SetEndDelegate(MontageEndedDelegate);
+		AnimationInstance->Montage_SetEndDelegate(MontageEndedDelegate, AttackMontage);
+	}
+}
+
+void AEnemyCharacterBase::StopAttackMontage()
+{
+	if (AttackMontage && AnimationInstance)
+	{
+		AnimationInstance->Montage_Stop(.1f, AttackMontage);
 	}
 }
 
@@ -98,6 +149,8 @@ void AEnemyCharacterBase::MeleeAttackEnd()
 
 void AEnemyCharacterBase::EggStateChanged(const bool IsActive)
 {
+	IsEggActive = IsActive;
+
 	if(EnemyController)
 		EnemyController->SetEggTarget(IsActive);
 }
@@ -124,6 +177,12 @@ void AEnemyCharacterBase::OnHit(UPrimitiveComponent* HitComponent, AActor* Other
 
 void AEnemyCharacterBase::Damaged()
 {
+	if (HitMontage && AnimationInstance)
+	{
+		if(!AnimationInstance->Montage_IsPlaying(HitMontage))
+			AnimationInstance->Montage_Play(HitMontage, 1);
+	}
+
 	if (USkeletalMeshComponent* MeshComponent = GetMesh())
 	{
 		MeshComponent->SetMaterial(1, HitMaterial);

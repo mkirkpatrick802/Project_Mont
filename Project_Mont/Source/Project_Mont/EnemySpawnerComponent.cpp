@@ -48,6 +48,7 @@ void UEnemySpawnerComponent::SpawnEnemy(const FVector& Location, TSubclassOf<AEn
 	{
 		SpawnedEnemy->SpawnDefaultController();
 		SpawnedEnemy->HasDiedDelegate.AddDynamic(this, &UEnemySpawnerComponent::EnemyDied);
+		SpawnedEnemy->Spawner = this;
 
 		SpawnedEnemies.AddUnique(SpawnedEnemy);
 	}

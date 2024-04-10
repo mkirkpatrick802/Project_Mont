@@ -19,12 +19,27 @@ public:
 
 private:
 
-	void ActivateEgg() const;
-
-	void DeactivateEgg() const;
+	void ActivateEgg();
+	void DeactivateEgg();
 
 public:
 
 	UPROPERTY(BlueprintAssignable)
 	FEggStateChanged EggStateChanged;
+
+	UPROPERTY(EditAnywhere, Category = Egg)
+	float EggActivationMinimum = 120;
+
+	UPROPERTY(EditAnywhere, Category = Egg)
+	float EggActivationMaximum = 240;
+
+	UPROPERTY(EditAnywhere, Category = Egg)
+	float EggDeactivationMinimum = 60;
+
+	UPROPERTY(EditAnywhere, Category = Egg)
+	float EggDeactivationMaximum = 90;
+
+private:
+
+	bool CurrentEggState = false;
 };

@@ -2,7 +2,13 @@
 
 AEgg::AEgg()
 {
-	EggHealth = 100;
+}
+
+void AEgg::BeginPlay()
+{
+	Super::BeginPlay();
+
+	EggHealth = MaxHealth;
 }
 
 void AEgg::Hit(const float Damage)

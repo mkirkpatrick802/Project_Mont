@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "EnemyCharacterBase.h"
+#include "EnemyControllerBase.h"
 #include "Brawler.generated.h"
 
 UENUM(BlueprintType)
@@ -21,10 +22,13 @@ public:
 
     virtual void BeginPlay() override;
 
-    virtual void EggStateChanged(bool IsActive) override;
-
     UFUNCTION(BlueprintCallable)
     void SetCurrentState(EBrawlerEnemyState NewState);
+
+private:
+
+    UFUNCTION()
+    void TargetStateChanged(ETargetState NewState);
 
 protected:
 
