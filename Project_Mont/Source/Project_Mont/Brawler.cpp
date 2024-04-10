@@ -10,8 +10,15 @@ void ABrawler::BeginPlay()
 	CurrentState = EBrawlerEnemyState::BES_Wander;
 	GetCharacterMovement()->MaxWalkSpeed = WanderMaxWalkSpeed;
 
+	UE_LOG(LogTemp, Warning, TEXT("Brawler Spawned! \n"));
+}
 
-	EnemyController->CurrentTargetChangedDelegate.AddDynamic(this, &ABrawler::TargetStateChanged);
+void ABrawler::DelayedStart()
+{
+	Super::DelayedStart();
+
+	if (EnemyController)
+		EnemyController->CurrentTargetChangedDelegate.AddDynamic(this, &ABrawler::TargetStateChanged);
 }
 
 void ABrawler::TargetStateChanged(const ETargetState NewState)

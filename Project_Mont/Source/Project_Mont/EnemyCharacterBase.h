@@ -25,7 +25,7 @@ public:
 
 	AEnemyCharacterBase();
 	virtual void BeginPlay() override;
-	void DelayedStart();
+	virtual void DelayedStart();
 
 	UFUNCTION(BlueprintCallable, Category=Combat)
 	virtual void MeleeAttack();
@@ -122,4 +122,5 @@ public:
 	// For Crosshair Interaction
 	FORCEINLINE virtual FLinearColor GetColor() const override { return FLinearColor::Red; }
 
+	FORCEINLINE void SetEnemyController(AEnemyControllerBase* ControllerToSet) { EnemyController = ControllerToSet; }
 };

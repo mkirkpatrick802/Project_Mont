@@ -49,8 +49,6 @@ void AEnemyCharacterBase::BeginPlay()
 	if (PawnSensingComponent)
 		PawnSensingComponent->OnSeePawn.AddDynamic(this, &AEnemyCharacterBase::OnSeePawn);
 
-	EnemyController = Cast<AEnemyControllerBase>(Controller);
-
 	const float DelayTime = 0.2f;
 	FTimerHandle DelayTimerHandle;
 	GetWorldTimerManager().SetTimer(DelayTimerHandle, this, &AEnemyCharacterBase::DelayedStart, DelayTime, false);
@@ -72,12 +70,12 @@ void AEnemyCharacterBase::OnSeePawn(APawn* SeenPawn)
 
 	StartDeaggroCountdown();
 
-	if (SeenPlayer) return;
+	if (SeenPlayer || !EnemyController) return;
 	SeenPlayer = Cast<ACharacter>(SeenPawn);
 	EnemyController->SetCurrentTargetState(ETargetState::TS_Player);
 
-	if (GEngine)
-		GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Blue, FString::Printf(TEXT("Gained Aggro")));
+	/*if (GEngine)
+		GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Blue, FString::Printf(TEXT("Gained Aggro")));*/
 }
 
 void AEnemyCharacterBase::StartDeaggroCountdown()
@@ -91,8 +89,8 @@ void AEnemyCharacterBase::Deaggro()
 	SeenPlayer = nullptr;
 	EnemyController->SetCurrentTargetState(ETargetState::TS_Update);
 
-	if (GEngine)
-		GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Blue, FString::Printf(TEXT("Lost Aggro")));
+	/*if (GEngine)
+		GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Blue, FString::Printf(TEXT("Lost Aggro")));*/
 }
 
 void AEnemyCharacterBase::MeleeAttack()

@@ -4,11 +4,14 @@
 #include "AIController.h"
 #include "EnemyControllerBase.generated.h"
 
+class ABuildingPieceBase;
+
 UENUM(BlueprintType)
 enum class ETargetState : uint8
 {
 	TS_Player UMETA(DisplayName = "Target Player"),
 	TS_Egg UMETA(DisplayName = "Target Egg"),
+	TS_Building UMETA(DisplayName = "Target Building"),
 	TS_Update UMETA(DisplayName = "Update Target")
 };
 
@@ -30,7 +33,7 @@ public:
 
 	virtual void Tick(float DeltaSeconds) override;
 
-	UFUNCTION(BlueprintCallable)
+	UFUNCTION(BlueprintCallable, Category=State)
 	void SetCurrentTargetState(ETargetState NewTargetState);
 
 protected:
@@ -49,6 +52,9 @@ private:
 public:
 
 	FCurrentTargetChanged CurrentTargetChangedDelegate;
+
+	UPROPERTY(BlueprintReadWrite)
+	ABuildingPieceBase* TargetBuilding;
 
 protected:
 
@@ -76,4 +82,10 @@ private:
 
 	UPROPERTY()
 	AActor* ClosestTarget;
+
+public:
+
+	UFUNCTION(BlueprintCallable, Category=State)
+	FORCEINLINE void UpdateTargetState() { SetCurrentTargetState(ETargetState::TS_Update); }
+
 };

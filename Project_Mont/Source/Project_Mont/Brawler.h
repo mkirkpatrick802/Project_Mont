@@ -21,6 +21,7 @@ class PROJECT_MONT_API ABrawler : public AEnemyCharacterBase
 public:
 
     virtual void BeginPlay() override;
+    virtual void DelayedStart() override;
 
     UFUNCTION(BlueprintCallable)
     void SetCurrentState(EBrawlerEnemyState NewState);
@@ -44,4 +45,9 @@ protected:
 private:
 
     EBrawlerEnemyState CurrentState;
+
+public:
+
+    UFUNCTION(BlueprintCallable, Category=State)
+    FORCEINLINE EBrawlerEnemyState GetCurrentState() const { return CurrentState; }
 };

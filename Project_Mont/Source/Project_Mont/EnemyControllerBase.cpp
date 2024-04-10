@@ -4,6 +4,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Egg.h"
 #include "EnemyCharacterBase.h"
+#include "BuildingPieceBase.h"
 
 AEnemyControllerBase::AEnemyControllerBase()
 {
@@ -13,6 +14,9 @@ AEnemyControllerBase::AEnemyControllerBase()
 void AEnemyControllerBase::OnPossess(APawn* InPawn)
 {
 	Super::OnPossess(InPawn);
+
+    ControlledEnemy = Cast<AEnemyCharacterBase>(GetPawn());
+    ControlledEnemy->SetEnemyController(this);
 
     // Delay OnPossess because it happens before OnBeginPlay
 	const float DelayTime = 0.1f;
@@ -26,8 +30,6 @@ void AEnemyControllerBase::InitAIBrain()
 
     RunBehaviorTree(BehaviorTree);
     SetBlackboardData();
-
-    ControlledEnemy = Cast<AEnemyCharacterBase>(GetPawn());
 }
 
 void AEnemyControllerBase::SetEggTarget(const bool ShouldTargetEgg)
@@ -68,16 +70,16 @@ void AEnemyControllerBase::DistanceCheck()
 {
 	const AActor* LastClosestTarget = ClosestTarget;
     ClosestTarget = FindClosestActor(TargetEgg, ControlledEnemy->SeenPlayer);
+    if(!ClosestTarget) return;
 
     if (LastClosestTarget != ClosestTarget)
         SetCurrentTargetState(ETargetState::TS_Update);
-
-    if (GEngine)
-        GEngine->AddOnScreenDebugMessage(100, 5, FColor::Red, FString::Printf(TEXT("Closest Player: %s"), *ClosestTarget->GetName()));
 }
 
 void AEnemyControllerBase::SetCurrentTargetState(const ETargetState NewTargetState)
 {
+    if(!GetBlackboardComponent()) return;
+
     AActor* Target = nullptr;
 
     switch (NewTargetState)
@@ -114,6 +116,12 @@ void AEnemyControllerBase::SetCurrentTargetState(const ETargetState NewTargetSta
         }
 
 	    break;
+    case ETargetState::TS_Building:
+
+        Target = TargetBuilding;
+        CurrentTargetState = ETargetState::TS_Building;
+
+        break;
     case ETargetState::TS_Update:
 
         if (TargetEgg && ControlledEnemy->SeenPlayer)

@@ -37,8 +37,10 @@ void UEnemySpawnerComponent::SpawnWave(const int EnemyCount)
 {
 	for (int i = 0; i < EnemyCount; i++)
 	{
-		const FVector SpawnLocation = FindSpawnLocation() + FVector(0, 0, 150);
-		SpawnEnemy(SpawnLocation, ChaserEnemy);
+		const FVector SpawnLocation = FindSpawnLocation();
+		if(SpawnLocation == FVector::ZeroVector) return;
+
+		SpawnEnemy(SpawnLocation + FVector(0, 0, 150), ChaserEnemy);
 	}
 }
 
