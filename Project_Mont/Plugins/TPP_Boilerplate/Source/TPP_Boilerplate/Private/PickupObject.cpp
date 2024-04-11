@@ -12,19 +12,10 @@ void APickupObject::TogglePhysics(bool Enabled) const
 {
 	ToggleInteractWidget(Enabled);
 
-	UStaticMeshComponent* StaticMeshComponent = Cast<UStaticMeshComponent>(MeshComponent);
-	USkeletalMeshComponent* SkeletalMeshComponent = Cast<USkeletalMeshComponent>(MeshComponent);
-
-	if (StaticMeshComponent)
+	if (const auto RootPrimitiveComponent = Cast<UPrimitiveComponent>(GetRootComponent()))
 	{
-		StaticMeshComponent->SetSimulatePhysics(Enabled);
-		StaticMeshComponent->SetAllPhysicsLinearVelocity(FVector::Zero());
-	}
-
-	if (SkeletalMeshComponent)
-	{
-		SkeletalMeshComponent->SetSimulatePhysics(Enabled);
-		SkeletalMeshComponent->SetAllPhysicsLinearVelocity(FVector::Zero());
+		RootPrimitiveComponent->SetSimulatePhysics(Enabled);
+		RootPrimitiveComponent->SetAllPhysicsLinearVelocity(FVector::Zero());
 	}
 }
 

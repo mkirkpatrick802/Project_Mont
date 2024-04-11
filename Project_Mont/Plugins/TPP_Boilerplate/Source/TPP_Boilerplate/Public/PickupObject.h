@@ -17,7 +17,7 @@ public:
 protected:
 
 	UFUNCTION(BlueprintCallable)
-	void PickUp(ATPPCharacter* Player);
+	virtual void PickUp(ATPPCharacter* Player);
 
 public:
 

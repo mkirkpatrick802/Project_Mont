@@ -110,6 +110,9 @@ void ABuildingPieceBase::BeginPlay()
 	SnappingSockets.AddUnique(RampSocket_2);
 	SnappingSockets.AddUnique(RampSocket_3);
 	SnappingSockets.AddUnique(RampSocket_4);
+
+	// Debugging Purposes Only
+	Placed();
 }
 
 void ABuildingPieceBase::Tick(float DeltaTime)

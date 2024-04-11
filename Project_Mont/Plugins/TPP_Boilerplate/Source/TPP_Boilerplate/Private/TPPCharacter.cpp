@@ -138,6 +138,8 @@ void ATPPCharacter::OnRep_ReplicatedMovement()
 
 void ATPPCharacter::HideCharacterIfCameraClose()
 {
+	if(!InteractComponent) return;
+
 	if (!IsLocallyControlled()) return;
 	if ((FollowCamera->GetComponentLocation() - GetActorLocation()).Size() < CameraThreshold)
 	{

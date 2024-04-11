@@ -108,7 +108,10 @@ public:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
 
+	UFUNCTION(BlueprintCallable, Category=Building)
 	void Placed() const;
+
+
 	bool CheckIfBlocked();
 	void ToggleIncorrectMaterial(bool IncorrectLocation);
 
