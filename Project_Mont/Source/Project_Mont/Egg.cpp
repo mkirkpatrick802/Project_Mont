@@ -43,5 +43,4 @@ void AEgg::PickUp(ATPPCharacter* Player)
 
 	const auto RelativePosition = RootComponent->GetRelativeLocation();
 	SetActorRelativeLocation(FVector(RelativePosition.X, RelativePosition.Y, RelativePosition.Z + 50));
-	SetActorRelativeRotation(FRotator(0, 60, 0));
 }

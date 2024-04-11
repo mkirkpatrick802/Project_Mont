@@ -12,7 +12,7 @@ class PROJECT_MONT_API AEgg : public APickupObject, public IDamageableInterface
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, Category = Collider)
+	UPROPERTY(VisibleAnywhere, Category = Collider)
 	UCapsuleComponent* HitboxCapsuleComponent;
 
 public:
